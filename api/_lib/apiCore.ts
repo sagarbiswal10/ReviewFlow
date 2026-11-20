@@ -33,11 +33,11 @@ function cleanSecretEnv(value: string | undefined): string {
 
 export const AI_PROVIDER =
   cleanSecretEnv(process.env.AI_PROVIDER).toLowerCase() === 'openai' ? 'openai' : 'gemini';
-export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-2.5-flash-lite';
+export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-3.1-flash-lite';
 export const GEMINI_FALLBACK_MODEL =
   process.env.GEMINI_FALLBACK_MODEL !== undefined
     ? cleanSecretEnv(process.env.GEMINI_FALLBACK_MODEL)
-    : 'gemini-3.1-flash-lite';
+    : 'gemini-3.5-flash-lite';
 export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
 function resolveFirebaseProjectId(): string {
@@ -230,21 +230,28 @@ function getGeminiApiKey(): string {
 }
 
 function sanitizeApiErrorDetail(message: string): string {
-  return message
+  let clean = message;
+  try {
+    const parsed = JSON.parse(message) as { error?: { message?: string } };
+    if (typeof parsed?.error?.message === 'string') {
+      clean = parsed.error.message;
+    }
+  } catch {
+    // Keep original message if not raw JSON
+  }
+  return clean
     .replace(/AIza[0-9A-Za-z_-]{10,}/g, '[redacted-key]')
     .replace(/AQ\.[0-9A-Za-z_.-]{10,}/g, '[redacted-key]')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 180);
+    .slice(0, 450);
 }
 
-function createGenAIClient() {
+function createGenAIClient(useVertexAi: boolean) {
   const apiKey = getGeminiApiKey();
   const disableHeader =
     cleanSecretEnv(process.env.DISABLE_AISTUDIO_HEADER) === 'true' ||
     Boolean(process.env.VERCEL);
-  const useVertexAi =
-    cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI) === 'true' || apiKey.startsWith('AQ.');
 
   return new GoogleGenAI({
     apiKey,
@@ -259,6 +266,79 @@ function createGenAIClient() {
           },
         }),
   });
+}
+
+function getVertexEndpointModes(): boolean[] {
+  const explicit = cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI).toLowerCase();
+  if (explicit === 'true') return [true];
+  if (explicit === 'false') return [false];
+  const apiKey = getGeminiApiKey();
+  return apiKey.startsWith('AQ.') ? [false, true] : [false];
+}
+
+async function generateGeminiContentWithFallback(
+  contents: string,
+  config: Record<string, unknown>,
+  maxTransientAttempts = 1,
+): Promise<string> {
+  const modelAttempts = Array.from(
+    new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
+  );
+  const endpointModes = getVertexEndpointModes();
+  let lastErr: unknown;
+
+  for (let modeIdx = 0; modeIdx < endpointModes.length; modeIdx += 1) {
+    const useVertexAi = endpointModes[modeIdx];
+    const hasNextMode = modeIdx < endpointModes.length - 1;
+    const ai = createGenAIClient(useVertexAi);
+
+    for (const modelName of modelAttempts) {
+      for (let attempt = 0; attempt < maxTransientAttempts; attempt += 1) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents,
+            config,
+          });
+          const text = (response.text ?? '').trim();
+          if (text) return text;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          const isApiKeyInvalid =
+            msg.includes('API_KEY_INVALID') ||
+            msg.toLowerCase().includes('api key not valid');
+          if (isApiKeyInvalid && hasNextMode) {
+            // Standard Gemini rejected an AQ. key -> try Vertex AI Express mode next
+            break;
+          }
+          const isNotFound = msg.includes('404') || msg.includes('NOT_FOUND');
+          if (isNotFound) break;
+
+          const isTransient =
+            msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
+          if (!isTransient) throw err;
+
+          if (attempt < maxTransientAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+        }
+      }
+
+      const lastMsg = lastErr instanceof Error ? lastErr.message : String(lastErr ?? '');
+      if (
+        hasNextMode &&
+        (lastMsg.includes('API_KEY_INVALID') ||
+          lastMsg.toLowerCase().includes('api key not valid'))
+      ) {
+        break;
+      }
+    }
+  }
+
+  if (lastErr) throw lastErr;
+  return '';
 }
 
 async function callOpenAIJson(systemInstruction: string, prompt: string): Promise<string> {
@@ -457,49 +537,26 @@ export async function processGenerateSeoKeywords(
         };
       }
 
-      const ai = createGenAIClient();
-      const modelAttempts = Array.from(
-        new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
-      );
-
-      let lastErr: unknown;
-      for (const modelName of modelAttempts) {
-        try {
-          const result = await ai.models.generateContent({
-            model: modelName,
-            contents: prompt,
-            config: {
-              systemInstruction,
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  keywords: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                    description:
-                      '8 to 10 Google Maps local search keywords tailored to this business.',
-                  },
-                },
-                required: ['keywords'],
+      responseText = await generateGeminiContentWithFallback(
+        prompt,
+        {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              keywords: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  '8 to 10 Google Maps local search keywords tailored to this business.',
               },
             },
-          });
-          responseText = (result.text ?? '').trim();
-          if (responseText) break;
-        } catch (err) {
-          lastErr = err;
-          const msg = err instanceof Error ? err.message : String(err);
-          const isRecoverable =
-            msg.includes('503') ||
-            msg.includes('UNAVAILABLE') ||
-            msg.includes('429') ||
-            msg.includes('404') ||
-            msg.includes('NOT_FOUND');
-          if (!isRecoverable) throw err;
-        }
-      }
-      if (!responseText && lastErr) throw lastErr;
+            required: ['keywords'],
+          },
+        },
+        1,
+      );
     }
 
     if (!responseText) {
@@ -636,66 +693,37 @@ export async function processGenerateReview(
         };
       }
 
-      const ai = createGenAIClient();
-      const generateFast = async () => {
-        const modelAttempts = Array.from(
-          new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
-        );
-        let lastErr: unknown;
-        for (const modelName of modelAttempts) {
-          for (let retry = 0; retry < 2; retry += 1) {
-            try {
-              return await ai.models.generateContent({
-                model: modelName,
-                contents: prompt,
-                config: {
-                  systemInstruction,
-                  responseMimeType: 'application/json',
-                  responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                      short: {
-                        type: Type.STRING,
-                        description: 'Short & Simple draft (2-3 sentences).',
-                      },
-                      detailed: {
-                        type: Type.STRING,
-                        description: 'Natural & Detailed draft (4-5 sentences).',
-                      },
-                      professional: {
-                        type: Type.STRING,
-                        description: 'Professional draft (3-4 sentences).',
-                      },
-                      keywordsUsed: {
-                        type: Type.ARRAY,
-                        items: { type: Type.STRING },
-                        description:
-                          '3 to 6 high-intent Google search keywords included naturally.',
-                      },
-                    },
-                    required: ['short', 'detailed', 'professional', 'keywordsUsed'],
-                  },
-                },
-              });
-            } catch (err) {
-              lastErr = err;
-              const msg = err instanceof Error ? err.message : String(err);
-              const isRecoverable =
-                msg.includes('503') ||
-                msg.includes('UNAVAILABLE') ||
-                msg.includes('429') ||
-                msg.includes('404') ||
-                msg.includes('NOT_FOUND');
-              if (!isRecoverable) throw err;
-              await new Promise((resolve) => setTimeout(resolve, 150));
-            }
-          }
-        }
-        throw lastErr;
-      };
-
-      const response = await generateFast();
-      rawText = (response.text ?? '').trim();
+      rawText = await generateGeminiContentWithFallback(
+        prompt,
+        {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              short: {
+                type: Type.STRING,
+                description: 'Short & Simple draft (2-3 sentences).',
+              },
+              detailed: {
+                type: Type.STRING,
+                description: 'Natural & Detailed draft (4-5 sentences).',
+              },
+              professional: {
+                type: Type.STRING,
+                description: 'Professional draft (3-4 sentences).',
+              },
+              keywordsUsed: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: '3 to 6 high-intent Google search keywords included naturally.',
+              },
+            },
+            required: ['short', 'detailed', 'professional', 'keywordsUsed'],
+          },
+        },
+        2,
+      );
     }
 
     let drafts: Record<ReviewStyle, string> = { short: '', detailed: '', professional: '' };
