@@ -26,15 +26,19 @@ export interface GenerateSeoKeywordsBody {
   address?: string;
 }
 
+function cleanSecretEnv(value: string | undefined): string {
+  if (!value) return '';
+  return value.trim().replace(/^["']|["']$/g, '').trim();
+}
+
 export const AI_PROVIDER =
-  (process.env.AI_PROVIDER || 'gemini').toLowerCase() === 'openai' ? 'openai' : 'gemini';
-export const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite').trim();
-export const GEMINI_FALLBACK_MODEL = (
+  cleanSecretEnv(process.env.AI_PROVIDER).toLowerCase() === 'openai' ? 'openai' : 'gemini';
+export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-2.5-flash-lite';
+export const GEMINI_FALLBACK_MODEL =
   process.env.GEMINI_FALLBACK_MODEL !== undefined
-    ? process.env.GEMINI_FALLBACK_MODEL
-    : 'gemini-3.1-flash-lite'
-).trim();
-export const API_AUTH_REQUIRED = process.env.API_AUTH_REQUIRED !== 'false';
+    ? cleanSecretEnv(process.env.GEMINI_FALLBACK_MODEL)
+    : 'gemini-3.1-flash-lite';
+export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
 function resolveFirebaseProjectId(): string {
   const fromEnv = (
@@ -221,11 +225,26 @@ export function checkRateLimit(key: string, maxRequests: number, windowMs: numbe
   return true;
 }
 
+function getGeminiApiKey(): string {
+  return cleanSecretEnv(process.env.GEMINI_API_KEY);
+}
+
+function sanitizeApiErrorDetail(message: string): string {
+  return message
+    .replace(/AIza[0-9A-Za-z_-]{10,}/g, '[redacted-key]')
+    .replace(/AQ\.[0-9A-Za-z_.-]{10,}/g, '[redacted-key]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
 function createGenAIClient() {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  const disableHeader = process.env.DISABLE_AISTUDIO_HEADER === 'true';
+  const apiKey = getGeminiApiKey();
+  const disableHeader =
+    cleanSecretEnv(process.env.DISABLE_AISTUDIO_HEADER) === 'true' ||
+    Boolean(process.env.VERCEL);
   const useVertexAi =
-    process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true' || apiKey.startsWith('AQ.');
+    cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI) === 'true' || apiKey.startsWith('AQ.');
 
   return new GoogleGenAI({
     apiKey,
@@ -243,7 +262,7 @@ function createGenAIClient() {
 }
 
 async function callOpenAIJson(systemInstruction: string, prompt: string): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = cleanSecretEnv(process.env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY is not configured on the server.');
   }
@@ -430,7 +449,8 @@ export async function processGenerateSeoKeywords(
     if (AI_PROVIDER === 'openai') {
       responseText = await callOpenAIJson(systemInstruction, prompt);
     } else {
-      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {
+      const geminiKey = getGeminiApiKey();
+      if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
         return {
           status: 400,
           data: { error: 'GEMINI_API_KEY is not configured on the server.' },
@@ -608,7 +628,8 @@ export async function processGenerateReview(
     if (AI_PROVIDER === 'openai') {
       rawText = await callOpenAIJson(systemInstruction, prompt);
     } else {
-      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {
+      const geminiKey = getGeminiApiKey();
+      if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
         return {
           status: 400,
           data: { error: 'GEMINI_API_KEY is not configured on the server.' },
@@ -741,11 +762,14 @@ export async function processGenerateReview(
       message.includes('PERMISSION_DENIED') ||
       message.includes('API_KEY_INVALID')
     ) {
+      const detail = sanitizeApiErrorDetail(message);
+      const isRefererBlock = detail.toLowerCase().includes('referer');
       return {
         status: status === 400 ? 400 : 403,
         data: {
-          error:
-            'API key error when generating review. Please check server environment configuration.',
+          error: isRefererBlock
+            ? 'Your Google API key has HTTP referrer restrictions enabled, which blocks server-side calls from Vercel. In Google Cloud Console, switch this key to None (or API-only restrictions), or use a standard server Gemini API key.'
+            : `API key error when generating review: ${detail || 'Please check GEMINI_API_KEY in your server environment.'}`,
         },
       };
     }
