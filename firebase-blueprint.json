@@ -1,0 +1,457 @@
+{
+  "entities": {
+    "Business": {
+      "title": "Business",
+      "description": "Owner and management-controlled business profile, client assignment, permissions, branding, QR settings, lifecycle status, tenant Firebase metadata, and feedback form configuration.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the creator.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Full name of the business owner.",
+          "maxLength": 120
+        },
+        "clientEmail": {
+          "type": "string",
+          "description": "Normalized lowercase email of the assigned business client for Portal access.",
+          "maxLength": 120
+        },
+        "clientAccessLevel": {
+          "type": "string",
+          "description": "Self-service editing tier granted to the business client in /portal.",
+          "enum": ["read_only", "qr_and_questions", "full"]
+        },
+        "enabledFeatures": {
+          "type": "object",
+          "description": "Feature entitlements active for this business."
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL-safe unique identifier for customer review links.",
+          "minLength": 2,
+          "maxLength": 80,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the business.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Business industry category.",
+          "enum": [
+            "Restaurants",
+            "Hair Salons",
+            "Beauty Salons",
+            "Hotels",
+            "Spas",
+            "Gyms",
+            "Healthcare",
+            "Retail Stores",
+            "Automobile Services",
+            "Other Businesses"
+          ]
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "contactEmail": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "website": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "googleReviewUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "logoDataUrl": {
+          "type": "string",
+          "maxLength": 350000
+        },
+        "branding": {
+          "type": "object"
+        },
+        "qrConfig": {
+          "type": "object"
+        },
+        "questions": {
+          "type": "array"
+        },
+        "seoKeywords": {
+          "type": "array",
+          "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
+        },
+        "lifecycleStatus": {
+          "type": "string",
+          "enum": ["onboarding", "provisioning", "active", "suspended"]
+        },
+        "tenantFirebase": {
+          "type": "object",
+          "description": "Public WebApp config for this business's dedicated Firebase project."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "clientEmail",
+        "clientAccessLevel",
+        "enabledFeatures",
+        "slug",
+        "name",
+        "category",
+        "address",
+        "phone",
+        "contactEmail",
+        "googleReviewUrl",
+        "logoDataUrl",
+        "branding",
+        "qrConfig",
+        "questions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Public non-PII customer-facing feedback form and branding snapshot keyed by slug.",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "googleReviewUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "logoDataUrl": {
+          "type": "string",
+          "maxLength": 350000
+        },
+        "enabledFeatures": {
+          "type": "object"
+        },
+        "branding": {
+          "type": "object"
+        },
+        "qrConfig": {
+          "type": "object"
+        },
+        "questions": {
+          "type": "array"
+        },
+        "seoKeywords": {
+          "type": "array",
+          "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
+        },
+        "lifecycleStatus": {
+          "type": "string",
+          "enum": ["onboarding", "provisioning", "active", "suspended"]
+        },
+        "tenantFirebase": {
+          "type": "object",
+          "description": "Public WebApp config for routing guest submissions to the business's dedicated Firestore."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "slug",
+        "name",
+        "category",
+        "googleReviewUrl",
+        "logoDataUrl",
+        "enabledFeatures",
+        "branding",
+        "qrConfig",
+        "questions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BusinessStats": {
+      "title": "BusinessStats",
+      "description": "Per-business scan, AI draft generation, and Google redirect counters accessible to management and the assigned client.",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "clientEmail": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "scans": {
+          "type": "integer"
+        },
+        "generated": {
+          "type": "integer"
+        },
+        "redirects": {
+          "type": "integer"
+        },
+        "styleShort": {
+          "type": "integer"
+        },
+        "styleDetailed": {
+          "type": "integer"
+        },
+        "styleProfessional": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "clientEmail",
+        "slug",
+        "scans",
+        "generated",
+        "redirects",
+        "styleShort",
+        "styleDetailed",
+        "styleProfessional",
+        "updatedAt"
+      ]
+    },
+    "ReviewEvent": {
+      "title": "ReviewEvent",
+      "description": "Immutable analytics event recorded when a customer scans a QR code, generates an AI draft, or clicks through to Google.",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "eventType": {
+          "type": "string",
+          "enum": ["scan", "generate", "copy_redirect"]
+        },
+        "reviewStyle": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "sentiment": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "selectedHighlights": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "slug",
+        "eventType",
+        "reviewStyle",
+        "sentiment",
+        "selectedHighlights",
+        "createdAt"
+      ]
+    },
+    "BusinessIntegration": {
+      "title": "BusinessIntegration",
+      "description": "Central non-secret infrastructure, Firebase provisioning, masked Gemini integration, and alert thresholds for a business.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "firebaseProjectId": { "type": "string", "maxLength": 120 },
+        "firebaseOwnershipModel": { "type": "string", "enum": ["reviewflow_managed", "customer_owned"] },
+        "firebaseProvisioningStatus": { "type": "string", "maxLength": 40 },
+        "aiConnectionStatus": { "type": "string", "maxLength": 40 },
+        "maskedGeminiKey": { "type": "string", "maxLength": 64 },
+        "modelName": { "type": "string", "maxLength": 80 },
+        "totalTokensUsed": { "type": "integer" },
+        "alertThresholds": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "clientEmail",
+        "firebaseProjectId",
+        "firebaseOwnershipModel",
+        "firebaseProvisioningStatus",
+        "aiConnectionStatus",
+        "maskedGeminiKey",
+        "modelName",
+        "totalTokensUsed",
+        "updatedAt"
+      ]
+    },
+    "AiUsageLog": {
+      "title": "AiUsageLog",
+      "description": "Immutable AI request and token usage telemetry record per business.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "modelName": { "type": "string", "maxLength": 80 },
+        "inputTokens": { "type": "integer" },
+        "outputTokens": { "type": "integer" },
+        "totalTokens": { "type": "integer" },
+        "status": { "type": "string", "enum": ["success", "failed"] },
+        "errorCode": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "requestId",
+        "businessId",
+        "ownerId",
+        "modelName",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "status",
+        "errorCode",
+        "createdAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Platform management administrator grant keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "addedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "addedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": {
+      "schema": { "$ref": "#/entities/Business" },
+      "description": "Management and assigned-client business configuration documents."
+    },
+    "/publicProfiles/{slug}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public non-PII customer feedback configuration indexed by URL slug."
+    },
+    "/businessStats/{businessId}": {
+      "schema": { "$ref": "#/entities/BusinessStats" },
+      "description": "Aggregate scan, generation, and redirect counters for each business."
+    },
+    "/reviewEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/ReviewEvent" },
+      "description": "Append-only QR scan, AI draft generation, and Google redirect analytics events."
+    },
+    "/businessIntegrations/{businessId}": {
+      "schema": { "$ref": "#/entities/BusinessIntegration" },
+      "description": "Non-secret per-business Firebase, masked Gemini key, and usage totals sync."
+    },
+    "/aiUsageLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AiUsageLog" },
+      "description": "Immutable per-business Gemini token usage logs."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Platform management administrator registry."
+    }
+  }
+}

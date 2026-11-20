@@ -1,0 +1,604 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  type User,
+} from 'firebase/auth';
+import { Loader2, MailCheck, PauseCircle, SearchX } from 'lucide-react';
+import { auth, googleProvider } from './firebase';
+import type { Business, BusinessStats, PublicProfile, ReviewEvent } from './types';
+import { BUILTIN_DEMO_PROFILE } from './data/categoryPresets';
+import {
+  checkIsAdmin,
+  getPublicProfileBySlug,
+  subscribeToAllBusinesses,
+  subscribeToAllBusinessStats,
+  subscribeToAllEvents,
+  subscribeToClientBusinesses,
+} from './services/businessService';
+import { LandingPage } from './components/LandingPage';
+import { ManagementConsoleView } from './components/ManagementConsoleView';
+import { ClientPortalView } from './components/ClientPortalView';
+import { OnboardingModal } from './components/OnboardingModal';
+import { CustomerReviewFlow } from './components/CustomerReviewFlow';
+
+type AppRoute =
+  | { kind: 'home' }
+  | { kind: 'admin' }
+  | { kind: 'portal' }
+  | { kind: 'review'; slug: string; tokenParam: string | null };
+
+function parseRoute(pathname: string, search: string): AppRoute {
+  const reviewMatch = pathname.match(/^\/review\/([a-z0-9-]+)\/?$/i);
+  const params = new URLSearchParams(search);
+  if (reviewMatch) {
+    return {
+      kind: 'review',
+      slug: reviewMatch[1].toLowerCase(),
+      tokenParam: params.get('v'),
+    };
+  }
+  const querySlug = params.get('review');
+  if (querySlug) {
+    return {
+      kind: 'review',
+      slug: querySlug.toLowerCase(),
+      tokenParam: params.get('v'),
+    };
+  }
+  if (/^\/admin\/?$/i.test(pathname)) {
+    return { kind: 'admin' };
+  }
+  if (/^\/portal\/?$/i.test(pathname)) {
+    return { kind: 'portal' };
+  }
+  return { kind: 'home' };
+}
+
+function formatAuthError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (raw.includes('auth/operation-not-allowed')) {
+    return 'Email/Password sign-in is not enabled in Firebase Authentication yet. Enable it under Authentication > Sign-in method in Firebase Console, or sign in with Google.';
+  }
+  if (raw.includes('auth/invalid-credential') || raw.includes('auth/wrong-password')) {
+    return 'Incorrect email or password. Please check your credentials and try again.';
+  }
+  if (raw.includes('auth/email-already-in-use')) {
+    return 'An account already exists for this email address. Please sign in instead.';
+  }
+  if (raw.includes('auth/weak-password')) {
+    return 'Password should be at least 6 characters long.';
+  }
+  if (raw.includes('auth/popup-closed-by-user')) {
+    return 'Sign-in popup was closed before finishing.';
+  }
+  return raw;
+}
+
+export default function App() {
+  const [route, setRoute] = useState<AppRoute>(() =>
+    parseRoute(window.location.pathname, window.location.search),
+  );
+
+  // Public customer route state
+  const [publicState, setPublicState] = useState<{
+    loading: boolean;
+    status: 'found' | 'paused' | 'not_found';
+    profile: PublicProfile | null;
+    isBuiltinDemo: boolean;
+  }>({
+    loading: false,
+    status: 'not_found',
+    profile: null,
+    isBuiltinDemo: false,
+  });
+
+  // Auth & Role state
+  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
+  const [isRefreshingVerification, setIsRefreshingVerification] = useState(false);
+
+  // Scoped Data State
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [businessesLoaded, setBusinessesLoaded] = useState(false);
+  const [statsMap, setStatsMap] = useState<Record<string, BusinessStats>>({});
+  const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('reviewflow_active_business_id');
+    } catch {
+      return null;
+    }
+  });
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [navigatedInternally, setNavigatedInternally] = useState(false);
+
+  const navigateTo = (path: string, replace = false) => {
+    if (path.startsWith('/review/')) {
+      setNavigatedInternally(true);
+    }
+    if (replace) {
+      window.history.replaceState({}, '', path);
+    } else {
+      window.history.pushState({}, '', path);
+    }
+    setRoute(parseRoute(window.location.pathname, window.location.search));
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoute(parseRoute(window.location.pathname, window.location.search));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Load public profile when on /review/:slug
+  useEffect(() => {
+    if (route.kind !== 'review') return;
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      setPublicState({
+        loading: true,
+        status: 'not_found',
+        profile: null,
+        isBuiltinDemo: false,
+      });
+
+      const res = await getPublicProfileBySlug(route.slug);
+      if (cancelled) return;
+
+      if (res.status === 'found' && res.profile) {
+        setPublicState({
+          loading: false,
+          status: 'found',
+          profile: res.profile,
+          isBuiltinDemo: false,
+        });
+        return;
+      }
+
+      if (res.status === 'paused') {
+        setPublicState({
+          loading: false,
+          status: 'paused',
+          profile: null,
+          isBuiltinDemo: false,
+        });
+        return;
+      }
+
+      if (route.slug === BUILTIN_DEMO_PROFILE.slug) {
+        setPublicState({
+          loading: false,
+          status: 'found',
+          profile: BUILTIN_DEMO_PROFILE,
+          isBuiltinDemo: true,
+        });
+        return;
+      }
+
+      setPublicState({
+        loading: false,
+        status: 'not_found',
+        profile: null,
+        isBuiltinDemo: false,
+      });
+    };
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [route]);
+
+  // Auth & Role Resolution
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+
+      if (!nextUser || !nextUser.emailVerified) {
+        setIsAdmin(false);
+        setRoleReady(true);
+        setBusinesses([]);
+        setStatsMap({});
+        setEvents([]);
+        setBusinessesLoaded(false);
+        return;
+      }
+
+      setRoleReady(false);
+      const adminStatus = await checkIsAdmin(nextUser);
+      setIsAdmin(adminStatus);
+      setRoleReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  // Automatic role-based redirect from '/' or unauthorized '/admin'
+  useEffect(() => {
+    if (!authReady || !roleReady || !user || !user.emailVerified) return;
+    if (route.kind === 'review') return;
+
+    if (route.kind === 'home') {
+      navigateTo(isAdmin ? '/admin' : '/portal', true);
+    } else if (route.kind === 'admin' && !isAdmin) {
+      navigateTo('/portal', true);
+    }
+  }, [authReady, roleReady, user, isAdmin, route.kind]);
+
+  // Subscribe to role-appropriate Firestore streams
+  useEffect(() => {
+    if (!authReady || !roleReady || !user || !user.emailVerified) return;
+    if (route.kind === 'review') return;
+
+    setBusinessesLoaded(false);
+
+    if (isAdmin && route.kind === 'admin') {
+      const unsubBiz = subscribeToAllBusinesses((items) => {
+        setBusinesses(items);
+        setBusinessesLoaded(true);
+      });
+      const unsubStats = subscribeToAllBusinessStats((map) => {
+        setStatsMap(map);
+      });
+      const unsubEvents = subscribeToAllEvents((items) => {
+        setEvents(items);
+      });
+      return () => {
+        unsubBiz();
+        unsubStats();
+        unsubEvents();
+      };
+    }
+
+    const unsubClientBiz = subscribeToClientBusinesses(
+      user.uid,
+      user.email || '',
+      (items) => {
+        setBusinesses(items);
+        setBusinessesLoaded(true);
+      },
+    );
+
+    return () => {
+      unsubClientBiz();
+    };
+  }, [authReady, roleReady, user, isAdmin, route.kind]);
+
+  const activeBusiness = useMemo(() => {
+    if (businesses.length === 0) return null;
+    if (selectedBusinessId) {
+      const match = businesses.find((b) => b.id === selectedBusinessId);
+      if (match) return match;
+    }
+    return businesses[0];
+  }, [businesses, selectedBusinessId]);
+
+  const handleSelectBusiness = (businessId: string) => {
+    setSelectedBusinessId(businessId);
+    try {
+      localStorage.setItem('reviewflow_active_business_id', businessId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      setAuthError(formatAuthError(err));
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleEmailSignIn = async (email: string, password: string) => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      const msg = formatAuthError(err);
+      setAuthError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleEmailSignUp = async (email: string, password: string) => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(cred.user);
+      setVerificationNotice(`Verification email sent to ${email}.`);
+    } catch (err) {
+      const msg = formatAuthError(err);
+      setAuthError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleResetPassword = async (email: string) => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err) {
+      const msg = formatAuthError(err);
+      throw new Error(msg);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!auth.currentUser) return;
+    setVerificationNotice(null);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      setVerificationNotice(`Verification email resent to ${auth.currentUser.email}.`);
+    } catch (err) {
+      setVerificationNotice(formatAuthError(err));
+    }
+  };
+
+  const handleRefreshVerification = async () => {
+    if (!auth.currentUser) return;
+    setIsRefreshingVerification(true);
+    setVerificationNotice(null);
+    try {
+      await auth.currentUser.reload();
+      await auth.currentUser.getIdToken(true);
+      const refreshed = auth.currentUser;
+      setUser(refreshed);
+      if (refreshed.emailVerified) {
+        const adminStatus = await checkIsAdmin(refreshed);
+        setIsAdmin(adminStatus);
+        setRoleReady(true);
+      } else {
+        setVerificationNotice('Email is still unverified. Click the link in your inbox, then refresh.');
+      }
+    } finally {
+      setIsRefreshingVerification(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setVerificationNotice(null);
+    navigateTo('/', true);
+  };
+
+  // 1. Walk-in Guest Public Review Route (/review/:slug)
+  if (route.kind === 'review') {
+    if (publicState.loading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-600 gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+          <p className="text-sm font-medium">Loading feedback form...</p>
+        </div>
+      );
+    }
+
+    if (publicState.status === 'paused') {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-8 text-center space-y-4">
+            <PauseCircle className="w-10 h-10 text-amber-600 mx-auto" />
+            <h1 className="font-display text-xl font-bold text-slate-900">
+              QR Code Temporarily Paused
+            </h1>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              This business has temporarily paused feedback collection for this QR code. Please check with a staff member or try again later.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigateTo('/')}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              Return to ReviewFlow
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (publicState.status === 'not_found' || !publicState.profile) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-8 text-center space-y-4">
+            <SearchX className="w-10 h-10 text-slate-400 mx-auto" />
+            <h1 className="font-display text-xl font-bold text-slate-900">
+              Review Page Not Found
+            </h1>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              We could not find an active business profile at{' '}
+              <span className="font-mono">/review/{route.slug}</span>.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigateTo('/')}
+              className="px-4 py-2 rounded-xl bg-teal-700 text-white text-xs font-semibold hover:bg-teal-800 cursor-pointer"
+            >
+              Go to ReviewFlow Home
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const tokenMismatch =
+      Boolean(route.tokenParam) &&
+      !publicState.isBuiltinDemo &&
+      route.tokenParam !== publicState.profile.qrConfig.token;
+
+    return (
+      <CustomerReviewFlow
+        profile={publicState.profile}
+        isPreview={publicState.isBuiltinDemo}
+        tokenMismatch={tokenMismatch}
+        onExit={
+          publicState.isBuiltinDemo || navigatedInternally
+            ? () => {
+                if (navigatedInternally && window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  navigateTo('/');
+                }
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  // 2. Auth / Role Loading
+  if (!authReady || !roleReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+      </div>
+    );
+  }
+
+  // 3. Signed-out Landing Page (for /, /admin, /portal when unauthenticated)
+  if (!user) {
+    return (
+      <LandingPage
+        onGoogleSignIn={handleGoogleSignIn}
+        onEmailSignIn={handleEmailSignIn}
+        onEmailSignUp={handleEmailSignUp}
+        onResetPassword={handleResetPassword}
+        onTryDemo={() => navigateTo(`/review/${BUILTIN_DEMO_PROFILE.slug}`)}
+        isSigningIn={isSigningIn}
+        authError={authError}
+      />
+    );
+  }
+
+  // 3b. Email Verification Gate for Email/Password Signups
+  if (!user.emailVerified) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-8 text-center space-y-5">
+          <MailCheck className="w-10 h-10 text-teal-700 mx-auto" />
+          <div className="space-y-2">
+            <h1 className="font-display text-xl font-bold text-slate-900">
+              Verify Your Email Address
+            </h1>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              We sent a verification link to{' '}
+              <span className="font-mono text-slate-900">{user.email}</span>. Open that link to verify your account, then refresh below to enter your portal.
+            </p>
+          </div>
+          {verificationNotice && (
+            <p className="text-xs text-teal-800 bg-teal-50 border border-teal-200 rounded-xl px-3.5 py-2.5">
+              {verificationNotice}
+            </p>
+          )}
+          <div className="flex flex-col gap-2.5">
+            <button
+              type="button"
+              disabled={isRefreshingVerification}
+              onClick={handleRefreshVerification}
+              className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              {isRefreshingVerification && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>I&apos;ve Verified — Continue</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              className="w-full min-h-[40px] px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              Resend Verification Email
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. Waiting for role-scoped data load
+  if (!businessesLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3 text-slate-600">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+        <p className="text-sm font-medium">
+          {isAdmin ? 'Loading management console...' : 'Loading your business portal...'}
+        </p>
+      </div>
+    );
+  }
+
+  // 5. Management Console (/admin) vs Business Client Portal (/portal)
+  const showingAdminConsole = isAdmin && route.kind === 'admin';
+
+  return (
+    <>
+      {showingAdminConsole ? (
+        <ManagementConsoleView
+          user={user}
+          businesses={businesses}
+          statsMap={statsMap}
+          events={events}
+          onOpenNewBusiness={() => setShowOnboarding(true)}
+          onSwitchToPortal={() => navigateTo('/portal')}
+          onSignOut={handleSignOut}
+        />
+      ) : (
+        <ClientPortalView
+          user={user}
+          isAdmin={isAdmin}
+          businesses={businesses}
+          activeBusiness={activeBusiness}
+          onSelectBusiness={handleSelectBusiness}
+          onOpenNewBusiness={() => setShowOnboarding(true)}
+          onSwitchToAdmin={isAdmin ? () => navigateTo('/admin') : undefined}
+          onSignOut={handleSignOut}
+        />
+      )}
+
+      {showOnboarding && (
+        <OnboardingModal
+          ownerId={user.uid}
+          userEmail={user.email || ''}
+          isAdmin={showingAdminConsole}
+          canClose
+          onClose={() => setShowOnboarding(false)}
+          onCreated={(newId) => {
+            handleSelectBusiness(newId);
+            setShowOnboarding(false);
+          }}
+        />
+      )}
+    </>
+  );
+}

@@ -1,0 +1,548 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function userEmailLower() {
+      return request.auth.token.email is string ? request.auth.token.email.lower() : '';
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && userEmailLower() == 'harkiratcourse36@gmail.com';
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        userEmailLower() == 'harkiratcourse36@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSlug(slug) {
+      return slug is string && slug.size() >= 2 && slug.size() <= 80 && slug.matches('^[a-z0-9-]+$');
+    }
+
+    function isValidCategory(cat) {
+      return cat in [
+        'Restaurants',
+        'Hair Salons',
+        'Beauty Salons',
+        'Hotels',
+        'Spas',
+        'Gyms',
+        'Healthcare',
+        'Retail Stores',
+        'Automobile Services',
+        'Other Businesses'
+      ];
+    }
+
+    function isValidLifecycleStatus(st) {
+      return st in ['onboarding', 'provisioning', 'active', 'suspended'];
+    }
+
+    function isValidTenantFirebase(tf) {
+      return tf == null || (
+        tf is map &&
+        tf.keys().hasAll(['projectId', 'apiKey', 'authDomain', 'appId', 'databaseId']) &&
+        tf.keys().hasOnly(['projectId', 'apiKey', 'authDomain', 'appId', 'databaseId', 'storageBucket']) &&
+        tf.projectId is string && tf.projectId.size() <= 120 &&
+        tf.apiKey is string && tf.apiKey.size() <= 120 &&
+        tf.authDomain is string && tf.authDomain.size() <= 160 &&
+        tf.appId is string && tf.appId.size() <= 160 &&
+        tf.databaseId is string && tf.databaseId.size() <= 80
+      );
+    }
+
+    function isValidEnabledFeatures(f) {
+      return f is map &&
+        f.keys().hasAll(['aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView']) &&
+        f.keys().hasOnly(['aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView']) &&
+        f.aiReviewDrafts is bool &&
+        f.customQuestions is bool &&
+        f.pdfPosterExport is bool &&
+        f.analyticsView is bool;
+    }
+
+    function isValidBranding(b) {
+      return b is map &&
+        b.keys().hasAll(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
+        b.keys().hasOnly(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
+        b.primaryColor is string && b.primaryColor.size() >= 4 && b.primaryColor.size() <= 20 &&
+        b.secondaryColor is string && b.secondaryColor.size() >= 4 && b.secondaryColor.size() <= 20 &&
+        b.welcomeMessage is string && b.welcomeMessage.size() <= 240 &&
+        b.thankYouMessage is string && b.thankYouMessage.size() <= 240 &&
+        b.defaultReviewStyle in ['short', 'detailed', 'professional'];
+    }
+
+    function isValidQrConfig(q) {
+      return q is map &&
+        q.keys().hasAll(['isActive', 'fgColor', 'bgColor', 'token', 'includeLogo']) &&
+        q.keys().hasOnly(['isActive', 'fgColor', 'bgColor', 'token', 'includeLogo']) &&
+        q.isActive is bool &&
+        q.fgColor is string && q.fgColor.size() >= 4 && q.fgColor.size() <= 20 &&
+        q.bgColor is string && q.bgColor.size() >= 4 && q.bgColor.size() <= 20 &&
+        q.token is string && q.token.size() >= 4 && q.token.size() <= 64 &&
+        q.includeLogo is bool;
+    }
+
+    function isValidQuestions(questions) {
+      return questions is list &&
+        questions.size() <= 25 &&
+        (questions.size() == 0 || questions[0] is map);
+    }
+
+    function isValidSeoKeywords(keywords) {
+      return keywords is list &&
+        keywords.size() <= 15 &&
+        (keywords.size() == 0 || (keywords[0] is string && keywords[0].size() <= 60));
+    }
+
+    function isValidBusiness(data) {
+      return data.keys().hasAll([
+          'ownerId', 'clientEmail', 'clientAccessLevel', 'enabledFeatures',
+          'slug', 'name', 'category', 'address', 'phone',
+          'contactEmail', 'googleReviewUrl', 'logoDataUrl', 'branding',
+          'qrConfig', 'questions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'ownerName', 'clientEmail', 'clientAccessLevel', 'enabledFeatures',
+          'slug', 'name', 'category', 'address', 'phone',
+          'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
+          'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 120)) &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
+        isValidEnabledFeatures(data.enabledFeatures) &&
+        isValidSlug(data.slug) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        isValidCategory(data.category) &&
+        data.address is string && data.address.size() <= 240 &&
+        data.phone is string && data.phone.size() <= 40 &&
+        data.contactEmail is string && data.contactEmail.size() <= 120 &&
+        (!('website' in data) || (data.website is string && data.website.size() <= 300)) &&
+        data.googleReviewUrl is string && data.googleReviewUrl.size() <= 500 &&
+        data.logoDataUrl is string && data.logoDataUrl.size() <= 350000 &&
+        isValidBranding(data.branding) &&
+        isValidQrConfig(data.qrConfig) &&
+        isValidQuestions(data.questions) &&
+        (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
+        (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'slug', 'name', 'category',
+          'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
+          'qrConfig', 'questions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'slug', 'name', 'category',
+          'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
+          'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        isValidSlug(data.slug) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        isValidCategory(data.category) &&
+        data.googleReviewUrl is string && data.googleReviewUrl.size() <= 500 &&
+        data.logoDataUrl is string && data.logoDataUrl.size() <= 350000 &&
+        isValidEnabledFeatures(data.enabledFeatures) &&
+        isValidBranding(data.branding) &&
+        isValidQrConfig(data.qrConfig) &&
+        isValidQuestions(data.questions) &&
+        (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
+        (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBusinessStats(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'clientEmail', 'slug',
+          'scans', 'generated', 'redirects',
+          'styleShort', 'styleDetailed', 'styleProfessional', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'clientEmail', 'slug',
+          'scans', 'generated', 'redirects',
+          'styleShort', 'styleDetailed', 'styleProfessional', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        isValidSlug(data.slug) &&
+        data.scans is int && data.scans >= 0 &&
+        data.generated is int && data.generated >= 0 &&
+        data.redirects is int && data.redirects >= 0 &&
+        data.styleShort is int && data.styleShort >= 0 &&
+        data.styleDetailed is int && data.styleDetailed >= 0 &&
+        data.styleProfessional is int && data.styleProfessional >= 0 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReviewEvent(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'slug', 'eventType',
+          'reviewStyle', 'sentiment', 'selectedHighlights', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'slug', 'eventType',
+          'reviewStyle', 'sentiment', 'selectedHighlights', 'createdAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        isValidSlug(data.slug) &&
+        data.eventType in ['scan', 'generate', 'copy_redirect'] &&
+        data.reviewStyle is string && data.reviewStyle.size() <= 40 &&
+        data.sentiment is string && data.sentiment.size() <= 40 &&
+        data.selectedHighlights is list && data.selectedHighlights.size() <= 15 &&
+        (data.selectedHighlights.size() == 0 || data.selectedHighlights[0] is string) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidBusinessIntegration(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'clientEmail', 'firebaseProjectId',
+          'firebaseOwnershipModel', 'firebaseProvisioningStatus',
+          'aiConnectionStatus', 'maskedGeminiKey', 'modelName',
+          'totalTokensUsed', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'clientEmail', 'firebaseProjectId',
+          'firebaseOwnershipModel', 'firebaseProvisioningStatus',
+          'aiConnectionStatus', 'maskedGeminiKey', 'modelName',
+          'paymentStatus', 'totalTokensUsed', 'alertThresholds', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.firebaseProjectId is string && data.firebaseProjectId.size() <= 120 &&
+        data.firebaseOwnershipModel in ['reviewflow_managed', 'customer_owned'] &&
+        data.firebaseProvisioningStatus is string && data.firebaseProvisioningStatus.size() <= 40 &&
+        data.aiConnectionStatus is string && data.aiConnectionStatus.size() <= 40 &&
+        data.maskedGeminiKey is string && data.maskedGeminiKey.size() <= 64 &&
+        data.modelName is string && data.modelName.size() <= 80 &&
+        (!('paymentStatus' in data) || data.paymentStatus is string) &&
+        data.totalTokensUsed is int && data.totalTokensUsed >= 0 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAiUsageLog(data) {
+      return data.keys().hasAll([
+          'requestId', 'businessId', 'ownerId', 'modelName',
+          'inputTokens', 'outputTokens', 'totalTokens', 'status', 'errorCode', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'requestId', 'businessId', 'ownerId', 'modelName',
+          'inputTokens', 'outputTokens', 'totalTokens', 'status', 'errorCode', 'createdAt'
+        ]) &&
+        isValidId(data.requestId) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.modelName is string && data.modelName.size() <= 80 &&
+        data.inputTokens is int && data.inputTokens >= 0 &&
+        data.outputTokens is int && data.outputTokens >= 0 &&
+        data.totalTokens is int && data.totalTokens >= 0 &&
+        data.status in ['success', 'failed'] &&
+        data.errorCode is string && data.errorCode.size() <= 64 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAdminDoc(data) {
+      return data.keys().hasAll(['uid', 'email', 'addedBy', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'addedBy', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+        data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128 &&
+        data.createdAt is timestamp;
+    }
+
+    function isAssignedClient(data) {
+      return isVerifiedUser() && (
+        data.ownerId == request.auth.uid ||
+        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail == userEmailLower())
+      );
+    }
+
+    // 1. Platform Management Admins Registry
+    match /admins/{uid} {
+      allow get: if isVerifiedUser() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isAdmin() &&
+        isValidId(uid) &&
+        isValidAdminDoc(incoming()) &&
+        incoming().uid == uid &&
+        incoming().addedBy == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(uid) && uid != request.auth.uid;
+    }
+
+    // 2. Private Business Profiles (Management Admin + Assigned Business Client)
+    match /businesses/{businessId} {
+      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow list: if isVerifiedUser() && (
+        isBootstrappedAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidBusiness(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (incoming().clientEmail == userEmailLower() && incoming().clientAccessLevel == 'full')
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidBusiness(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action 1: Platform Management full administration
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'ownerName', 'clientEmail', 'clientAccessLevel', 'enabledFeatures',
+              'name', 'category', 'address', 'phone', 'contactEmail', 'website',
+              'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
+              'questions', 'seoKeywords', 'slug', 'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Assigned Client with 'full' tier
+          (
+            isAssignedClient(existing()) &&
+            existing().clientAccessLevel == 'full' &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().clientAccessLevel == existing().clientAccessLevel &&
+            incoming().enabledFeatures == existing().enabledFeatures &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website',
+              'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
+              'questions', 'seoKeywords', 'slug', 'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+            ])
+          ) ||
+          // Action 3: Assigned Client with 'qr_and_questions' tier
+          (
+            isAssignedClient(existing()) &&
+            existing().clientAccessLevel == 'qr_and_questions' &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().clientAccessLevel == existing().clientAccessLevel &&
+            incoming().enabledFeatures == existing().enabledFeatures &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'qrConfig', 'questions', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // 3. Public Customer Form Profiles (Keyed by slug, zero PII)
+    match /publicProfiles/{slug} {
+      allow get: if isValidSlug(slug) && (
+        resource == null ||
+        resource.data.qrConfig.isActive == true ||
+        isAdmin() ||
+        (isVerifiedUser() && resource.data.ownerId == request.auth.uid)
+      );
+      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow create: if isVerifiedUser() &&
+        isValidSlug(slug) &&
+        isValidPublicProfile(incoming()) &&
+        incoming().slug == slug &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerifiedUser() &&
+        isValidSlug(slug) &&
+        isValidPublicProfile(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().businessId == existing().businessId &&
+        incoming().slug == existing().slug &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'category', 'googleReviewUrl', 'logoDataUrl',
+              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'seoKeywords',
+              'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+            ])
+          ) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
+            (
+              (
+                get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'full' &&
+                incoming().enabledFeatures == existing().enabledFeatures &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'name', 'category', 'googleReviewUrl', 'logoDataUrl',
+                  'branding', 'qrConfig', 'questions', 'seoKeywords',
+                  'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+                ])
+              ) ||
+              (
+                get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'qr_and_questions' &&
+                incoming().enabledFeatures == existing().enabledFeatures &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'qrConfig', 'questions', 'updatedAt'
+                ])
+              )
+            )
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidSlug(slug) && (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // 4. Per-Business Aggregate Stats
+    match /businessStats/{businessId} {
+      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow list: if isVerifiedUser() && (
+        isBootstrappedAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidBusinessStats(incoming()) &&
+        incoming().businessId == businessId &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/businesses/$(businessId)) &&
+        (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isValidId(businessId) &&
+        isValidBusinessStats(incoming()) &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().businessId == existing().businessId &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['clientEmail', 'slug', 'updatedAt'])
+          ) ||
+          (
+            isAssignedClient(existing()) &&
+            exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+            get(/databases/$(database)/documents/businesses/$(businessId)).data.clientAccessLevel == 'full' &&
+            incoming().businessId == existing().businessId &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['slug', 'updatedAt'])
+          ) ||
+          (
+            incoming().businessId == existing().businessId &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().slug == existing().slug &&
+            exists(/databases/$(database)/documents/publicProfiles/$(existing().slug)) &&
+            get(/databases/$(database)/documents/publicProfiles/$(existing().slug)).data.qrConfig.isActive == true &&
+            incoming().scans >= existing().scans && incoming().scans <= existing().scans + 1 &&
+            incoming().generated >= existing().generated && incoming().generated <= existing().generated + 1 &&
+            incoming().redirects >= existing().redirects && incoming().redirects <= existing().redirects + 1 &&
+            incoming().styleShort >= existing().styleShort && incoming().styleShort <= existing().styleShort + 1 &&
+            incoming().styleDetailed >= existing().styleDetailed && incoming().styleDetailed <= existing().styleDetailed + 1 &&
+            incoming().styleProfessional >= existing().styleProfessional && incoming().styleProfessional <= existing().styleProfessional + 1 &&
+            (
+              (incoming().scans == existing().scans + 1 && incoming().generated == existing().generated && incoming().redirects == existing().redirects) ||
+              (incoming().generated == existing().generated + 1 && incoming().scans == existing().scans && incoming().redirects == existing().redirects) ||
+              (incoming().redirects == existing().redirects + 1 && incoming().scans == existing().scans && incoming().generated == existing().generated)
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'scans', 'generated', 'redirects',
+              'styleShort', 'styleDetailed', 'styleProfessional', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // 5. Immutable Review Analytics Events
+    match /reviewEvents/{eventId} {
+      allow get: if isVerifiedUser() && isValidId(eventId) && (isAdmin() || existing().ownerId == request.auth.uid);
+      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow create: if isValidId(eventId) &&
+        isValidReviewEvent(incoming()) &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId;
+      allow update, delete: if false;
+    }
+
+    // 6. Central Non-Secret Business Infrastructure Summaries
+    match /businessIntegrations/{businessId} {
+      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow list: if isVerifiedUser() && (
+        isBootstrappedAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidBusinessIntegration(incoming()) &&
+        incoming().businessId == businessId &&
+        incoming().updatedAt == request.time &&
+        (isAdmin() || isAssignedClient(incoming()));
+      allow update: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidBusinessIntegration(incoming()) &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().updatedAt == request.time &&
+        (isAdmin() || isAssignedClient(existing()));
+      allow delete: if isVerifiedUser() && isValidId(businessId) && isAdmin();
+    }
+
+    // 7. Immutable AI Token Usage Logs Summary
+    match /aiUsageLogs/{logId} {
+      allow get: if isVerifiedUser() && isValidId(logId) && (isAdmin() || existing().ownerId == request.auth.uid);
+      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow create: if isValidId(logId) &&
+        isValidAiUsageLog(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}
