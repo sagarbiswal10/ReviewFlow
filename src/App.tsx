@@ -124,6 +124,7 @@ export default function App() {
   });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [navigatedInternally, setNavigatedInternally] = useState(false);
+  const [redirectAfterLogin, setRedirectAfterLogin] = useState(false);
 
   const navigateTo = (path: string, replace = false) => {
     if (path.startsWith('/review/')) {
@@ -229,17 +230,35 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Automatic role-based redirect from '/' or unauthorized '/admin'
+  // Role-based routing:
+  // - Business Management admins on '/' or after login -> '/admin'
+  // - Non-admin on '/admin' -> '/portal' (if client access) or '/'
+  // - Client Portal users on login from '/' -> '/portal', while still allowing '/' Landing Page
   useEffect(() => {
     if (!authReady || !roleReady || !user || !user.emailVerified) return;
     if (route.kind === 'review') return;
 
-    if (route.kind === 'home') {
-      navigateTo(isAdmin ? '/admin' : '/portal', true);
-    } else if (route.kind === 'admin' && !isAdmin) {
-      navigateTo('/portal', true);
+    if (isAdmin) {
+      if (route.kind === 'home') {
+        setRedirectAfterLogin(false);
+        navigateTo('/admin', true);
+      }
+      return;
     }
-  }, [authReady, roleReady, user, isAdmin, route.kind]);
+
+    if (route.kind === 'admin') {
+      if (!businessesLoaded) return;
+      navigateTo(businesses.length > 0 ? '/portal' : '/', true);
+      return;
+    }
+
+    if (redirectAfterLogin && businessesLoaded) {
+      setRedirectAfterLogin(false);
+      if (businesses.length > 0) {
+        navigateTo('/portal', true);
+      }
+    }
+  }, [authReady, roleReady, user, isAdmin, route.kind, businessesLoaded, businesses.length, redirectAfterLogin]);
 
   // Subscribe to role-appropriate Firestore streams
   useEffect(() => {
@@ -342,9 +361,11 @@ export default function App() {
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     setAuthError(null);
+    setRedirectAfterLogin(true);
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
+      setRedirectAfterLogin(false);
       setAuthError(formatAuthError(err));
     } finally {
       setIsSigningIn(false);
@@ -354,9 +375,11 @@ export default function App() {
   const handleEmailSignIn = async (email: string, password: string) => {
     setIsSigningIn(true);
     setAuthError(null);
+    setRedirectAfterLogin(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
+      setRedirectAfterLogin(false);
       const msg = formatAuthError(err);
       setAuthError(msg);
       throw new Error(msg);
@@ -368,11 +391,13 @@ export default function App() {
   const handleEmailSignUp = async (email: string, password: string) => {
     setIsSigningIn(true);
     setAuthError(null);
+    setRedirectAfterLogin(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(cred.user);
       setVerificationNotice(`Verification email sent to ${email}.`);
     } catch (err) {
+      setRedirectAfterLogin(false);
       const msg = formatAuthError(err);
       setAuthError(msg);
       throw new Error(msg);
@@ -427,6 +452,7 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    setRedirectAfterLogin(false);
     await signOut(auth);
     setVerificationNotice(null);
     navigateTo('/', true);
@@ -633,8 +659,10 @@ export default function App() {
     );
   }
 
-  // 5. Management Console (/admin) vs Business Client Portal (/portal)
+  // 5. Landing Page ('/' for signed-in Client Portal or unassigned accounts), Business Management (/admin), vs Client Portal (/portal)
+  const hasClientAccess = businesses.length > 0;
   const showingAdminConsole = isAdmin && route.kind === 'admin';
+  const showingLandingPage = !isAdmin && route.kind === 'home';
 
   return (
     <>
@@ -648,6 +676,22 @@ export default function App() {
           onSwitchToPortal={() => navigateTo('/portal')}
           onSignOut={handleSignOut}
         />
+      ) : showingLandingPage ? (
+        <LandingPage
+          user={user}
+          hasClientAccess={hasClientAccess}
+          isAdmin={isAdmin}
+          onGoogleSignIn={handleGoogleSignIn}
+          onEmailSignIn={handleEmailSignIn}
+          onEmailSignUp={handleEmailSignUp}
+          onResetPassword={handleResetPassword}
+          onTryDemo={() => navigateTo(`/review/${BUILTIN_DEMO_PROFILE.slug}`)}
+          onOpenPortal={() => navigateTo('/portal')}
+          onOpenAdmin={() => navigateTo('/admin')}
+          onSignOut={handleSignOut}
+          isSigningIn={isSigningIn}
+          authError={authError}
+        />
       ) : (
         <ClientPortalView
           user={user}
@@ -656,6 +700,7 @@ export default function App() {
           activeBusiness={activeBusiness}
           onSelectBusiness={handleSelectBusiness}
           onOpenNewBusiness={() => setShowOnboarding(true)}
+          onViewLanding={() => navigateTo('/')}
           onSwitchToAdmin={isAdmin ? () => navigateTo('/admin') : undefined}
           onSignOut={handleSignOut}
         />

@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Eye,
   FileText,
+  Home,
   Lock,
   LogOut,
   Menu,
@@ -42,6 +43,7 @@ interface ClientPortalViewProps {
   activeBusiness: Business | null;
   onSelectBusiness: (id: string) => void;
   onOpenNewBusiness: () => void;
+  onViewLanding: () => void;
   onSwitchToAdmin?: () => void;
   onSignOut: () => void;
 }
@@ -59,6 +61,7 @@ export function ClientPortalView({
   activeBusiness,
   onSelectBusiness,
   onOpenNewBusiness,
+  onViewLanding,
   onSwitchToAdmin,
   onSignOut,
 }: ClientPortalViewProps) {
@@ -314,14 +317,23 @@ export function ClientPortalView({
 
       {/* Footer */}
       <div className="p-4 border-t border-slate-200 space-y-2.5">
-        {isAdmin && onSwitchToAdmin && (
+        {isAdmin && onSwitchToAdmin ? (
           <button
             type="button"
             onClick={onSwitchToAdmin}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
           >
             <Shield className="w-3.5 h-3.5" />
-            <span>Management Console</span>
+            <span>Business Management</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onViewLanding}
+            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Landing Page</span>
           </button>
         )}
         <div className="min-w-0">
@@ -403,21 +415,40 @@ export function ClientPortalView({
               <QrCode className="w-10 h-10 text-slate-400 mx-auto" />
               <div className="space-y-2">
                 <h1 className="font-display text-2xl font-bold text-slate-900">
-                  No Business Assigned Yet
+                  {isAdmin ? 'No Business Selected Yet' : 'Client Portal Access Not Assigned'}
                 </h1>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  You are signed in as <span className="font-mono text-slate-900">{user.email}</span>. Ask your account manager to assign your business to this email address, or register your own storefront below.
+                  {isAdmin ? (
+                    <>
+                      Signed in as <span className="font-mono text-slate-900">{user.email}</span>. Create a new business profile or switch back to Business Management.
+                    </>
+                  ) : (
+                    <>
+                      You are signed in as <span className="font-mono text-slate-900">{user.email}</span>, which is not assigned to any business yet. Ask your business manager to add this Gmail account in Business Management to unlock Client Portal access.
+                    </>
+                  )}
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={onOpenNewBusiness}
-                  className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Register My Business</span>
-                </button>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={onOpenNewBusiness}
+                    className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Register Business</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onViewLanding}
+                    className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Home className="w-4 h-4" />
+                    <span>Go to Landing Page</span>
+                  </button>
+                )}
               </div>
             </div>
           ) : (

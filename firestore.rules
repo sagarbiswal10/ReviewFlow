@@ -21,8 +21,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isVerifiedUser() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (userEmailLower().size() > 0 && exists(/databases/$(database)/documents/adminEmails/$(userEmailLower())))
+      );
     }
 
     function incoming() {
@@ -35,6 +37,14 @@ service cloud.firestore {
 
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmailId(emailId) {
+      return emailId is string &&
+        emailId.size() >= 3 &&
+        emailId.size() <= 120 &&
+        emailId == emailId.lower() &&
+        emailId.matches('^[^/\\s@]+@[^/\\s@]+\\.[^/\\s@]+$');
     }
 
     function isValidSlug(slug) {
@@ -293,7 +303,15 @@ service cloud.firestore {
       );
     }
 
-    // 1. Platform Management Admins Registry
+    function isValidAdminEmailDoc(data) {
+      return data.keys().hasAll(['email', 'addedBy', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'addedBy', 'createdAt']) &&
+        isValidEmailId(data.email) &&
+        data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128 &&
+        data.createdAt is timestamp;
+    }
+
+    // 1. Platform Management Admins Registry (UID + Email)
     match /admins/{uid} {
       allow get: if isVerifiedUser() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
@@ -307,13 +325,26 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(uid) && uid != request.auth.uid;
     }
 
+    match /adminEmails/{emailId} {
+      allow get: if isVerifiedUser() && isValidEmailId(emailId) && (userEmailLower() == emailId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidEmailId(emailId) &&
+        isValidAdminEmailDoc(incoming()) &&
+        incoming().email == emailId &&
+        incoming().addedBy == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidEmailId(emailId) && userEmailLower() != emailId;
+    }
+
     // 2. Private Business Profiles (Management Admin + Assigned Business Client)
     match /businesses/{businessId} {
       allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || (resource != null && isAssignedClient(existing())));
       allow list: if isVerifiedUser() && (
         isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -443,7 +474,7 @@ service cloud.firestore {
       allow list: if isVerifiedUser() && (
         isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -525,7 +556,7 @@ service cloud.firestore {
       allow list: if isVerifiedUser() && (
         isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&

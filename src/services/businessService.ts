@@ -23,11 +23,11 @@ import {
   DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
 } from '../data/categoryPresets';
 import type {
+  AdminEmail,
   AdminUser,
   Business,
   BusinessBranding,
   BusinessCategory,
-  BusinessLifecycleStatus,
   BusinessStats,
   ClientAccessLevel,
   EnabledFeatures,
@@ -36,7 +36,6 @@ import type {
   QrConfig,
   ReviewEvent,
   ReviewEventType,
-  TenantWebAppConfig,
 } from '../types';
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '')
@@ -148,37 +147,6 @@ function sanitizeSeoKeywords(keywords?: unknown): string[] {
   return clean;
 }
 
-function sanitizeLifecycleStatus(status?: unknown): BusinessLifecycleStatus {
-  if (
-    status === 'onboarding' ||
-    status === 'provisioning' ||
-    status === 'active' ||
-    status === 'suspended'
-  ) {
-    return status;
-  }
-  return 'active';
-}
-
-function sanitizeTenantFirebase(config?: TenantWebAppConfig | null): TenantWebAppConfig | null {
-  if (!config || typeof config !== 'object') return null;
-  const projectId = clampString(config.projectId, 120);
-  const apiKey = clampString(config.apiKey, 120);
-  const authDomain = clampString(config.authDomain, 160);
-  const appId = clampString(config.appId, 160);
-  const databaseId = clampString(config.databaseId, 80);
-  const storageBucket = clampString(config.storageBucket, 160);
-  if (!projectId && !apiKey && !appId) return null;
-  return {
-    projectId,
-    apiKey,
-    authDomain,
-    appId,
-    databaseId,
-    ...(storageBucket ? { storageBucket } : {}),
-  };
-}
-
 export async function fetchAutoSeoKeywords(input: {
   businessName: string;
   category: BusinessCategory;
@@ -246,24 +214,40 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
       hydratedKeywords.length > 0
         ? hydratedKeywords
         : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[category] ?? [],
-    lifecycleStatus: data.lifecycleStatus ? sanitizeLifecycleStatus(data.lifecycleStatus) : 'active',
-    tenantFirebase: data.tenantFirebase ? sanitizeTenantFirebase(data.tenantFirebase) : null,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
 }
 
 export async function checkIsAdmin(user: User): Promise<boolean> {
+  const emailLower = normalizeEmail(user.email || '');
   if (
     BOOTSTRAPPED_ADMIN_EMAIL &&
     user.emailVerified &&
-    user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL
+    emailLower === BOOTSTRAPPED_ADMIN_EMAIL
   ) {
     return true;
   }
   try {
-    const snap = await getDoc(doc(db, 'admins', user.uid));
-    return snap.exists();
+    const checks: Promise<boolean>[] = [
+      getDoc(doc(db, 'admins', user.uid))
+        .then((snap) => snap.exists())
+        .catch(() => false),
+    ];
+    if (emailLower) {
+      checks.push(
+        getDoc(doc(db, 'adminEmails', emailLower))
+          .then((snap) => snap.exists())
+          .catch(() => false),
+      );
+    }
+    const result = await Promise.race([
+      Promise.all(checks).then((flags) => flags.some(Boolean)),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), 8000);
+      }),
+    ]);
+    return result;
   } catch {
     return false;
   }
@@ -461,6 +445,21 @@ export function subscribeToAdmins(
   );
 }
 
+export function subscribeToAdminEmails(
+  onData: (adminEmails: AdminEmail[]) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'adminEmails'),
+    (snapshot) => {
+      onData(snapshot.docs.map((d) => d.data() as AdminEmail));
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
 export async function grantAdminByUid(uid: string, email: string, addedByUid: string): Promise<void> {
   const cleanUid = clampString(uid, 128);
   const cleanEmail = normalizeEmail(email);
@@ -477,10 +476,37 @@ export async function grantAdminByUid(uid: string, email: string, addedByUid: st
   }
 }
 
+export async function grantAdminByEmail(email: string, addedByUid: string): Promise<void> {
+  const cleanEmail = normalizeEmail(email);
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    throw new Error('Please enter a valid Gmail or email address.');
+  }
+  const path = `adminEmails/${cleanEmail}`;
+  try {
+    await setDoc(doc(db, 'adminEmails', cleanEmail), {
+      email: cleanEmail,
+      addedBy: addedByUid,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
 export async function revokeAdmin(uid: string): Promise<void> {
   const path = `admins/${uid}`;
   try {
     await deleteDoc(doc(db, 'admins', uid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function revokeAdminByEmail(email: string): Promise<void> {
+  const cleanEmail = normalizeEmail(email);
+  const path = `adminEmails/${cleanEmail}`;
+  try {
+    await deleteDoc(doc(db, 'adminEmails', cleanEmail));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -527,8 +553,6 @@ export async function createBusiness(
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
     seoKeywords?: string[];
-    lifecycleStatus?: BusinessLifecycleStatus;
-    tenantFirebase?: TenantWebAppConfig | null;
   },
 ): Promise<string> {
   const businessRef = doc(collection(db, 'businesses'));
@@ -557,8 +581,6 @@ export async function createBusiness(
     providedKeywords.length > 0
       ? providedKeywords
       : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
-  const cleanLifecycle = sanitizeLifecycleStatus(input.lifecycleStatus);
-  const cleanTenantFirebase = sanitizeTenantFirebase(input.tenantFirebase);
 
   const businessPayload = {
     ownerId: clampString(ownerId, 128),
@@ -579,8 +601,6 @@ export async function createBusiness(
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
     seoKeywords: cleanSeoKeywords,
-    lifecycleStatus: cleanLifecycle,
-    ...(cleanTenantFirebase ? { tenantFirebase: cleanTenantFirebase } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -598,8 +618,6 @@ export async function createBusiness(
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
     seoKeywords: cleanSeoKeywords,
-    lifecycleStatus: cleanLifecycle,
-    ...(cleanTenantFirebase ? { tenantFirebase: cleanTenantFirebase } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -651,8 +669,6 @@ export async function updateBusiness(
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
     seoKeywords: string[];
-    lifecycleStatus: BusinessLifecycleStatus;
-    tenantFirebase: TenantWebAppConfig | null;
   }>,
   options: { isAdmin?: boolean } = {},
 ): Promise<string> {
@@ -714,14 +730,6 @@ export async function updateBusiness(
     ? sanitizeEnabledFeatures(updates.enabledFeatures ?? current.enabledFeatures)
     : current.enabledFeatures;
 
-  const nextLifecycle = updates.lifecycleStatus
-    ? sanitizeLifecycleStatus(updates.lifecycleStatus)
-    : current.lifecycleStatus;
-  const nextTenantFirebase =
-    updates.tenantFirebase !== undefined
-      ? sanitizeTenantFirebase(updates.tenantFirebase)
-      : current.tenantFirebase;
-
   const businessUpdates: Record<string, unknown> = {
     slug: nextSlug,
     name: nextName,
@@ -743,12 +751,6 @@ export async function updateBusiness(
   }
   if (updates.website !== undefined) {
     businessUpdates.website = clampString(updates.website, 300);
-  }
-  if (updates.lifecycleStatus !== undefined && nextLifecycle) {
-    businessUpdates.lifecycleStatus = nextLifecycle;
-  }
-  if (updates.tenantFirebase !== undefined) {
-    businessUpdates.tenantFirebase = nextTenantFirebase;
   }
 
   if (isAdmin) {
@@ -774,8 +776,6 @@ export async function updateBusiness(
       qrConfig: nextQrConfig,
       questions: nextQuestions,
       seoKeywords: nextSeoKeywords,
-      ...(nextLifecycle ? { lifecycleStatus: nextLifecycle } : {}),
-      ...(nextTenantFirebase !== undefined ? { tenantFirebase: nextTenantFirebase } : {}),
       createdAt: current.createdAt ?? now,
       updatedAt: now,
     });
@@ -789,12 +789,6 @@ export async function updateBusiness(
       qrConfig: nextQrConfig,
       questions: nextQuestions,
       seoKeywords: nextSeoKeywords,
-      ...(updates.lifecycleStatus !== undefined && nextLifecycle
-        ? { lifecycleStatus: nextLifecycle }
-        : {}),
-      ...(updates.tenantFirebase !== undefined
-        ? { tenantFirebase: nextTenantFirebase }
-        : {}),
       updatedAt: now,
     };
     if (isAdmin) {

@@ -9,15 +9,22 @@ import {
   Store,
   X,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import { BUSINESS_CATEGORIES } from '../types';
 import { HERO_TABLETOP_IMAGE } from '../data/categoryPresets';
 
 interface LandingPageProps {
+  user?: User | null;
+  hasClientAccess?: boolean;
+  isAdmin?: boolean;
   onGoogleSignIn: () => Promise<void> | void;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
   onTryDemo: () => void;
+  onOpenPortal?: () => void;
+  onOpenAdmin?: () => void;
+  onSignOut?: () => void;
   isSigningIn: boolean;
   authError: string | null;
 }
@@ -25,11 +32,17 @@ interface LandingPageProps {
 type AuthTab = 'signin' | 'signup' | 'reset';
 
 export function LandingPage({
+  user = null,
+  hasClientAccess = false,
+  isAdmin = false,
   onGoogleSignIn,
   onEmailSignIn,
   onEmailSignUp,
   onResetPassword,
   onTryDemo,
+  onOpenPortal,
+  onOpenAdmin,
+  onSignOut,
   isSigningIn,
   authError,
 }: LandingPageProps) {
@@ -39,6 +52,7 @@ export function LandingPage({
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [heroImageFailed, setHeroImageFailed] = useState(false);
 
   const openAuthModal = (initialTab: AuthTab = 'signin') => {
     setAuthTab(initialTab);
@@ -127,14 +141,45 @@ export function LandingPage({
           </nav>
 
           <div className="flex items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={() => openAuthModal('signin')}
-              disabled={isSigningIn}
-              className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
-            >
-              Sign In
-            </button>
+            {user ? (
+              <>
+                {isAdmin && onOpenAdmin ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAdmin}
+                    className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Business Management
+                  </button>
+                ) : hasClientAccess && onOpenPortal ? (
+                  <button
+                    type="button"
+                    onClick={onOpenPortal}
+                    className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Client Portal
+                  </button>
+                ) : null}
+                {onSignOut && (
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Sign Out
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openAuthModal('signin')}
+                disabled={isSigningIn}
+                className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -164,15 +209,39 @@ export function LandingPage({
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => openAuthModal('signup')}
-                  disabled={isSigningIn}
-                  className="min-h-[48px] px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm sm:text-base transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
-                >
-                  <span>Create Business Workspace</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                {user ? (
+                  <>
+                    {isAdmin && onOpenAdmin ? (
+                      <button
+                        type="button"
+                        onClick={onOpenAdmin}
+                        className="min-h-[48px] px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm sm:text-base transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <span>Open Business Management</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    ) : hasClientAccess && onOpenPortal ? (
+                      <button
+                        type="button"
+                        onClick={onOpenPortal}
+                        className="min-h-[48px] px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm sm:text-base transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <span>Open Client Portal</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal('signup')}
+                    disabled={isSigningIn}
+                    className="min-h-[48px] px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm sm:text-base transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+                  >
+                    <span>Sign In to Workspace</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onTryDemo}
@@ -181,6 +250,15 @@ export function LandingPage({
                   Try Live Customer Form
                 </button>
               </div>
+
+              {user && !isAdmin && (
+                <p className="mt-4 text-xs text-slate-600 leading-relaxed">
+                  Signed in as <span className="font-mono text-slate-900">{user.email}</span>
+                  {hasClientAccess
+                    ? ' · Client Portal access is active for your account.'
+                    : ' · No Client Portal business assigned to this Gmail yet. Contact your business manager to grant access.'}
+                </p>
+              )}
 
               <div className="mt-8 pt-6 border-t border-slate-200 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
                 <span>10 industry question templates</span>
@@ -192,13 +270,26 @@ export function LandingPage({
             </div>
 
             <div className="lg:col-span-6">
-              <div className="h-full min-h-[320px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-200">
-                <img
-                  src={HERO_TABLETOP_IMAGE}
-                  alt="Matte charcoal QR review standee on a hospitality reception counter"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
+              <div className="h-full min-h-[320px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
+                {heroImageFailed ? (
+                  <div className="h-full min-h-[320px] flex flex-col items-center justify-center p-8 text-center text-white bg-gradient-to-br from-slate-900 via-slate-800 to-teal-950">
+                    <QrCode className="w-16 h-16 text-teal-400 mb-4" />
+                    <p className="font-display text-xl font-bold tracking-tight">
+                      Share Your Feedback
+                    </p>
+                    <p className="mt-1.5 text-sm text-slate-300">
+                      Scan to leave a Google review
+                    </p>
+                  </div>
+                ) : (
+                  <img
+                    src={HERO_TABLETOP_IMAGE}
+                    alt="Matte charcoal and brass tabletop QR standee reading Share Your Feedback, Scan to Review Us on Google"
+                    referrerPolicy="no-referrer"
+                    onError={() => setHeroImageFailed(true)}
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import { doc, getDocFromServer, getFirestore, initializeFirestore } from 'firebase/firestore';
 
 interface AppletFirebaseConfig {
   apiKey?: string;
@@ -12,6 +12,11 @@ interface AppletFirebaseConfig {
   firestoreDatabaseId?: string;
 }
 
+function cleanEnv(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/^["']|["']$/g, '').trim();
+}
+
 const optionalAppletModules = import.meta.glob<{ default?: AppletFirebaseConfig }>(
   '../firebase-applet-config.json',
   { eager: true },
@@ -19,12 +24,12 @@ const optionalAppletModules = import.meta.glob<{ default?: AppletFirebaseConfig 
 const bundledAppletConfig: AppletFirebaseConfig =
   Object.values(optionalAppletModules)[0]?.default ?? {};
 
-const envProjectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim();
-const envApiKey = (import.meta.env.VITE_FIREBASE_API_KEY || '').trim();
+const envProjectId = cleanEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID);
+const envApiKey = cleanEnv(import.meta.env.VITE_FIREBASE_API_KEY);
 const hasCustomEnvConfig = Boolean(envApiKey && envProjectId);
 
-const projectId = hasCustomEnvConfig ? envProjectId : (bundledAppletConfig.projectId || '').trim();
-const apiKey = hasCustomEnvConfig ? envApiKey : (bundledAppletConfig.apiKey || '').trim();
+const projectId = hasCustomEnvConfig ? envProjectId : cleanEnv(bundledAppletConfig.projectId);
+const apiKey = hasCustomEnvConfig ? envApiKey : cleanEnv(bundledAppletConfig.apiKey);
 
 if (!projectId || !apiKey) {
   throw new Error(
@@ -36,31 +41,42 @@ const firebaseConfig = hasCustomEnvConfig
   ? {
       apiKey,
       authDomain:
-        (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim() ||
-        `${projectId}.firebaseapp.com`,
+        cleanEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN) || `${projectId}.firebaseapp.com`,
       projectId,
       storageBucket:
-        (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim() ||
+        cleanEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET) ||
         `${projectId}.firebasestorage.app`,
-      messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
-      appId: (import.meta.env.VITE_FIREBASE_APP_ID || '').trim(),
+      messagingSenderId: cleanEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+      appId: cleanEnv(import.meta.env.VITE_FIREBASE_APP_ID),
     }
   : {
       apiKey,
-      authDomain: bundledAppletConfig.authDomain || `${projectId}.firebaseapp.com`,
+      authDomain: cleanEnv(bundledAppletConfig.authDomain) || `${projectId}.firebaseapp.com`,
       projectId,
-      storageBucket: bundledAppletConfig.storageBucket || `${projectId}.firebasestorage.app`,
-      messagingSenderId: bundledAppletConfig.messagingSenderId || '',
-      appId: bundledAppletConfig.appId || '',
+      storageBucket:
+        cleanEnv(bundledAppletConfig.storageBucket) || `${projectId}.firebasestorage.app`,
+      messagingSenderId: cleanEnv(bundledAppletConfig.messagingSenderId),
+      appId: cleanEnv(bundledAppletConfig.appId),
     };
 
 const rawDatabaseId = hasCustomEnvConfig
-  ? (import.meta.env.VITE_FIREBASE_DATABASE_ID || '').trim()
-  : (bundledAppletConfig.firestoreDatabaseId || '').trim();
+  ? cleanEnv(import.meta.env.VITE_FIREBASE_DATABASE_ID)
+  : cleanEnv(bundledAppletConfig.firestoreDatabaseId);
 const databaseId = rawDatabaseId && rawDatabaseId !== '(default)' ? rawDatabaseId : '';
 
 const app = initializeApp(firebaseConfig);
-export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+
+function createFirestoreClient() {
+  try {
+    return databaseId
+      ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, databaseId)
+      : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  } catch {
+    return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  }
+}
+
+export const db = createFirestoreClient();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

@@ -2,7 +2,7 @@ import type { BusinessCategory, FeedbackQuestion, PublicProfile } from '../types
 
 export const DEMO_SALON_LOGO = '/src/assets/images/demo_salon_emblem_1794808683508.jpg';
 export const DEMO_BISTRO_LOGO = '/src/assets/images/demo_bistro_emblem_1794808683461.jpg';
-export const HERO_TABLETOP_IMAGE = '/src/assets/images/hero_tabletop_qr_1794808682681.jpg';
+export const HERO_TABLETOP_IMAGE = '/src/assets/images/hero_google_review_qr_1795161653423.jpg';
 
 export function createCategoryQuestions(category: BusinessCategory): FeedbackQuestion[] {
   switch (category) {

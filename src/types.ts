@@ -19,40 +19,6 @@ export type QuestionType = 'single' | 'multiple' | 'text';
 
 export type ClientAccessLevel = 'read_only' | 'qr_and_questions' | 'full';
 
-export type BusinessLifecycleStatus =
-  | 'onboarding'
-  | 'provisioning'
-  | 'active'
-  | 'suspended';
-
-export type AiConnectionStatus =
-  | 'not_connected'
-  | 'connected'
-  | 'invalid_key'
-  | 'billing_disabled'
-  | 'quota_exhausted'
-  | 'error';
-
-export type ProvisioningStatus =
-  | 'not_started'
-  | 'queued'
-  | 'creating_gcp_project'
-  | 'enabling_firebase'
-  | 'creating_firestore'
-  | 'deploying_rules_indexes'
-  | 'verifying_health'
-  | 'completed'
-  | 'failed';
-
-export interface TenantWebAppConfig {
-  projectId: string;
-  apiKey: string;
-  authDomain: string;
-  appId: string;
-  databaseId: string;
-  storageBucket?: string;
-}
-
 export interface EnabledFeatures {
   aiReviewDrafts: boolean;
   customQuestions: boolean;
@@ -105,8 +71,6 @@ export interface Business {
   qrConfig: QrConfig;
   questions: FeedbackQuestion[];
   seoKeywords?: string[];
-  lifecycleStatus?: BusinessLifecycleStatus;
-  tenantFirebase?: TenantWebAppConfig | null;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -124,8 +88,6 @@ export interface PublicProfile {
   qrConfig: QrConfig;
   questions: FeedbackQuestion[];
   seoKeywords?: string[];
-  lifecycleStatus?: BusinessLifecycleStatus;
-  tenantFirebase?: TenantWebAppConfig | null;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -165,86 +127,8 @@ export interface AdminUser {
   createdAt?: unknown;
 }
 
-export interface BusinessAiSummary {
-  businessId: string;
-  aiProvider: 'gemini';
-  maskedKey: string;
-  modelName: string;
-  connectionStatus: AiConnectionStatus;
-  connectedAt: string | null;
-  lastValidatedAt: string | null;
-  lastSuccessfulRequest: string | null;
-  lastError: string | null;
-  totalRequests: number;
-  successfulRequests: number;
-  failedRequests: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalTokens: number;
-  updatedAt: string;
-}
-
-export interface ProvisioningLogEntry {
-  timestamp: string;
-  step: string;
-  status: 'info' | 'success' | 'error';
-  message: string;
-}
-
-export interface BusinessProvisioningSummary {
-  businessId: string;
-  jobId: string;
-  ownershipModel: 'reviewflow_managed' | 'customer_owned';
-  status: ProvisioningStatus;
-  projectId: string;
-  databaseId: string;
-  region: string;
-  webAppConfig: TenantWebAppConfig | null;
-  billingOwnershipNote: string;
-  healthStatus: 'healthy' | 'degraded' | 'unknown';
-  backupStatus: 'configured' | 'manual_required' | 'not_configured';
-  lastError: string | null;
-  retryCount: number;
-  logs: ProvisioningLogEntry[];
-  updatedAt: string;
-}
-
-export interface AiUsageLogRecord {
-  requestId: string;
-  businessId: string;
-  modelName: string;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  status: 'success' | 'failed';
-  errorCode: string;
-  errorMessage: string;
-  createdAt: string;
-}
-
-export interface TenantMonitoringSummary {
-  available: boolean;
-  projectId: string | null;
-  consoleMonitoringUrl: string | null;
-  consoleBillingUrl: string | null;
-  firestoreHealth: { healthy: boolean; detail: string } | null;
-  metrics24h: {
-    reads: number | null;
-    writes: number | null;
-    deletes: number | null;
-  } | null;
-  reason?: string;
-}
-
-export interface AdminInfrastructureOverview {
-  aiSummaries: Record<string, BusinessAiSummary>;
-  provisioningRecords: Record<string, BusinessProvisioningSummary>;
-  recentUsageLogs: AiUsageLogRecord[];
-  allowedModels: string[];
-}
-
-export interface TenantTemplatesBundle {
-  firestoreRules: string;
-  firestoreIndexes: string;
-  storageRules: string;
+export interface AdminEmail {
+  email: string;
+  addedBy: string;
+  createdAt?: unknown;
 }

@@ -4,30 +4,29 @@ import {
   Activity,
   ArrowLeft,
   Building2,
+  Check,
   CheckCircle2,
   Eye,
-  KeyRound,
   Loader2,
   LogOut,
+  Mail,
   Menu,
   Palette,
   PauseCircle,
   Plus,
   QrCode,
-  RefreshCw,
   Search,
-  Server,
   Shield,
   SlidersHorizontal,
   Trash2,
   UserCheck,
+  UserPlus,
   X,
 } from 'lucide-react';
 import type {
-  AdminInfrastructureOverview,
+  AdminEmail,
   AdminUser,
   Business,
-  BusinessLifecycleStatus,
   BusinessStats,
   ClientAccessLevel,
   EnabledFeatures,
@@ -36,27 +35,25 @@ import type {
 } from '../types';
 import {
   BOOTSTRAPPED_ADMIN_EMAIL,
+  grantAdminByEmail,
   grantAdminByUid,
   normalizeEmail,
   revokeAdmin,
+  revokeAdminByEmail,
+  subscribeToAdminEmails,
   subscribeToAdmins,
   updateBusiness,
 } from '../services/businessService';
-import {
-  fetchAdminInfrastructureOverview,
-} from '../services/infrastructureService';
 import { BusinessLogo } from './BusinessLogo';
 import { OverviewTab } from './OverviewTab';
 import { QrStudioTab } from './QrStudioTab';
 import { QuestionBuilderTab } from './QuestionBuilderTab';
 import { BrandingTab } from './BrandingTab';
 import { CustomerReviewFlow } from './CustomerReviewFlow';
-import { BusinessInfrastructurePanel } from './BusinessInfrastructurePanel';
 
-type AdminSection = 'directory' | 'infrastructure' | 'activity' | 'team';
+type AdminSection = 'directory' | 'clients' | 'activity' | 'team';
 type BusinessDetailTab =
   | 'access'
-  | 'infrastructure'
   | 'overview'
   | 'qr'
   | 'questions'
@@ -110,7 +107,6 @@ export function ManagementConsoleView({
   );
   const [clientEmailInput, setClientEmailInput] = useState('');
   const [accessLevelInput, setAccessLevelInput] = useState<ClientAccessLevel>('full');
-  const [lifecycleInput, setLifecycleInput] = useState<BusinessLifecycleStatus>('active');
   const [featuresInput, setFeaturesInput] = useState<EnabledFeatures>({
     aiReviewDrafts: true,
     customQuestions: true,
@@ -121,45 +117,50 @@ export function ManagementConsoleView({
   const [governanceNotice, setGovernanceNotice] = useState<string | null>(null);
   const [governanceError, setGovernanceError] = useState<string | null>(null);
 
-  // Centralized Infrastructure & Revenue Overview State
-  const [infraOverview, setInfraOverview] = useState<AdminInfrastructureOverview | null>(null);
-  const [infraLoading, setInfraLoading] = useState(false);
-  const [infraError, setInfraError] = useState<string | null>(null);
+  // Client Portal Access (Gmail) quick-assign state
+  const [assignBizId, setAssignBizId] = useState<string>('');
+  const [assignEmail, setAssignEmail] = useState('');
+  const [assignTier, setAssignTier] = useState<ClientAccessLevel>('full');
+  const [isSavingAssign, setIsSavingAssign] = useState(false);
+  const [assignNotice, setAssignNotice] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
 
   // Team Admins state
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
+  const [newAdminGmail, setNewAdminGmail] = useState('');
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [adminStatus, setAdminStatus] = useState<string | null>(null);
-
-  const loadInfraOverview = async () => {
-    setInfraLoading(true);
-    setInfraError(null);
-    try {
-      const data = await fetchAdminInfrastructureOverview();
-      setInfraOverview(data);
-    } catch (err) {
-      setInfraError(err instanceof Error ? err.message : 'Unable to load infrastructure overview.');
-    } finally {
-      setInfraLoading(false);
-    }
-  };
+  const [adminError, setAdminError] = useState<string | null>(null);
 
   useEffect(() => {
-    return subscribeToAdmins((items) => setAdmins(items));
+    const unsubUids = subscribeToAdmins((items) => setAdmins(items));
+    const unsubEmails = subscribeToAdminEmails((items) => setAdminEmails(items));
+    return () => {
+      unsubUids();
+      unsubEmails();
+    };
   }, []);
 
   useEffect(() => {
-    if (section === 'infrastructure') {
-      loadInfraOverview();
+    if (businesses.length === 0) {
+      setAssignBizId('');
+      return;
     }
-  }, [section]);
+    if (!assignBizId || !businesses.some((b) => b.id === assignBizId)) {
+      const first = businesses[0];
+      setAssignBizId(first.id);
+      setAssignEmail(first.clientEmail || '');
+      setAssignTier(first.clientAccessLevel || 'full');
+    }
+  }, [businesses, assignBizId]);
 
   useEffect(() => {
     if (!selectedBiz) return;
     setClientEmailInput(selectedBiz.clientEmail || '');
     setAccessLevelInput(selectedBiz.clientAccessLevel || 'full');
-    setLifecycleInput(selectedBiz.lifecycleStatus || 'active');
     setFeaturesInput(selectedBiz.enabledFeatures);
     setGovernanceNotice(null);
     setGovernanceError(null);
@@ -211,6 +212,17 @@ export function ManagementConsoleView({
     return map;
   }, [businesses]);
 
+  const filteredClientBusinesses = useMemo(() => {
+    const q = clientSearchQuery.trim().toLowerCase();
+    if (!q) return businesses;
+    return businesses.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.slug.toLowerCase().includes(q) ||
+        b.clientEmail.toLowerCase().includes(q),
+    );
+  }, [businesses, clientSearchQuery]);
+
   const handleSaveGovernance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBiz) return;
@@ -224,11 +236,10 @@ export function ManagementConsoleView({
           clientEmail: normalizeEmail(clientEmailInput),
           clientAccessLevel: accessLevelInput,
           enabledFeatures: featuresInput,
-          lifecycleStatus: lifecycleInput,
         },
         { isAdmin: true },
       );
-      setGovernanceNotice('Client assignment, lifecycle status, and portal permissions saved.');
+      setGovernanceNotice('Customer Gmail access and portal permissions saved.');
       setTimeout(() => setGovernanceNotice(null), 3000);
     } catch (err) {
       setGovernanceError(err instanceof Error ? err.message : 'Failed to update permissions.');
@@ -237,17 +248,101 @@ export function ManagementConsoleView({
     }
   };
 
+  const handleSelectAssignBusiness = (bizId: string) => {
+    setAssignBizId(bizId);
+    const target = businesses.find((b) => b.id === bizId);
+    if (target) {
+      setAssignEmail(target.clientEmail || '');
+      setAssignTier(target.clientAccessLevel || 'full');
+    }
+    setAssignError(null);
+    setAssignNotice(null);
+  };
+
+  const handleSaveClientAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = businesses.find((b) => b.id === assignBizId);
+    if (!target) {
+      setAssignError('Please select a business first.');
+      return;
+    }
+    const cleanEmail = normalizeEmail(assignEmail);
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setAssignError('Please enter a valid customer Gmail or email address.');
+      return;
+    }
+
+    setIsSavingAssign(true);
+    setAssignError(null);
+    setAssignNotice(null);
+    try {
+      await updateBusiness(
+        target,
+        {
+          clientEmail: cleanEmail,
+          clientAccessLevel: assignTier,
+        },
+        { isAdmin: true },
+      );
+      setAssignNotice(
+        `${cleanEmail} now has Client Portal access for ${target.name} when they sign in.`,
+      );
+      setTimeout(() => setAssignNotice(null), 4000);
+    } catch (err) {
+      setAssignError(
+        err instanceof Error ? err.message : 'Unable to save customer Gmail access.',
+      );
+    } finally {
+      setIsSavingAssign(false);
+    }
+  };
+
+  const handleRemoveClientAccess = async (biz: Business) => {
+    setAssignError(null);
+    setAssignNotice(null);
+    try {
+      await updateBusiness(biz, { clientEmail: '' }, { isAdmin: true });
+      if (assignBizId === biz.id) {
+        setAssignEmail('');
+      }
+      setAssignNotice(`Removed Client Portal Gmail assignment from ${biz.name}.`);
+      setTimeout(() => setAssignNotice(null), 3500);
+    } catch (err) {
+      setAssignError(
+        err instanceof Error ? err.message : 'Unable to remove customer Gmail access.',
+      );
+    }
+  };
+
+  const handleAddAdminByEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminStatus(null);
+    setAdminError(null);
+    const cleanEmail = normalizeEmail(newAdminGmail);
+    if (!cleanEmail) return;
+    try {
+      await grantAdminByEmail(cleanEmail, user.uid);
+      setNewAdminGmail('');
+      setAdminStatus(
+        `${cleanEmail} will open Business Management automatically the next time they sign in.`,
+      );
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Unable to add manager email.');
+    }
+  };
+
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminStatus(null);
+    setAdminError(null);
     if (!newAdminUid.trim() || !newAdminEmail.trim()) return;
     try {
       await grantAdminByUid(newAdminUid.trim(), newAdminEmail.trim(), user.uid);
       setNewAdminUid('');
       setNewAdminEmail('');
-      setAdminStatus('Manager granted Management Console access.');
+      setAdminStatus('Manager granted Business Management access.');
     } catch (err) {
-      setAdminStatus(err instanceof Error ? err.message : 'Unable to add manager.');
+      setAdminError(err instanceof Error ? err.message : 'Unable to add manager.');
     }
   };
 
@@ -265,8 +360,6 @@ export function ManagementConsoleView({
         qrConfig: selectedBiz.qrConfig,
         questions: selectedBiz.questions,
         seoKeywords: selectedBiz.seoKeywords,
-        lifecycleStatus: selectedBiz.lifecycleStatus,
-        tenantFirebase: selectedBiz.tenantFirebase,
       }
     : null;
 
@@ -287,7 +380,7 @@ export function ManagementConsoleView({
       </div>
 
       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-        <p className="text-[11px] font-semibold text-teal-800">Management Console</p>
+        <p className="text-[11px] font-semibold text-teal-800">Business Management</p>
         <p className="text-xs text-slate-600 mt-0.5 tabular-nums">
           {businesses.length} {businesses.length === 1 ? 'business' : 'businesses'} managed
         </p>
@@ -301,7 +394,7 @@ export function ManagementConsoleView({
             setSelectedBizId(null);
             setMobileMenuOpen(false);
           }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer ${
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
             section === 'directory'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -314,18 +407,18 @@ export function ManagementConsoleView({
         <button
           type="button"
           onClick={() => {
-            setSection('infrastructure');
+            setSection('clients');
             setSelectedBizId(null);
             setMobileMenuOpen(false);
           }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer ${
-            section === 'infrastructure'
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
+            section === 'clients'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Server className="w-4 h-4 shrink-0" />
-          <span>Infrastructure &amp; AI</span>
+          <Mail className="w-4 h-4 shrink-0" />
+          <span>Client Portal Access</span>
         </button>
 
         <button
@@ -335,7 +428,7 @@ export function ManagementConsoleView({
             setSelectedBizId(null);
             setMobileMenuOpen(false);
           }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer ${
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
             section === 'activity'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -352,7 +445,7 @@ export function ManagementConsoleView({
             setSelectedBizId(null);
             setMobileMenuOpen(false);
           }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer ${
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
             section === 'team'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -418,7 +511,7 @@ export function ManagementConsoleView({
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="text-slate-500 truncate">Management</span>
+              <span className="text-slate-500 truncate">Business Management</span>
               <span className="text-slate-300" aria-hidden="true">/</span>
               {selectedBiz ? (
                 <>
@@ -436,8 +529,8 @@ export function ManagementConsoleView({
                 <span className="font-semibold text-slate-900 truncate">
                   {section === 'directory'
                     ? 'All Businesses'
-                    : section === 'infrastructure'
-                      ? 'Firebase & AI Infrastructure'
+                    : section === 'clients'
+                      ? 'Client Portal Access'
                       : section === 'activity'
                         ? 'Global Activity'
                         : 'Team Admins'}
@@ -474,7 +567,6 @@ export function ManagementConsoleView({
                   {(
                     [
                       { id: 'access', label: 'Client Access & Features', icon: UserCheck },
-                      { id: 'infrastructure', label: 'Infrastructure & AI', icon: Server },
                       { id: 'overview', label: 'Analytics', icon: Activity },
                       { id: 'qr', label: 'QR Studio', icon: QrCode },
                       { id: 'questions', label: 'Questions', icon: SlidersHorizontal },
@@ -576,23 +668,6 @@ export function ManagementConsoleView({
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                        Business Lifecycle Status
-                      </label>
-                      <select
-                        value={lifecycleInput}
-                        onChange={(e) =>
-                          setLifecycleInput(e.target.value as BusinessLifecycleStatus)
-                        }
-                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
-                      >
-                        <option value="active">Active (Live Public Review Form &amp; AI)</option>
-                        <option value="onboarding">Onboarding</option>
-                        <option value="provisioning">Provisioning</option>
-                        <option value="suspended">Suspended (Blocks Public Form &amp; AI)</option>
-                      </select>
-                    </div>
                   </div>
 
                   <div className="pt-4 border-t border-slate-200">
@@ -646,10 +721,6 @@ export function ManagementConsoleView({
                     </div>
                   </div>
                 </form>
-              )}
-
-              {detailTab === 'infrastructure' && (
-                <BusinessInfrastructurePanel business={selectedBiz} isAdmin />
               )}
 
               {detailTab === 'overview' && (
@@ -857,140 +928,219 @@ export function ManagementConsoleView({
                 )}
               </div>
             </>
-          ) : section === 'infrastructure' ? (
+          ) : section === 'clients' ? (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-display text-xl font-bold text-slate-900">
-                    Central Infrastructure &amp; AI Isolation Overview
-                  </h2>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Monitor per-business Firebase projects and Gemini API keys (raw keys are encrypted server-side and never exposed to admins).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={loadInfraOverview}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${infraLoading ? 'animate-spin' : ''}`} />
-                  <span>Refresh Status</span>
-                </button>
-              </div>
-
-              {infraError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-                  {infraError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                  <p className="text-xs font-medium text-slate-500">Isolated Firebase Projects</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {
-                      Object.values(infraOverview?.provisioningRecords ?? {}).filter(
-                        (p) => p.status === 'completed',
-                      ).length
-                    }
-                  </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                  <p className="text-xs font-medium text-slate-500">Connected Business Gemini Keys</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {
-                      Object.values(infraOverview?.aiSummaries ?? {}).filter(
-                        (a) => a.connectionStatus === 'connected',
-                      ).length
-                    }
-                  </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                  <p className="text-xs font-medium text-slate-500">Total Tenant AI Tokens</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {Object.values(infraOverview?.aiSummaries ?? {})
-                      .reduce((sum, a) => sum + (a.totalTokens || 0), 0)
-                      .toLocaleString()}
-                  </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                  <p className="text-xs font-medium text-slate-500">Recent AI Failures</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {Object.values(infraOverview?.aiSummaries ?? {}).reduce(
-                      (sum, a) => sum + (a.failedRequests || 0),
-                      0,
+              <form
+                onSubmit={handleSaveClientAccess}
+                className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
+                  <div>
+                    <h2 className="font-display text-xl font-bold text-slate-900">
+                      Assign Customer Gmail for Client Portal
+                    </h2>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Add a customer&apos;s Gmail address to any business so signing in with that account shows both the Landing Page and their scoped Client Portal.
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSavingAssign || businesses.length === 0}
+                    className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+                  >
+                    {isSavingAssign ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="w-4 h-4" />
                     )}
-                  </p>
+                    <span>Save Client Gmail Access</span>
+                  </button>
                 </div>
-              </div>
+
+                {assignError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {assignError}
+                  </div>
+                )}
+                {assignNotice && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 flex items-center gap-2">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>{assignNotice}</span>
+                  </div>
+                )}
+
+                {businesses.length === 0 ? (
+                  <div className="py-6 text-center space-y-3">
+                    <p className="text-sm text-slate-600">
+                      Add a business first before assigning a customer Gmail address.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onOpenNewBusiness}
+                      className="px-4 py-2 rounded-xl bg-teal-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Add First Business
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                        Select Business
+                      </label>
+                      <select
+                        value={assignBizId}
+                        onChange={(e) => handleSelectAssignBusiness(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
+                      >
+                        {businesses.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} (/review/{b.slug})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                        Customer Gmail ID
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={assignEmail}
+                        onChange={(e) => setAssignEmail(e.target.value)}
+                        placeholder="customer@gmail.com"
+                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                        Portal Access Tier
+                      </label>
+                      <select
+                        value={assignTier}
+                        onChange={(e) => setAssignTier(e.target.value as ClientAccessLevel)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
+                      >
+                        <option value="full">Full Self-Service</option>
+                        <option value="qr_and_questions">QR + Question Editor</option>
+                        <option value="read_only">Read-Only (QR &amp; Stats)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </form>
 
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200">
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    Business-by-Business Firebase &amp; Gemini Status
-                  </h3>
+                <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-display text-base font-bold text-slate-900">
+                      Customer Gmail Access Directory
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
+                      {businesses.filter((b) => Boolean(b.clientEmail)).length} of {businesses.length} businesses linked to a customer Gmail
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={clientSearchQuery}
+                      onChange={(e) => setClientSearchQuery(e.target.value)}
+                      placeholder="Filter by business or Gmail..."
+                      className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-teal-700/20"
+                    />
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
-                        <th className="py-3 px-6">Business</th>
-                        <th className="py-3 px-4">Firebase Project</th>
-                        <th className="py-3 px-4">Provisioning</th>
-                        <th className="py-3 px-4">Gemini Key (Masked)</th>
-                        <th className="py-3 px-4">AI Status</th>
-                        <th className="py-3 px-4 text-right">Tokens Used</th>
-                        <th className="py-3 px-6 text-right">Manage</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {businesses.map((biz) => {
-                        const prov = infraOverview?.provisioningRecords?.[biz.id];
-                        const ai = infraOverview?.aiSummaries?.[biz.id];
-                        return (
+
+                {filteredClientBusinesses.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-slate-500">
+                    No matching businesses found.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
+                          <th className="py-3 px-6">Business</th>
+                          <th className="py-3 px-4">Customer Gmail</th>
+                          <th className="py-3 px-4">Portal Tier</th>
+                          <th className="py-3 px-4">QR Status</th>
+                          <th className="py-3 px-6 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {filteredClientBusinesses.map((biz) => (
                           <tr key={biz.id} className="hover:bg-slate-50/70">
-                            <td className="py-3 px-6 font-semibold text-slate-900">
-                              {biz.name}
-                              <span className="block text-[11px] font-normal text-slate-500">
-                                {biz.lifecycleStatus || 'active'}
-                              </span>
+                            <td className="py-3.5 px-6">
+                              <div className="flex items-center gap-3">
+                                <BusinessLogo
+                                  src={biz.logoDataUrl}
+                                  name={biz.name}
+                                  primaryColor={biz.branding.primaryColor}
+                                  sizeClass="w-8 h-8"
+                                />
+                                <div>
+                                  <p className="font-semibold text-slate-900">{biz.name}</p>
+                                  <p className="text-slate-500 font-mono">/review/{biz.slug}</p>
+                                </div>
+                              </div>
                             </td>
-                            <td className="py-3 px-4 font-mono text-slate-700">
-                              {prov?.projectId || biz.tenantFirebase?.projectId || 'Not Connected'}
+                            <td className="py-3.5 px-4 font-mono text-slate-800">
+                              {biz.clientEmail ? (
+                                biz.clientEmail
+                              ) : (
+                                <span className="text-slate-400 font-sans">Unassigned</span>
+                              )}
                             </td>
-                            <td className="py-3 px-4 text-slate-700">
-                              {prov?.status || (biz.tenantFirebase ? 'completed' : 'not_started')}
+                            <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
+                              {biz.clientAccessLevel === 'read_only'
+                                ? 'Read-Only'
+                                : biz.clientAccessLevel === 'qr_and_questions'
+                                  ? 'QR & Questions'
+                                  : 'Full Self-Service'}
                             </td>
-                            <td className="py-3 px-4 font-mono text-slate-700">
-                              <span className="inline-flex items-center gap-1">
-                                <KeyRound className="w-3 h-3 text-slate-400" />
-                                <span>{ai?.maskedKey || 'Not Set'}</span>
-                              </span>
+                            <td className="py-3.5 px-4 whitespace-nowrap text-slate-800">
+                              {biz.qrConfig.isActive ? 'Active' : 'Paused'}
                             </td>
-                            <td className="py-3 px-4 text-slate-700">
-                              {ai?.connectionStatus || 'not_connected'}
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-900">
-                              {(ai?.totalTokens ?? 0).toLocaleString()}
-                            </td>
-                            <td className="py-3 px-6 text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedBizId(biz.id);
-                                  setDetailTab('infrastructure');
-                                }}
-                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-800 cursor-pointer whitespace-nowrap"
-                              >
-                                Inspect
-                              </button>
+                            <td className="py-3.5 px-6 text-right">
+                              <div className="inline-flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectAssignBusiness(biz.id)}
+                                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-800 cursor-pointer whitespace-nowrap shrink-0"
+                                >
+                                  Edit Gmail
+                                </button>
+                                {biz.clientEmail && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveClientAccess(biz)}
+                                    className="px-3 py-1.5 rounded-lg border border-red-200 bg-white hover:bg-red-50 font-semibold text-red-700 cursor-pointer whitespace-nowrap shrink-0"
+                                  >
+                                    Remove Access
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBizId(biz.id);
+                                    setDetailTab('access');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-700 cursor-pointer whitespace-nowrap shrink-0"
+                                >
+                                  Features
+                                </button>
+                              </div>
                             </td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           ) : section === 'activity' ? (
@@ -1051,74 +1201,155 @@ export function ManagementConsoleView({
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-6 max-w-3xl">
-              <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">
-                  Management Administrators
-                </h2>
-                <p className="text-sm text-slate-600 mt-1">
-                  {BOOTSTRAPPED_ADMIN_EMAIL ? (
-                    <>
-                      Primary platform administrator:{' '}
-                      <span className="font-mono">{BOOTSTRAPPED_ADMIN_EMAIL}</span>.{' '}
-                    </>
-                  ) : null}
-                  Grant additional team members Management Console access by Firebase Auth UID.
-                </p>
+            <div className="space-y-6 max-w-3xl">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-slate-900">
+                    Business Management Access (By Gmail)
+                  </h2>
+                  <p className="text-sm text-slate-600 mt-1">
+                    {BOOTSTRAPPED_ADMIN_EMAIL ? (
+                      <>
+                        Primary owner account:{' '}
+                        <span className="font-mono">{BOOTSTRAPPED_ADMIN_EMAIL}</span>.{' '}
+                      </>
+                    ) : null}
+                    Add team Gmail addresses below so they automatically see Business Management when they sign in.
+                  </p>
+                </div>
+
+                <form
+                  onSubmit={handleAddAdminByEmail}
+                  className="flex flex-col sm:flex-row gap-3"
+                >
+                  <input
+                    type="email"
+                    required
+                    value={newAdminGmail}
+                    onChange={(e) => setNewAdminGmail(e.target.value)}
+                    placeholder="manager@gmail.com"
+                    className="flex-1 h-10 px-3 rounded-lg border border-slate-200 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    className="h-10 px-5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    Grant Business Management Access
+                  </button>
+                </form>
+
+                {adminError && (
+                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 font-medium">
+                    {adminError}
+                  </p>
+                )}
+                {adminStatus && (
+                  <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 font-medium">
+                    {adminStatus}
+                  </p>
+                )}
+
+                <div className="divide-y divide-slate-100 border-t border-slate-200">
+                  {adminEmails.length === 0 ? (
+                    <p className="py-4 text-xs text-slate-500">
+                      No additional Business Management Gmail accounts configured yet.
+                    </p>
+                  ) : (
+                    adminEmails.map((adm) => {
+                      const isSelf =
+                        normalizeEmail(user.email || '') === normalizeEmail(adm.email);
+                      return (
+                        <div
+                          key={adm.email}
+                          className="py-3 flex items-center justify-between gap-4 text-xs"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-900 font-mono">{adm.email}</p>
+                            <p className="text-slate-500">
+                              Opens Business Management on sign-in
+                            </p>
+                          </div>
+                          {!isSelf && (
+                            <button
+                              type="button"
+                              onClick={() => revokeAdminByEmail(adm.email)}
+                              className="p-2 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
+                              aria-label="Revoke Gmail admin access"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  required
-                  value={newAdminUid}
-                  onChange={(e) => setNewAdminUid(e.target.value)}
-                  placeholder="Firebase Auth UID"
-                  className="h-10 px-3 rounded-lg border border-slate-200 font-mono text-xs"
-                />
-                <input
-                  type="email"
-                  required
-                  value={newAdminEmail}
-                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                  placeholder="manager@company.com"
-                  className="h-10 px-3 rounded-lg border border-slate-200 text-xs"
-                />
-                <button
-                  type="submit"
-                  className="h-10 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
-                >
-                  Grant Manager Access
-                </button>
-              </form>
-
-              {adminStatus && <p className="text-xs text-teal-800 font-medium">{adminStatus}</p>}
-
-              <div className="divide-y divide-slate-100 border-t border-slate-200">
-                {admins.length === 0 ? (
-                  <p className="py-4 text-xs text-slate-500">
-                    No additional team admins configured beyond the primary owner account.
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+                <div>
+                  <h3 className="font-display text-base font-bold text-slate-900">
+                    UID-Based Manager Grants (Legacy)
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Optionally grant Business Management access directly by Firebase Auth UID.
                   </p>
-                ) : (
-                  admins.map((adm) => (
-                    <div key={adm.uid} className="py-3 flex items-center justify-between gap-4 text-xs">
-                      <div>
-                        <p className="font-semibold text-slate-900">{adm.email}</p>
-                        <p className="font-mono text-slate-500">{adm.uid}</p>
+                </div>
+
+                <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input
+                    type="text"
+                    required
+                    value={newAdminUid}
+                    onChange={(e) => setNewAdminUid(e.target.value)}
+                    placeholder="Firebase Auth UID"
+                    className="h-10 px-3 rounded-lg border border-slate-200 font-mono text-xs"
+                  />
+                  <input
+                    type="email"
+                    required
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="manager@company.com"
+                    className="h-10 px-3 rounded-lg border border-slate-200 text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="h-10 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    Grant by UID
+                  </button>
+                </form>
+
+                <div className="divide-y divide-slate-100 border-t border-slate-200">
+                  {admins.length === 0 ? (
+                    <p className="py-4 text-xs text-slate-500">
+                      No UID-based team admins configured beyond the primary owner account.
+                    </p>
+                  ) : (
+                    admins.map((adm) => (
+                      <div
+                        key={adm.uid}
+                        className="py-3 flex items-center justify-between gap-4 text-xs"
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-900">{adm.email}</p>
+                          <p className="font-mono text-slate-500">{adm.uid}</p>
+                        </div>
+                        {adm.uid !== user.uid && (
+                          <button
+                            type="button"
+                            onClick={() => revokeAdmin(adm.uid)}
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
+                            aria-label="Revoke access"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
-                      {adm.uid !== user.uid && (
-                        <button
-                          type="button"
-                          onClick={() => revokeAdmin(adm.uid)}
-                          className="p-2 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
-                          aria-label="Revoke access"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}

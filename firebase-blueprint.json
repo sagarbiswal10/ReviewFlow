@@ -422,6 +422,28 @@
         }
       },
       "required": ["uid", "email", "addedBy", "createdAt"]
+    },
+    "AdminEmail": {
+      "title": "AdminEmail",
+      "description": "Platform business management access grant keyed by verified lowercase Gmail/email address.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "addedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["email", "addedBy", "createdAt"]
     }
   },
   "firestore": {
@@ -451,7 +473,11 @@
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
-      "description": "Platform management administrator registry."
+      "description": "Platform management administrator registry by UID."
+    },
+    "/adminEmails/{emailId}": {
+      "schema": { "$ref": "#/entities/AdminEmail" },
+      "description": "Platform management administrator registry by normalized Gmail/email address."
     }
   }
 }
