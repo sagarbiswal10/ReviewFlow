@@ -174,6 +174,7 @@ export function ClientPortalView({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
+  const claimedAttemptRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!switcherOpen) return;
@@ -196,7 +197,13 @@ export function ClientPortalView({
       return;
     }
     const normalizedEmail = (user.email || '').trim().toLowerCase();
-    if (normalizedEmail && activeBusiness.clientEmail === normalizedEmail) {
+    const attemptKey = `${activeBusiness.id}:${user.uid}`;
+    if (
+      normalizedEmail &&
+      activeBusiness.clientEmail === normalizedEmail &&
+      !claimedAttemptRef.current.has(attemptKey)
+    ) {
+      claimedAttemptRef.current.add(attemptKey);
       claimBusinessClientUid(activeBusiness, user.uid);
     }
   }, [
@@ -263,19 +270,32 @@ export function ClientPortalView({
     ? `${publicBaseUrl}/review/${activeBusiness.slug}?v=${activeBusiness.qrConfig.token}`
     : '';
 
+  const qrFgColor = activeBusiness?.qrConfig.fgColor || '#0F172A';
+  const qrBgColor = activeBusiness?.qrConfig.bgColor || '#FFFFFF';
+  const qrIncludeLogo = Boolean(activeBusiness?.qrConfig.includeLogo);
+  const qrLogoSrc = activeBusiness?.logoDataUrl || '';
+
   useEffect(() => {
     const canvas = qrCanvasRef.current;
-    if (!canvas || !activeBusiness || activeTab !== 'qr_features') return;
+    if (!canvas || !activeBusiness?.id || activeTab !== 'qr_features') return;
     renderQrToCanvas({
       canvas,
       url: reviewUrl,
-      fgColor: activeBusiness.qrConfig.fgColor,
-      bgColor: activeBusiness.qrConfig.bgColor,
+      fgColor: qrFgColor,
+      bgColor: qrBgColor,
       size: 280,
-      includeLogo: activeBusiness.qrConfig.includeLogo,
-      logoSrc: activeBusiness.logoDataUrl,
+      includeLogo: qrIncludeLogo,
+      logoSrc: qrLogoSrc,
     });
-  }, [activeBusiness, reviewUrl, activeTab]);
+  }, [
+    activeBusiness?.id,
+    reviewUrl,
+    qrFgColor,
+    qrBgColor,
+    qrIncludeLogo,
+    qrLogoSrc,
+    activeTab,
+  ]);
 
   const accessLevel = activeBusiness?.clientAccessLevel ?? 'read_only';
   const canEditQrOrQuestions = accessLevel === 'qr_and_questions' || accessLevel === 'full';
@@ -729,7 +749,7 @@ export function ClientPortalView({
                 type="button"
                 onClick={() => {
                   window.history.pushState(
-                    {},
+                    { internalReviewNav: true },
                     '',
                     `/review/${activeBusiness.slug}?v=${activeBusiness.qrConfig.token}`,
                   );

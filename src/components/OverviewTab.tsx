@@ -116,7 +116,11 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
           <button
             type="button"
             onClick={() => {
-              window.history.pushState({}, '', `/review/${business.slug}?v=${business.qrConfig.token}`);
+              window.history.pushState(
+                { internalReviewNav: true },
+                '',
+                `/review/${business.slug}?v=${business.qrConfig.token}`,
+              );
               window.dispatchEvent(new PopStateEvent('popstate'));
             }}
             className="px-3.5 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -58,6 +58,14 @@ function parseRoute(pathname: string, search: string): AppRoute {
     return { kind: 'portal' };
   }
   return { kind: 'home' };
+}
+
+function routesEqual(a: AppRoute, b: AppRoute): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'review' && b.kind === 'review') {
+    return a.slug === b.slug && a.tokenParam === b.tokenParam;
+  }
+  return true;
 }
 
 function formatAuthError(err: unknown): string {
@@ -126,6 +134,9 @@ export default function App() {
   const [navigatedInternally, setNavigatedInternally] = useState(false);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState(false);
 
+  const authIdentityRef = useRef<{ uid: string; emailVerified: boolean; email: string } | null>(null);
+  const loadedUidRef = useRef<string | null>(null);
+
   const navigateTo = (path: string, replace = false) => {
     if (path.startsWith('/review/')) {
       setNavigatedInternally(true);
@@ -135,20 +146,27 @@ export default function App() {
     } else {
       window.history.pushState({}, '', path);
     }
-    setRoute(parseRoute(window.location.pathname, window.location.search));
+    const nextRoute = parseRoute(window.location.pathname, window.location.search);
+    setRoute((prev) => (routesEqual(prev, nextRoute) ? prev : nextRoute));
   };
 
   useEffect(() => {
     const onPopState = () => {
-      setRoute(parseRoute(window.location.pathname, window.location.search));
+      const state = window.history.state as { internalReviewNav?: boolean } | null;
+      if (state?.internalReviewNav) {
+        setNavigatedInternally(true);
+      }
+      const nextRoute = parseRoute(window.location.pathname, window.location.search);
+      setRoute((prev) => (routesEqual(prev, nextRoute) ? prev : nextRoute));
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Load public profile when on /review/:slug
+  const reviewSlug = route.kind === 'review' ? route.slug : '';
   useEffect(() => {
-    if (route.kind !== 'review') return;
+    if (route.kind !== 'review' || !reviewSlug) return;
     let cancelled = false;
 
     const loadProfile = async () => {
@@ -159,7 +177,7 @@ export default function App() {
         isBuiltinDemo: false,
       });
 
-      const res = await getPublicProfileBySlug(route.slug);
+      const res = await getPublicProfileBySlug(reviewSlug);
       if (cancelled) return;
 
       if (res.status === 'found' && res.profile) {
@@ -182,7 +200,7 @@ export default function App() {
         return;
       }
 
-      if (route.slug === BUILTIN_DEMO_PROFILE.slug) {
+      if (reviewSlug === BUILTIN_DEMO_PROFILE.slug) {
         setPublicState({
           loading: false,
           status: 'found',
@@ -204,15 +222,21 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [route]);
+  }, [route.kind, reviewSlug]);
 
   // Auth & Role Resolution
   useEffect(() => {
+    let active = true;
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
+      if (!active) return;
 
       if (!nextUser || !nextUser.emailVerified) {
+        authIdentityRef.current = nextUser
+          ? { uid: nextUser.uid, emailVerified: false, email: nextUser.email || '' }
+          : null;
+        loadedUidRef.current = null;
+        setUser(nextUser);
+        setAuthReady(true);
         setIsAdmin(false);
         setRoleReady(true);
         setBusinesses([]);
@@ -222,20 +246,51 @@ export default function App() {
         return;
       }
 
+      const normalizedEmail = (nextUser.email || '').trim().toLowerCase();
+      const prev = authIdentityRef.current;
+      const sameVerifiedIdentity =
+        Boolean(prev) &&
+        prev?.uid === nextUser.uid &&
+        prev?.emailVerified === true &&
+        prev?.email === normalizedEmail;
+
+      authIdentityRef.current = {
+        uid: nextUser.uid,
+        emailVerified: true,
+        email: normalizedEmail,
+      };
+      setUser(nextUser);
+      setAuthReady(true);
+
+      if (sameVerifiedIdentity) {
+        // Avoid blanking the UI or tearing down listeners when Firebase refreshes user metadata/tokens
+        return;
+      }
+
       setRoleReady(false);
       const adminStatus = await checkIsAdmin(nextUser);
+      if (!active) return;
       setIsAdmin(adminStatus);
       setRoleReady(true);
     });
-    return () => unsub();
+    return () => {
+      active = false;
+      unsub();
+    };
   }, []);
+
+  const userUid = user?.uid ?? '';
+  const userEmail = user?.email ?? '';
+  const userEmailVerified = Boolean(user?.emailVerified);
+  const streamScope: 'admin' | 'client' =
+    isAdmin && (route.kind === 'admin' || route.kind === 'home') ? 'admin' : 'client';
 
   // Role-based routing:
   // - Business Management admins on '/' or after login -> '/admin'
   // - Non-admin on '/admin' -> '/portal' (if client access) or '/'
   // - Client Portal users on login from '/' -> '/portal', while still allowing '/' Landing Page
   useEffect(() => {
-    if (!authReady || !roleReady || !user || !user.emailVerified) return;
+    if (!authReady || !roleReady || !userUid || !userEmailVerified) return;
     if (route.kind === 'review') return;
 
     if (isAdmin) {
@@ -258,15 +313,17 @@ export default function App() {
         navigateTo('/portal', true);
       }
     }
-  }, [authReady, roleReady, user, isAdmin, route.kind, businessesLoaded, businesses.length, redirectAfterLogin]);
+  }, [authReady, roleReady, userUid, userEmailVerified, isAdmin, route.kind, businessesLoaded, businesses.length, redirectAfterLogin]);
 
-  // Subscribe to role-appropriate Firestore streams
+  // Subscribe to role-appropriate Firestore streams without wiping loaded UI on route switches
   useEffect(() => {
-    if (!authReady || !roleReady || !user || !user.emailVerified) return;
-    if (route.kind === 'review') return;
+    if (!authReady || !roleReady || !userUid || !userEmailVerified) return;
 
     let settled = false;
-    setBusinessesLoaded(false);
+    const isInitialLoadForUser = loadedUidRef.current !== userUid || reloadSeq > 0;
+    if (isInitialLoadForUser) {
+      setBusinessesLoaded(false);
+    }
     setLoadError(null);
 
     const handleStreamError = (err: Error) => {
@@ -296,10 +353,11 @@ export default function App() {
       }
     }, 12000);
 
-    if (isAdmin && route.kind === 'admin') {
+    if (streamScope === 'admin') {
       const unsubBiz = subscribeToAllBusinesses(
         (items) => {
           settled = true;
+          loadedUidRef.current = userUid;
           window.clearTimeout(timeoutId);
           setBusinesses(items);
           setLoadError(null);
@@ -322,10 +380,11 @@ export default function App() {
     }
 
     const unsubClientBiz = subscribeToClientBusinesses(
-      user.uid,
-      user.email || '',
+      userUid,
+      userEmail,
       (items) => {
         settled = true;
+        loadedUidRef.current = userUid;
         window.clearTimeout(timeoutId);
         setBusinesses(items);
         setLoadError(null);
@@ -338,7 +397,7 @@ export default function App() {
       window.clearTimeout(timeoutId);
       unsubClientBiz();
     };
-  }, [authReady, roleReady, user, isAdmin, route.kind, reloadSeq]);
+  }, [authReady, roleReady, userUid, userEmail, userEmailVerified, streamScope, reloadSeq]);
 
   const activeBusiness = useMemo(() => {
     if (businesses.length === 0) return null;

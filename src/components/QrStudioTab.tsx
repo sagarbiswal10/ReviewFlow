@@ -216,7 +216,11 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
           <button
             type="button"
             onClick={() => {
-              window.history.pushState({}, '', `/review/${business.slug}?v=${token}`);
+              window.history.pushState(
+                { internalReviewNav: true },
+                '',
+                `/review/${business.slug}?v=${token}`,
+              );
               window.dispatchEvent(new PopStateEvent('popstate'));
             }}
             className="min-h-[40px] px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 inline-flex items-center justify-center gap-1.5 cursor-pointer"
