@@ -9,7 +9,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth';
-import { Loader2, MailCheck, PauseCircle, SearchX } from 'lucide-react';
+import { AlertCircle, Loader2, MailCheck, PauseCircle, SearchX } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
 import type { Business, BusinessStats, PublicProfile, ReviewEvent } from './types';
 import { BUILTIN_DEMO_PROFILE } from './data/categoryPresets';
@@ -111,6 +111,8 @@ export default function App() {
   // Scoped Data State
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [businessesLoaded, setBusinessesLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadSeq, setReloadSeq] = useState(0);
   const [statsMap, setStatsMap] = useState<Record<string, BusinessStats>>({});
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(() => {
@@ -244,13 +246,48 @@ export default function App() {
     if (!authReady || !roleReady || !user || !user.emailVerified) return;
     if (route.kind === 'review') return;
 
+    let settled = false;
     setBusinessesLoaded(false);
+    setLoadError(null);
+
+    const handleStreamError = (err: Error) => {
+      settled = true;
+      const msg = err?.message || 'Unable to load workspace data from Firestore.';
+      const lower = msg.toLowerCase();
+      if (lower.includes('permission') || lower.includes('insufficient')) {
+        setLoadError(
+          'Firestore denied read access. Open Firebase Console → Firestore Database → Rules and publish your firestore.rules file.',
+        );
+      } else if (lower.includes('not-found') || lower.includes('database')) {
+        setLoadError(
+          'Firestore database was not found. Make sure you created the (default) Firestore database in Firebase Console and set VITE_FIREBASE_DATABASE_ID cleanly.',
+        );
+      } else {
+        setLoadError(msg);
+      }
+      setBusinessesLoaded(true);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      if (!settled) {
+        setLoadError(
+          'Connecting to Firestore timed out. Check that your Firestore (default) database is created, firestore.rules are published, and browser privacy shields are not blocking firestore.googleapis.com.',
+        );
+        setBusinessesLoaded(true);
+      }
+    }, 12000);
 
     if (isAdmin && route.kind === 'admin') {
-      const unsubBiz = subscribeToAllBusinesses((items) => {
-        setBusinesses(items);
-        setBusinessesLoaded(true);
-      });
+      const unsubBiz = subscribeToAllBusinesses(
+        (items) => {
+          settled = true;
+          window.clearTimeout(timeoutId);
+          setBusinesses(items);
+          setLoadError(null);
+          setBusinessesLoaded(true);
+        },
+        handleStreamError,
+      );
       const unsubStats = subscribeToAllBusinessStats((map) => {
         setStatsMap(map);
       });
@@ -258,6 +295,7 @@ export default function App() {
         setEvents(items);
       });
       return () => {
+        window.clearTimeout(timeoutId);
         unsubBiz();
         unsubStats();
         unsubEvents();
@@ -268,15 +306,20 @@ export default function App() {
       user.uid,
       user.email || '',
       (items) => {
+        settled = true;
+        window.clearTimeout(timeoutId);
         setBusinesses(items);
+        setLoadError(null);
         setBusinessesLoaded(true);
       },
+      handleStreamError,
     );
 
     return () => {
+      window.clearTimeout(timeoutId);
       unsubClientBiz();
     };
-  }, [authReady, roleReady, user, isAdmin, route.kind]);
+  }, [authReady, roleReady, user, isAdmin, route.kind, reloadSeq]);
 
   const activeBusiness = useMemo(() => {
     if (businesses.length === 0) return null;
@@ -554,6 +597,38 @@ export default function App() {
         <p className="text-sm font-medium">
           {isAdmin ? 'Loading management console...' : 'Loading your business portal...'}
         </p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6 py-12">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-700 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h1 className="font-display text-xl font-bold text-slate-900">
+            Unable to Connect to Database
+          </h1>
+          <p className="text-sm text-slate-600 leading-relaxed">{loadError}</p>
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => setReloadSeq((n) => n + 1)}
+              className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold cursor-pointer"
+            >
+              Retry Connection
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
