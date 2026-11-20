@@ -162,13 +162,14 @@ export function CustomerReviewFlow({
         throw new Error(data.error || 'Could not generate review draft.');
       }
 
-      const nextDrafts: Partial<Record<ReviewStyle, string>> = {
-        short: data.drafts?.short || (styleToUse === 'short' ? data.review : undefined),
-        detailed: data.drafts?.detailed || (styleToUse === 'detailed' ? data.review : undefined),
-        professional:
-          data.drafts?.professional || (styleToUse === 'professional' ? data.review : undefined),
-      };
-      setDraftsByStyle(nextDrafts);
+      const nextDrafts: Partial<Record<ReviewStyle, string>> = {};
+      if (data.drafts?.short) nextDrafts.short = data.drafts.short;
+      if (data.drafts?.detailed) nextDrafts.detailed = data.drafts.detailed;
+      if (data.drafts?.professional) nextDrafts.professional = data.drafts.professional;
+      if (!nextDrafts[styleToUse] && data.review) {
+        nextDrafts[styleToUse] = data.review;
+      }
+      setDraftsByStyle((prev) => ({ ...prev, ...nextDrafts }));
       setKeywordsUsed(Array.isArray(data.keywordsUsed) ? data.keywordsUsed : []);
       setDraftText(nextDrafts[styleToUse] || data.review);
       setStep('draft');
@@ -242,6 +243,7 @@ export function CustomerReviewFlow({
   const handleRegenerate = async () => {
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
+    setDraftsByStyle({});
     await requestAiDraft(selectedStyle, nextSeed);
   };
 

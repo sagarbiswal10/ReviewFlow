@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
@@ -295,10 +295,15 @@ async function generateGeminiContentWithFallback(
     for (const modelName of modelAttempts) {
       for (let attempt = 0; attempt < maxTransientAttempts; attempt += 1) {
         try {
+          const supportsMinimalThinking =
+            modelName.startsWith('gemini-3.') && modelName.includes('flash-lite');
+          const modelConfig = supportsMinimalThinking
+            ? { ...config, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
+            : config;
           const response = await ai.models.generateContent({
             model: modelName,
             contents,
-            config,
+            config: modelConfig,
           });
           const text = (response.text ?? '').trim();
           if (text) return text;
@@ -645,20 +650,21 @@ export async function processGenerateReview(
     const categoryTerms = getCategoryKeywords(category);
     const mergedSeoKeywords = Array.from(
       new Set([...customSeoKeywords, ...categoryTerms]),
-    ).slice(0, 14);
-    const selectedTerms = responses
-      .flatMap((r) => (Array.isArray(r?.answers) ? r.answers : []))
-      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+    ).slice(0, 10);
+
+    const styleGuidance: Record<ReviewStyle, string> = {
+      short: '2-3 sentences (~28-48 words), crisp and natural.',
+      detailed: '4-5 sentences (~60-95 words), conversational story weaving services, experience, and comments.',
+      professional: '3-4 sentences (~45-70 words), articulate and courteous.',
+    };
 
     const prompt = [
       `Business: ${businessName}`,
       category ? `Category: ${category}` : '',
-      `Target Local Search Keywords (prioritize the business's tailored keywords naturally where true to customer selections): ${mergedSeoKeywords.join(', ')}`,
-      selectedTerms.length > 0
-        ? `Customer Selected Services/Traits: ${selectedTerms.join(', ')}`
-        : '',
+      `Style (${style}): ${styleGuidance[style]}`,
+      `SEO Keywords: ${mergedSeoKeywords.join(', ')}`,
       `Variation: ${variationSeed}`,
-      'Customer Selections:',
+      'Selections:',
       formattedResponses || '(None)',
       additionalComments ? `Comments: "${additionalComments}"` : '',
     ]
@@ -666,19 +672,9 @@ export async function processGenerateReview(
       .join('\n');
 
     const systemInstruction = [
-      'You write authentic, human-sounding Google reviews optimized for Google Maps local search relevance.',
-      'Return valid JSON matching {"short": "...", "detailed": "...", "professional": "...", "keywordsUsed": ["..."]}.',
-      'Generate ALL THREE variations (short, detailed, professional) from the exact customer inputs:',
-      '- short: 2-3 sentences (~28-48 words), crisp and natural.',
-      '- detailed: 4-5 sentences (~60-95 words), conversational story weaving services, staff/experience, and comments.',
-      '- professional: 3-4 sentences (~45-70 words), articulate and courteous.',
-      'SEO & Authenticity Rules:',
-      '1. Naturally include the business name, the primary category search term (e.g. "hair salon", "gym", "restaurant", "spa", "auto repair", matching the business category), and the exact services/items the customer selected so Google indexes the review for local searches.',
-      '2. Keep wording natural—never stuff awkward keyword lists or repeat the same phrase robotically.',
-      '3. First-person perspective ("I" or "We"). Never invent staff names, prices, or unmentioned services.',
-      '4. Match exact sentiment: if customer chose "Average", "Poor", or criticism, write an honest, balanced review without inflating praise.',
-      '5. Avoid clichés ("exceeded all expectations", "cannot recommend enough", "from start to finish"). Plain text only—no quotes, hashtags, bullets, or emojis.',
-      '6. Return keywordsUsed with the 3-6 exact local search phrases included in the drafts.',
+      'Write 1 authentic first-person ("I"/"We") Google review from customer selections, optimized naturally for local search.',
+      'Return JSON: {"review":"...","keywordsUsed":["..."]}.',
+      'Rules: Include business name, category term, and selected services naturally; never invent details; match exact sentiment (keep honest if Average/Poor); no clichés ("exceeded all expectations"), quotes, bullets, or emojis; list 2-5 exact keywords used in keywordsUsed.',
     ].join('\n');
 
     let rawText = '';
@@ -701,53 +697,35 @@ export async function processGenerateReview(
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              short: {
-                type: Type.STRING,
-                description: 'Short & Simple draft (2-3 sentences).',
-              },
-              detailed: {
-                type: Type.STRING,
-                description: 'Natural & Detailed draft (4-5 sentences).',
-              },
-              professional: {
-                type: Type.STRING,
-                description: 'Professional draft (3-4 sentences).',
-              },
+              review: { type: Type.STRING },
               keywordsUsed: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING },
-                description: '3 to 6 high-intent Google search keywords included naturally.',
               },
             },
-            required: ['short', 'detailed', 'professional', 'keywordsUsed'],
+            required: ['review', 'keywordsUsed'],
           },
         },
         2,
       );
     }
 
-    let drafts: Record<ReviewStyle, string> = { short: '', detailed: '', professional: '' };
+    let reviewText = '';
     let keywordsUsed: string[] = [];
 
     if (rawText) {
       try {
         const parsed = JSON.parse(rawText) as {
+          review?: string;
           short?: string;
           detailed?: string;
           professional?: string;
-          review?: string;
           keywordsUsed?: unknown;
         };
-        const fallbackSingle = typeof parsed.review === 'string' ? parsed.review.trim() : '';
-        drafts = {
-          short:
-            (typeof parsed.short === 'string' ? parsed.short.trim() : '') || fallbackSingle,
-          detailed:
-            (typeof parsed.detailed === 'string' ? parsed.detailed.trim() : '') || fallbackSingle,
-          professional:
-            (typeof parsed.professional === 'string' ? parsed.professional.trim() : '') ||
-            fallbackSingle,
-        };
+        const chosen = parsed[style];
+        reviewText =
+          (typeof parsed.review === 'string' ? parsed.review.trim() : '') ||
+          (typeof chosen === 'string' ? chosen.trim() : '');
         if (Array.isArray(parsed.keywordsUsed)) {
           keywordsUsed = parsed.keywordsUsed
             .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
@@ -755,12 +733,9 @@ export async function processGenerateReview(
             .slice(0, 6);
         }
       } catch {
-        const cleanFallback = rawText.replace(/^["']|["']$/g, '').trim();
-        drafts = { short: cleanFallback, detailed: cleanFallback, professional: cleanFallback };
+        reviewText = rawText.replace(/^["']|["']$/g, '').trim();
       }
     }
-
-    const reviewText = drafts[style] || drafts.short || drafts.detailed || drafts.professional;
 
     if (!reviewText) {
       return {
@@ -773,7 +748,7 @@ export async function processGenerateReview(
       status: 200,
       data: {
         review: reviewText,
-        drafts,
+        drafts: { [style]: reviewText },
         keywordsUsed,
       },
     };
