@@ -27,6 +27,7 @@ import type {
   Business,
   BusinessBranding,
   BusinessCategory,
+  BusinessLifecycleStatus,
   BusinessStats,
   ClientAccessLevel,
   EnabledFeatures,
@@ -35,9 +36,12 @@ import type {
   QrConfig,
   ReviewEvent,
   ReviewEventType,
+  TenantWebAppConfig,
 } from '../types';
 
-export const BOOTSTRAPPED_ADMIN_EMAIL = 'harkiratcourse36@gmail.com';
+export const BOOTSTRAPPED_ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '')
+  .trim()
+  .toLowerCase();
 
 export function sanitizeSlug(raw: string): string {
   const cleaned = raw
@@ -144,6 +148,37 @@ function sanitizeSeoKeywords(keywords?: unknown): string[] {
   return clean;
 }
 
+function sanitizeLifecycleStatus(status?: unknown): BusinessLifecycleStatus {
+  if (
+    status === 'onboarding' ||
+    status === 'provisioning' ||
+    status === 'active' ||
+    status === 'suspended'
+  ) {
+    return status;
+  }
+  return 'active';
+}
+
+function sanitizeTenantFirebase(config?: TenantWebAppConfig | null): TenantWebAppConfig | null {
+  if (!config || typeof config !== 'object') return null;
+  const projectId = clampString(config.projectId, 120);
+  const apiKey = clampString(config.apiKey, 120);
+  const authDomain = clampString(config.authDomain, 160);
+  const appId = clampString(config.appId, 160);
+  const databaseId = clampString(config.databaseId, 80);
+  const storageBucket = clampString(config.storageBucket, 160);
+  if (!projectId && !apiKey && !appId) return null;
+  return {
+    projectId,
+    apiKey,
+    authDomain,
+    appId,
+    databaseId,
+    ...(storageBucket ? { storageBucket } : {}),
+  };
+}
+
 export async function fetchAutoSeoKeywords(input: {
   businessName: string;
   category: BusinessCategory;
@@ -179,6 +214,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
   return {
     id,
     ownerId: data.ownerId || '',
+    ownerName: clampString(data.ownerName, 120),
     clientEmail: normalizeEmail(data.clientEmail || ''),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
     enabledFeatures: sanitizeEnabledFeatures(data.enabledFeatures),
@@ -188,6 +224,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     address: data.address || '',
     phone: data.phone || '',
     contactEmail: data.contactEmail || '',
+    website: clampString(data.website, 300),
     googleReviewUrl: data.googleReviewUrl || '',
     logoDataUrl: data.logoDataUrl || '',
     branding: data.branding || {
@@ -209,13 +246,19 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
       hydratedKeywords.length > 0
         ? hydratedKeywords
         : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[category] ?? [],
+    lifecycleStatus: data.lifecycleStatus ? sanitizeLifecycleStatus(data.lifecycleStatus) : 'active',
+    tenantFirebase: data.tenantFirebase ? sanitizeTenantFirebase(data.tenantFirebase) : null,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
 }
 
 export async function checkIsAdmin(user: User): Promise<boolean> {
-  if (user.emailVerified && user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL) {
+  if (
+    BOOTSTRAPPED_ADMIN_EMAIL &&
+    user.emailVerified &&
+    user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL
+  ) {
     return true;
   }
   try {
@@ -467,6 +510,7 @@ export async function checkSlugAvailability(
 export async function createBusiness(
   ownerId: string,
   input: {
+    ownerName?: string;
     clientEmail?: string;
     clientAccessLevel?: ClientAccessLevel;
     enabledFeatures?: EnabledFeatures;
@@ -476,12 +520,15 @@ export async function createBusiness(
     address: string;
     phone: string;
     contactEmail: string;
+    website?: string;
     googleReviewUrl: string;
     logoDataUrl: string;
     branding: BusinessBranding;
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
     seoKeywords?: string[];
+    lifecycleStatus?: BusinessLifecycleStatus;
+    tenantFirebase?: TenantWebAppConfig | null;
   },
 ): Promise<string> {
   const businessRef = doc(collection(db, 'businesses'));
@@ -495,6 +542,8 @@ export async function createBusiness(
 
   const now = serverTimestamp();
   const cleanName = clampString(input.name, 120) || 'My Business';
+  const cleanOwnerName = clampString(input.ownerName, 120);
+  const cleanWebsite = clampString(input.website, 300);
   const cleanGoogleUrl = clampString(input.googleReviewUrl, 500);
   const cleanLogo = clampString(input.logoDataUrl, 350000);
   const cleanClientEmail = normalizeEmail(input.clientEmail || '');
@@ -508,9 +557,12 @@ export async function createBusiness(
     providedKeywords.length > 0
       ? providedKeywords
       : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
+  const cleanLifecycle = sanitizeLifecycleStatus(input.lifecycleStatus);
+  const cleanTenantFirebase = sanitizeTenantFirebase(input.tenantFirebase);
 
   const businessPayload = {
     ownerId: clampString(ownerId, 128),
+    ...(cleanOwnerName ? { ownerName: cleanOwnerName } : {}),
     clientEmail: cleanClientEmail,
     clientAccessLevel: cleanAccessLevel,
     enabledFeatures: cleanFeatures,
@@ -520,12 +572,15 @@ export async function createBusiness(
     address: clampString(input.address, 240),
     phone: clampString(input.phone, 40),
     contactEmail: clampString(input.contactEmail, 120),
+    ...(cleanWebsite ? { website: cleanWebsite } : {}),
     googleReviewUrl: cleanGoogleUrl,
     logoDataUrl: cleanLogo,
     branding: cleanBranding,
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
     seoKeywords: cleanSeoKeywords,
+    lifecycleStatus: cleanLifecycle,
+    ...(cleanTenantFirebase ? { tenantFirebase: cleanTenantFirebase } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -543,6 +598,8 @@ export async function createBusiness(
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
     seoKeywords: cleanSeoKeywords,
+    lifecycleStatus: cleanLifecycle,
+    ...(cleanTenantFirebase ? { tenantFirebase: cleanTenantFirebase } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -577,6 +634,7 @@ export async function createBusiness(
 export async function updateBusiness(
   current: Business,
   updates: Partial<{
+    ownerName: string;
     clientEmail: string;
     clientAccessLevel: ClientAccessLevel;
     enabledFeatures: EnabledFeatures;
@@ -586,12 +644,15 @@ export async function updateBusiness(
     address: string;
     phone: string;
     contactEmail: string;
+    website: string;
     googleReviewUrl: string;
     logoDataUrl: string;
     branding: BusinessBranding;
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
     seoKeywords: string[];
+    lifecycleStatus: BusinessLifecycleStatus;
+    tenantFirebase: TenantWebAppConfig | null;
   }>,
   options: { isAdmin?: boolean } = {},
 ): Promise<string> {
@@ -653,6 +714,14 @@ export async function updateBusiness(
     ? sanitizeEnabledFeatures(updates.enabledFeatures ?? current.enabledFeatures)
     : current.enabledFeatures;
 
+  const nextLifecycle = updates.lifecycleStatus
+    ? sanitizeLifecycleStatus(updates.lifecycleStatus)
+    : current.lifecycleStatus;
+  const nextTenantFirebase =
+    updates.tenantFirebase !== undefined
+      ? sanitizeTenantFirebase(updates.tenantFirebase)
+      : current.tenantFirebase;
+
   const businessUpdates: Record<string, unknown> = {
     slug: nextSlug,
     name: nextName,
@@ -668,6 +737,19 @@ export async function updateBusiness(
     seoKeywords: nextSeoKeywords,
     updatedAt: now,
   };
+
+  if (updates.ownerName !== undefined) {
+    businessUpdates.ownerName = clampString(updates.ownerName, 120);
+  }
+  if (updates.website !== undefined) {
+    businessUpdates.website = clampString(updates.website, 300);
+  }
+  if (updates.lifecycleStatus !== undefined && nextLifecycle) {
+    businessUpdates.lifecycleStatus = nextLifecycle;
+  }
+  if (updates.tenantFirebase !== undefined) {
+    businessUpdates.tenantFirebase = nextTenantFirebase;
+  }
 
   if (isAdmin) {
     businessUpdates.clientEmail = nextClientEmail;
@@ -692,6 +774,8 @@ export async function updateBusiness(
       qrConfig: nextQrConfig,
       questions: nextQuestions,
       seoKeywords: nextSeoKeywords,
+      ...(nextLifecycle ? { lifecycleStatus: nextLifecycle } : {}),
+      ...(nextTenantFirebase !== undefined ? { tenantFirebase: nextTenantFirebase } : {}),
       createdAt: current.createdAt ?? now,
       updatedAt: now,
     });
@@ -705,6 +789,12 @@ export async function updateBusiness(
       qrConfig: nextQrConfig,
       questions: nextQuestions,
       seoKeywords: nextSeoKeywords,
+      ...(updates.lifecycleStatus !== undefined && nextLifecycle
+        ? { lifecycleStatus: nextLifecycle }
+        : {}),
+      ...(updates.tenantFirebase !== undefined
+        ? { tenantFirebase: nextTenantFirebase }
+        : {}),
       updatedAt: now,
     };
     if (isAdmin) {

@@ -226,9 +226,9 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
           </button>
         </div>
 
-        {publicBaseUrl.startsWith('https://ais-dev-') && (
+        {(publicBaseUrl.includes('localhost') || publicBaseUrl.includes('127.0.0.1')) && (
           <p className="mt-4 text-[11px] text-slate-500 leading-relaxed text-left bg-slate-50 border border-slate-200 rounded-xl p-3">
-            Note: You are viewing a private AI Studio dev preview (<span className="font-mono">ais-dev-...</span>). Customers scanning QR codes on phones need the published Shared App URL (<span className="font-mono">ais-pre-...</span>) or your custom domain (<span className="font-mono">VITE_PUBLIC_APP_URL</span>).
+            Local environment detected. Set <span className="font-mono">VITE_PUBLIC_APP_URL</span> to your live domain so printed QR codes resolve on customer phones.
           </p>
         )}
       </div>

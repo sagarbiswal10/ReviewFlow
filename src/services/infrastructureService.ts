@@ -1,5 +1,6 @@
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { getApiBaseUrl } from '../utils/apiClient';
 import type {
   AdminInfrastructureOverview,
   AiUsageLogRecord,
@@ -25,7 +26,9 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = await getAuthHeaders();
-  const res = await fetch(url, {
+  const baseUrl = getApiBaseUrl();
+  const targetUrl = /^https?:\/\//i.test(url) ? url : `${baseUrl}${url}`;
+  const res = await fetch(targetUrl, {
     ...init,
     headers: {
       ...headers,
@@ -157,7 +160,7 @@ export async function syncNonSecretIntegrationToCentral(input: {
         firebaseProvisioningStatus: provisioning?.status || 'not_started',
         aiConnectionStatus: ai?.connectionStatus || 'not_connected',
         maskedGeminiKey: ai?.maskedKey || '',
-        modelName: ai?.modelName || 'gemini-3.1-flash-lite',
+        modelName: ai?.modelName || import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash-lite',
         totalTokensUsed: ai?.totalTokens ?? 0,
         ...(alertThresholds ? { alertThresholds } : {}),
         updatedAt: serverTimestamp(),

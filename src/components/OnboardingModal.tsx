@@ -92,7 +92,9 @@ export function OnboardingModal({
 
   // Step 3: Gemini Integration State
   const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [geminiModel, setGeminiModel] = useState('gemini-3.1-flash-lite');
+  const [geminiModel, setGeminiModel] = useState(
+    import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash-lite',
+  );
   const [maskedKey, setMaskedKey] = useState('');
   const [aiConnected, setAiConnected] = useState(false);
 
@@ -840,19 +842,19 @@ export function OnboardingModal({
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-slate-900">Connect Business-Owned Gemini API Key</span>
                 <a
-                  href="https://aistudio.google.com/apikey"
+                  href="https://console.cloud.google.com/apis/credentials"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-teal-700 font-semibold inline-flex items-center gap-1 underline"
                 >
-                  <span>aistudio.google.com/apikey</span>
+                  <span>console.cloud.google.com</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
               <ol className="list-decimal list-inside space-y-1">
-                <li>Open Google AI Studio and sign in with this business&apos;s Google account.</li>
-                <li>Create/select the business&apos;s Google Cloud project and configure billing.</li>
-                <li>Create a Gemini API key, paste it below, and click Validate &amp; Encrypt.</li>
+                <li>Open Google Cloud Console and sign in with this business&apos;s Google account.</li>
+                <li>Create/select the business&apos;s Google Cloud project and enable the Generative Language API.</li>
+                <li>Create a Gemini API key, paste it below, and click Validate &amp; Save.</li>
               </ol>
             </div>
 
@@ -864,7 +866,7 @@ export function OnboardingModal({
                   required
                   value={geminiApiKey}
                   onChange={(e) => setGeminiApiKey(e.target.value)}
-                  placeholder="AIzaSy..."
+                  placeholder="Enter Gemini API key"
                   className="w-full h-10 px-3 rounded-lg border border-slate-200 font-mono text-xs"
                 />
               </div>
@@ -875,6 +877,7 @@ export function OnboardingModal({
                   onChange={(e) => setGeminiModel(e.target.value)}
                   className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs bg-white"
                 >
+                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Cheapest)</option>
                   <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
                   <option value="gemini-4-hydrogen">Gemini 4 Flash</option>
                   <option value="gemini-4-argon">Gemini 4 Pro (Paid)</option>

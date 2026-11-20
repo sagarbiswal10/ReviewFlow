@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +12,12 @@ const __dirname = path.dirname(__filename);
 const isProd = process.env.NODE_ENV === 'production';
 const PORT = isProd ? Number(process.env.PORT) || 3000 : 3000;
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'gemini').toLowerCase() === 'openai' ? 'openai' : 'gemini';
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite').trim();
+const GEMINI_FALLBACK_MODEL = (
+  process.env.GEMINI_FALLBACK_MODEL !== undefined
+    ? process.env.GEMINI_FALLBACK_MODEL
+    : 'gemini-3.1-flash-lite'
+).trim();
 const API_AUTH_REQUIRED = process.env.API_AUTH_REQUIRED !== 'false';
 
 type ReviewStyle = 'short' | 'detailed' | 'professional';
@@ -236,9 +242,14 @@ async function requireAuthenticatedUser(
 }
 
 function createGenAIClient() {
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
   const disableHeader = process.env.DISABLE_AISTUDIO_HEADER === 'true';
+  const useVertexAi =
+    process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true' || apiKey.startsWith('AQ.');
+
   return new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
+    apiKey,
+    ...(useVertexAi ? { vertexai: true } : {}),
     ...(disableHeader
       ? {}
       : {
@@ -257,7 +268,8 @@ async function callOpenAIJson(systemInstruction: string, prompt: string): Promis
     throw new Error('OPENAI_API_KEY is not configured on the server.');
   }
   const model = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -424,9 +436,14 @@ async function startServer() {
   const seoKeywordLimiter = createRateLimiter(30, 5 * 60 * 1000);
 
   app.get('/api/health', (_req: Request, res: Response) => {
+    const activeModel =
+      AI_PROVIDER === 'openai'
+        ? (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
+        : GEMINI_MODEL;
     res.json({
       ok: true,
       provider: AI_PROVIDER,
+      model: activeModel,
       authRequired: API_AUTH_REQUIRED,
     });
   });
@@ -480,20 +497,18 @@ async function startServer() {
           }
 
           const ai = createGenAIClient();
-          const attempts: Array<{ model: string; thinkingLevel?: ThinkingLevel }> = [
-            { model: 'gemini-3.1-flash-lite' },
-            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
-          ];
+          const modelAttempts = Array.from(
+            new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
+          );
 
           let lastErr: unknown;
-          for (const cfg of attempts) {
+          for (const modelName of modelAttempts) {
             try {
               const result = await ai.models.generateContent({
-                model: cfg.model,
+                model: modelName,
                 contents: prompt,
                 config: {
                   systemInstruction,
-                  ...(cfg.thinkingLevel ? { thinkingConfig: { thinkingLevel: cfg.thinkingLevel } } : {}),
                   responseMimeType: 'application/json',
                   responseSchema: {
                     type: Type.OBJECT,
@@ -513,8 +528,13 @@ async function startServer() {
             } catch (err) {
               lastErr = err;
               const msg = err instanceof Error ? err.message : String(err);
-              const isTransient = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
-              if (!isTransient) throw err;
+              const isRecoverable =
+                msg.includes('503') ||
+                msg.includes('UNAVAILABLE') ||
+                msg.includes('429') ||
+                msg.includes('404') ||
+                msg.includes('NOT_FOUND');
+              if (!isRecoverable) throw err;
             }
           }
           if (!responseText && lastErr) throw lastErr;
@@ -640,20 +660,18 @@ async function startServer() {
 
         const ai = createGenAIClient();
         const generateFast = async () => {
-          const attempts: Array<{ model: string; thinkingLevel?: ThinkingLevel }> = [
-            { model: 'gemini-3.1-flash-lite' },
-            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
-          ];
+          const modelAttempts = Array.from(
+            new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
+          );
           let lastErr: unknown;
-          for (const cfg of attempts) {
+          for (const modelName of modelAttempts) {
             for (let retry = 0; retry < 2; retry += 1) {
               try {
                 return await ai.models.generateContent({
-                  model: cfg.model,
+                  model: modelName,
                   contents: prompt,
                   config: {
                     systemInstruction,
-                    ...(cfg.thinkingLevel ? { thinkingConfig: { thinkingLevel: cfg.thinkingLevel } } : {}),
                     responseMimeType: 'application/json',
                     responseSchema: {
                       type: Type.OBJECT,
@@ -683,8 +701,13 @@ async function startServer() {
               } catch (err) {
                 lastErr = err;
                 const msg = err instanceof Error ? err.message : String(err);
-                const isTransient = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
-                if (!isTransient) throw err;
+                const isRecoverable =
+                  msg.includes('503') ||
+                  msg.includes('UNAVAILABLE') ||
+                  msg.includes('429') ||
+                  msg.includes('404') ||
+                  msg.includes('NOT_FOUND');
+                if (!isRecoverable) throw err;
                 await new Promise((resolve) => setTimeout(resolve, 150));
               }
             }

@@ -15,6 +15,7 @@ import {
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
 export const ALLOWED_GEMINI_MODELS = [
+  'gemini-2.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-4-hydrogen',
   'gemini-4-argon',
@@ -22,7 +23,11 @@ export const ALLOWED_GEMINI_MODELS = [
 
 export type AllowedGeminiModel = (typeof ALLOWED_GEMINI_MODELS)[number];
 
-export const DEFAULT_GEMINI_MODEL: AllowedGeminiModel = 'gemini-3.1-flash-lite';
+export const DEFAULT_GEMINI_MODEL: AllowedGeminiModel = ALLOWED_GEMINI_MODELS.includes(
+  process.env.GEMINI_MODEL as AllowedGeminiModel,
+)
+  ? (process.env.GEMINI_MODEL as AllowedGeminiModel)
+  : 'gemini-2.5-flash-lite';
 
 export interface QuestionResponseInput {
   question: string;
@@ -73,7 +78,7 @@ export function classifyGeminiError(err: unknown): ClassifiedGeminiError {
       httpStatus: 400,
       retryable: false,
       userMessage:
-        'This Gemini API key is invalid or has been revoked. Generate a valid key at aistudio.google.com/apikey.',
+        'This Gemini API key is invalid or has been revoked. Generate a valid key in your Google Cloud / Gemini API console.',
       detail: rawMessage.slice(0, 220),
     };
   }
@@ -187,7 +192,7 @@ export async function validateGeminiApiKey(
       code: 'INVALID_KEY',
       connectionStatus: 'invalid_key',
       httpStatus: 400,
-      message: 'Please paste a valid Gemini API key from Google AI Studio (aistudio.google.com/apikey).',
+      message: 'Please paste a valid Gemini API key.',
     };
   }
 
@@ -776,7 +781,7 @@ export async function generateReviewWithTenantKey(
 
   if (!decryptedKey) {
     const err = new Error(
-      `${resolvedBusinessName || 'This business'} has not connected its own Gemini API key yet. Business owners must add their Gemini API key in Portal → Infrastructure & AI (from aistudio.google.com/apikey).`,
+      `${resolvedBusinessName || 'This business'} has not connected its own Gemini API key yet. Business owners must add their Gemini API key in Portal → Infrastructure & AI.`,
     ) as Error & { httpStatus?: number; code?: string };
     err.httpStatus = 400;
     err.code = 'TENANT_AI_KEY_MISSING';

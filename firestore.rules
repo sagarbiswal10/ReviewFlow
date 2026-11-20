@@ -20,15 +20,9 @@ service cloud.firestore {
       return request.auth.token.email is string ? request.auth.token.email.lower() : '';
     }
 
-    function isBootstrappedAdmin() {
-      return isVerifiedUser() && userEmailLower() == 'harkiratcourse36@gmail.com';
-    }
-
     function isAdmin() {
-      return isVerifiedUser() && (
-        userEmailLower() == 'harkiratcourse36@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     function incoming() {
@@ -295,14 +289,14 @@ service cloud.firestore {
     function isAssignedClient(data) {
       return isVerifiedUser() && (
         data.ownerId == request.auth.uid ||
-        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail == userEmailLower())
+        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail.lower() == userEmailLower())
       );
     }
 
     // 1. Platform Management Admins Registry
     match /admins/{uid} {
       allow get: if isVerifiedUser() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
-      allow list: if isBootstrappedAdmin();
+      allow list: if isAdmin();
       allow create: if isAdmin() &&
         isValidId(uid) &&
         isValidAdminDoc(incoming()) &&
@@ -315,9 +309,9 @@ service cloud.firestore {
 
     // 2. Private Business Profiles (Management Admin + Assigned Business Client)
     match /businesses/{businessId} {
-      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || (resource != null && isAssignedClient(existing())));
       allow list: if isVerifiedUser() && (
-        isBootstrappedAdmin() ||
+        isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
         (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
       );
@@ -384,7 +378,7 @@ service cloud.firestore {
         isAdmin() ||
         (isVerifiedUser() && resource.data.ownerId == request.auth.uid)
       );
-      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
       allow create: if isVerifiedUser() &&
         isValidSlug(slug) &&
         isValidPublicProfile(incoming()) &&
@@ -438,9 +432,16 @@ service cloud.firestore {
 
     // 4. Per-Business Aggregate Stats
     match /businessStats/{businessId} {
-      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow get: if isVerifiedUser() && isValidId(businessId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing())) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data)
+        )
+      );
       allow list: if isVerifiedUser() && (
-        isBootstrappedAdmin() ||
+        isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
         (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
       );
@@ -499,8 +500,8 @@ service cloud.firestore {
 
     // 5. Immutable Review Analytics Events
     match /reviewEvents/{eventId} {
-      allow get: if isVerifiedUser() && isValidId(eventId) && (isAdmin() || existing().ownerId == request.auth.uid);
-      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow get: if isVerifiedUser() && isValidId(eventId) && (isAdmin() || (resource != null && existing().ownerId == request.auth.uid));
+      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
       allow create: if isValidId(eventId) &&
         isValidReviewEvent(incoming()) &&
         incoming().createdAt == request.time &&
@@ -513,9 +514,16 @@ service cloud.firestore {
 
     // 6. Central Non-Secret Business Infrastructure Summaries
     match /businessIntegrations/{businessId} {
-      allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isAssignedClient(existing()));
+      allow get: if isVerifiedUser() && isValidId(businessId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing())) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data)
+        )
+      );
       allow list: if isVerifiedUser() && (
-        isBootstrappedAdmin() ||
+        isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
         (resource.data.clientEmail is string && resource.data.clientEmail.size() > 0 && resource.data.clientEmail == userEmailLower())
       );
@@ -537,8 +545,8 @@ service cloud.firestore {
 
     // 7. Immutable AI Token Usage Logs Summary
     match /aiUsageLogs/{logId} {
-      allow get: if isVerifiedUser() && isValidId(logId) && (isAdmin() || existing().ownerId == request.auth.uid);
-      allow list: if isVerifiedUser() && (isBootstrappedAdmin() || resource.data.ownerId == request.auth.uid);
+      allow get: if isVerifiedUser() && isValidId(logId) && (isAdmin() || (resource != null && existing().ownerId == request.auth.uid));
+      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
       allow create: if isValidId(logId) &&
         isValidAiUsageLog(incoming()) &&
         incoming().createdAt == request.time;

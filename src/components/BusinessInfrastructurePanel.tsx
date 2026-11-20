@@ -52,6 +52,7 @@ const REGION_OPTIONS = [
 ];
 
 const MODEL_OPTIONS = [
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (Cheapest)' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite (Fastest)' },
   { id: 'gemini-4-hydrogen', label: 'Gemini 4 Flash (Balanced)' },
   { id: 'gemini-4-argon', label: 'Gemini 4 Pro (Paid Key)' },
@@ -87,7 +88,9 @@ export function BusinessInfrastructurePanel({
 
   // Gemini API Key integration actions
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3.1-flash-lite');
+  const [selectedModel, setSelectedModel] = useState(
+    import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash-lite',
+  );
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -722,12 +725,12 @@ export function BusinessInfrastructurePanel({
             </p>
           </div>
           <a
-            href="https://aistudio.google.com/apikey"
+            href="https://console.cloud.google.com/apis/credentials"
             target="_blank"
             rel="noopener noreferrer"
             className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-teal-700 inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
           >
-            <span>Open Google AI Studio</span>
+            <span>Open Google Cloud Console</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>
@@ -735,8 +738,8 @@ export function BusinessInfrastructurePanel({
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 space-y-1.5">
           <p className="font-semibold text-slate-900">How to connect this business&apos;s Gemini API key:</p>
           <ol className="list-decimal list-inside space-y-1">
-            <li>Open <span className="font-mono">aistudio.google.com/apikey</span> and sign in with the business owner&apos;s Google account.</li>
-            <li>Create or select the business&apos;s own Google Cloud project and enable Cloud billing.</li>
+            <li>Open Google Cloud Console (<span className="font-mono">console.cloud.google.com</span>) and sign in with the business owner&apos;s Google account.</li>
+            <li>Create or select the business&apos;s Google Cloud project and enable the Generative Language API.</li>
             <li>Generate a Gemini API key, paste it below, validate it, and save securely (AES-256-GCM encrypted server-side).</li>
           </ol>
         </div>
@@ -772,7 +775,7 @@ export function BusinessInfrastructurePanel({
               value={apiKeyInput}
               disabled={readOnly}
               onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="AIzaSy..."
+              placeholder="Enter Gemini API key"
               autoComplete="off"
               className="w-full h-10 px-3 rounded-lg border border-slate-200 font-mono text-xs"
             />

@@ -1057,7 +1057,13 @@ export function ManagementConsoleView({
                   Management Administrators
                 </h2>
                 <p className="text-sm text-slate-600 mt-1">
-                  Primary platform administrator: <span className="font-mono">{BOOTSTRAPPED_ADMIN_EMAIL}</span>. Grant additional team members Management Console access by Firebase Auth UID.
+                  {BOOTSTRAPPED_ADMIN_EMAIL ? (
+                    <>
+                      Primary platform administrator:{' '}
+                      <span className="font-mono">{BOOTSTRAPPED_ADMIN_EMAIL}</span>.{' '}
+                    </>
+                  ) : null}
+                  Grant additional team members Management Console access by Firebase Auth UID.
                 </p>
               </div>
 

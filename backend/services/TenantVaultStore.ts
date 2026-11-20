@@ -289,6 +289,30 @@ export async function verifyFirebaseIdToken(
 }
 
 export function getCentralFirestoreConfig(): { projectId: string; databaseId: string; apiKey: string } {
+  const envProjectId = (
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    ''
+  ).trim();
+  const envDatabaseId = (
+    process.env.FIREBASE_DATABASE_ID ||
+    process.env.VITE_FIREBASE_DATABASE_ID ||
+    ''
+  ).trim();
+  const envApiKey = (
+    process.env.FIREBASE_API_KEY ||
+    process.env.VITE_FIREBASE_API_KEY ||
+    ''
+  ).trim();
+
+  if (envProjectId) {
+    return {
+      projectId: envProjectId,
+      databaseId: envDatabaseId || '(default)',
+      apiKey: envApiKey,
+    };
+  }
+
   try {
     const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(cfgPath)) {
@@ -298,8 +322,8 @@ export function getCentralFirestoreConfig(): { projectId: string; databaseId: st
         apiKey?: string;
       };
       return {
-        projectId: process.env.FIREBASE_PROJECT_ID?.trim() || cfg.projectId || '',
-        databaseId: process.env.FIREBASE_DATABASE_ID?.trim() || cfg.firestoreDatabaseId || '(default)',
+        projectId: cfg.projectId || '',
+        databaseId: cfg.firestoreDatabaseId || '(default)',
         apiKey: cfg.apiKey || '',
       };
     }
@@ -307,8 +331,8 @@ export function getCentralFirestoreConfig(): { projectId: string; databaseId: st
     // ignore
   }
   return {
-    projectId: process.env.FIREBASE_PROJECT_ID?.trim() || '',
-    databaseId: process.env.FIREBASE_DATABASE_ID?.trim() || '(default)',
+    projectId: '',
+    databaseId: '(default)',
     apiKey: '',
   };
 }
