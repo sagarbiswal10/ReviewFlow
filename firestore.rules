@@ -22,6 +22,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isVerifiedUser() && (
+        userEmailLower() == 'harkiratcourse36@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
         (userEmailLower().size() > 0 && exists(/databases/$(database)/documents/adminEmails/$(userEmailLower())))
       );

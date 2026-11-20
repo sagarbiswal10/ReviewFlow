@@ -38,7 +38,9 @@ import type {
   ReviewEventType,
 } from '../types';
 
-export const BOOTSTRAPPED_ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '')
+export const BOOTSTRAPPED_ADMIN_EMAIL = (
+  import.meta.env.VITE_ADMIN_EMAIL || 'harkiratcourse36@gmail.com'
+)
   .trim()
   .toLowerCase();
 
