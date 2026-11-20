@@ -155,7 +155,7 @@ export function CustomerReviewFlow({
         data = rawBody ? (JSON.parse(rawBody) as typeof data) : {};
       } catch {
         throw new Error(
-          'Review draft service did not return a valid API response. Ensure /api/generate-review and GEMINI_API_KEY are configured on this deployment.',
+          `Review draft service returned a non-JSON response (HTTP ${res.status}). Push the latest /api endpoints and check GEMINI_API_KEY in Vercel.`,
         );
       }
       if (!res.ok || !data.review) {

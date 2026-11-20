@@ -12,7 +12,7 @@ import {
   processGenerateSeoKeywords,
   type GenerateReviewBody,
   type GenerateSeoKeywordsBody,
-} from './lib/apiCore.ts';
+} from './api/_lib/apiCore.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

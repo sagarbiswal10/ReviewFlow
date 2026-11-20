@@ -5,7 +5,7 @@ import {
   isOriginAllowed,
   processGenerateSeoKeywords,
   type GenerateSeoKeywordsBody,
-} from '../lib/apiCore';
+} from './_lib/apiCore.js';
 
 type NodeReq = IncomingMessage & { body?: unknown; method?: string };
 

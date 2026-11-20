@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getHealthPayload, isOriginAllowed } from '../lib/apiCore';
+import { getHealthPayload, isOriginAllowed } from './_lib/apiCore.js';
 
 type NodeReq = IncomingMessage & { method?: string };
 
