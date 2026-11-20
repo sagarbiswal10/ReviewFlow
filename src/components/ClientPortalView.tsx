@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 import type { Business, BusinessStats, PublicProfile, ReviewEvent, ReviewEventType } from '../types';
 import {
+  claimBusinessClientUid,
   subscribeToBusinessEvents,
   subscribeToBusinessStats,
 } from '../services/businessService';
@@ -42,6 +44,7 @@ import { CustomerReviewFlow } from './CustomerReviewFlow';
 
 type PortalTab = 'qr_features' | 'qr_editor' | 'questions' | 'branding' | 'preview';
 type EventFilter = 'all' | ReviewEventType;
+type ReportPeriod = 'daily' | '7d' | '1m' | 'date' | 'all';
 
 interface ClientPortalViewProps {
   user: User;
@@ -120,6 +123,34 @@ function formatRelativeTime(ts: unknown): string {
   return new Date(ms).toLocaleDateString();
 }
 
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatDateLabel(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatEventDateTime(ts: unknown): string {
+  const ms = parseEventMs(ts);
+  if (!ms) return 'Just now';
+  return new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export function ClientPortalView({
   user,
   isAdmin,
@@ -134,6 +165,9 @@ export function ClientPortalView({
   const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
   const [stats, setStats] = useState<BusinessStats | null>(null);
   const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('7d');
+  const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateStr(new Date()));
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const [eventFilter, setEventFilter] = useState<EventFilter>('all');
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -151,6 +185,33 @@ export function ClientPortalView({
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [switcherOpen]);
+
+  useEffect(() => {
+    if (
+      !activeBusiness ||
+      isAdmin ||
+      activeBusiness.ownerId === user.uid ||
+      activeBusiness.clientUid === user.uid
+    ) {
+      return;
+    }
+    const normalizedEmail = (user.email || '').trim().toLowerCase();
+    if (normalizedEmail && activeBusiness.clientEmail === normalizedEmail) {
+      claimBusinessClientUid(activeBusiness, user.uid);
+    }
+  }, [
+    activeBusiness?.id,
+    activeBusiness?.ownerId,
+    activeBusiness?.clientEmail,
+    activeBusiness?.clientUid,
+    user.uid,
+    user.email,
+    isAdmin,
+  ]);
+
+  useEffect(() => {
+    setShowAllActivity(false);
+  }, [activeBusiness?.id, reportPeriod, selectedDate, eventFilter]);
 
   useEffect(() => {
     if (!activeBusiness) {
@@ -172,12 +233,13 @@ export function ClientPortalView({
       () => {
         setEvents([]);
       },
+      activeBusiness.clientUid,
     );
     return () => {
       unsubStats();
       unsubEvents();
     };
-  }, [activeBusiness?.id, activeBusiness?.ownerId, user.uid, isAdmin]);
+  }, [activeBusiness?.id, activeBusiness?.ownerId, activeBusiness?.clientUid, user.uid, isAdmin]);
 
   // Reset tab if permission level restricts current tab
   useEffect(() => {
@@ -291,40 +353,147 @@ export function ClientPortalView({
       }
     : null;
 
-  // Derived Real Analytics Metrics
-  const scansCount = stats?.scans ?? 0;
-  const generatedCount = stats?.generated ?? 0;
-  const redirectsCount = stats?.redirects ?? 0;
+  const canReadEventHistory =
+    Boolean(activeBusiness) &&
+    (isAdmin ||
+      activeBusiness?.ownerId === user.uid ||
+      activeBusiness?.clientUid === user.uid);
+
+  const todayIso = toLocalDateStr(new Date());
+
+  const reportWindowMeta = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (reportPeriod === 'daily') {
+      return {
+        label: `Daily Report · ${formatDateLabel(todayIso)}`,
+        shortLabel: 'Today',
+        startMs: startOfToday,
+        endMs: startOfToday + 86400000 - 1,
+      };
+    }
+    if (reportPeriod === '7d') {
+      const start7 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+      return {
+        label: '7-Day Report · Last 7 days',
+        shortLabel: 'Last 7 days',
+        startMs: start7,
+        endMs: startOfToday + 86400000 - 1,
+      };
+    }
+    if (reportPeriod === '1m') {
+      const start30 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29).getTime();
+      return {
+        label: '1-Month Report · Last 30 days',
+        shortLabel: 'Last 30 days',
+        startMs: start30,
+        endMs: startOfToday + 86400000 - 1,
+      };
+    }
+    if (reportPeriod === 'date') {
+      const [y, m, d] = selectedDate.split('-').map(Number);
+      const startDate =
+        y && m && d ? new Date(y, m - 1, d).getTime() : startOfToday;
+      return {
+        label: `Date Report · ${formatDateLabel(selectedDate)}`,
+        shortLabel: formatDateLabel(selectedDate),
+        startMs: startDate,
+        endMs: startDate + 86400000 - 1,
+      };
+    }
+    return {
+      label: 'All-Time Report · Lifetime totals',
+      shortLabel: 'All time',
+      startMs: 0,
+      endMs: Number.MAX_SAFE_INTEGER,
+    };
+  }, [reportPeriod, selectedDate, todayIso]);
+
+  const periodEvents = useMemo(() => {
+    if (reportPeriod === 'all') return events;
+    return events.filter((ev) => {
+      const ms = parseEventMs(ev.createdAt);
+      if (!ms) return false;
+      if (reportPeriod === 'daily') {
+        return toLocalDateStr(new Date(ms)) === todayIso;
+      }
+      if (reportPeriod === 'date') {
+        return toLocalDateStr(new Date(ms)) === selectedDate;
+      }
+      return ms >= reportWindowMeta.startMs && ms <= reportWindowMeta.endMs;
+    });
+  }, [events, reportPeriod, selectedDate, todayIso, reportWindowMeta.startMs, reportWindowMeta.endMs]);
+
+  // Derived Real Analytics Metrics (period-specific when viewing Daily/7D/1M/Date, lifetime for All Time)
+  const useLifetimeStats = reportPeriod === 'all' || !canReadEventHistory;
+  const scansCount = useLifetimeStats
+    ? (stats?.scans ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'scan').length;
+  const generatedCount = useLifetimeStats
+    ? (stats?.generated ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'generate').length;
+  const redirectsCount = useLifetimeStats
+    ? (stats?.redirects ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'copy_redirect').length;
   const conversionRate = scansCount > 0 ? Math.round((redirectsCount / scansCount) * 100) : 0;
   const draftCompletionRate = scansCount > 0 ? Math.round((generatedCount / scansCount) * 100) : 0;
 
-  const styleShort = stats?.styleShort ?? 0;
-  const styleDetailed = stats?.styleDetailed ?? 0;
-  const styleProfessional = stats?.styleProfessional ?? 0;
+  const styleShort = useLifetimeStats
+    ? (stats?.styleShort ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'generate' && e.reviewStyle === 'short').length;
+  const styleDetailed = useLifetimeStats
+    ? (stats?.styleDetailed ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'generate' && e.reviewStyle === 'detailed').length;
+  const styleProfessional = useLifetimeStats
+    ? (stats?.styleProfessional ?? 0)
+    : periodEvents.filter((e) => e.eventType === 'generate' && e.reviewStyle === 'professional').length;
   const styleTotal = styleShort + styleDetailed + styleProfessional;
   const pctShort = styleTotal > 0 ? Math.round((styleShort / styleTotal) * 100) : 0;
   const pctDetailed = styleTotal > 0 ? Math.round((styleDetailed / styleTotal) * 100) : 0;
   const pctProfessional =
     styleTotal > 0 ? Math.max(0, 100 - pctShort - pctDetailed) : 0;
 
-  // Daily 7-day trend computed from real reviewEvents
-  const dailySeries = useMemo(() => {
-    const days: { label: string; key: string; scans: number; generated: number; redirects: number }[] =
-      [];
+  // Dynamic Trend Series computed from real reviewEvents (hourly 2h slots for single day, daily buckets for 7d / 1m / all)
+  const chartSeries = useMemo(() => {
+    if (reportPeriod === 'daily' || reportPeriod === 'date') {
+      const slots: { label: string; key: string; scans: number; generated: number; redirects: number }[] = [];
+      for (let h = 0; h < 24; h += 2) {
+        const hour12 = h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
+        slots.push({
+          label: hour12,
+          key: String(h),
+          scans: 0,
+          generated: 0,
+          redirects: 0,
+        });
+      }
+      for (const ev of periodEvents) {
+        const ms = parseEventMs(ev.createdAt);
+        if (!ms) continue;
+        const slotIdx = Math.floor(new Date(ms).getHours() / 2);
+        const bucket = slots[slotIdx];
+        if (!bucket) continue;
+        if (ev.eventType === 'scan') bucket.scans += 1;
+        else if (ev.eventType === 'generate') bucket.generated += 1;
+        else if (ev.eventType === 'copy_redirect') bucket.redirects += 1;
+      }
+      return slots;
+    }
+
+    const numDays = reportPeriod === '7d' ? 7 : 30;
+    const days: { label: string; key: string; scans: number; generated: number; redirects: number }[] = [];
     const now = new Date();
-    for (let i = 6; i >= 0; i -= 1) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    for (let i = numDays - 1; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const key = toLocalDateStr(d);
       const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       days.push({ label, key, scans: 0, generated: 0, redirects: 0 });
     }
     const dayMap = new Map(days.map((d) => [d.key, d]));
-    for (const ev of events) {
+    for (const ev of periodEvents) {
       const ms = parseEventMs(ev.createdAt);
       if (!ms) continue;
-      const d = new Date(ms);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const key = toLocalDateStr(new Date(ms));
       const bucket = dayMap.get(key);
       if (!bucket) continue;
       if (ev.eventType === 'scan') bucket.scans += 1;
@@ -332,15 +501,21 @@ export function ClientPortalView({
       else if (ev.eventType === 'copy_redirect') bucket.redirects += 1;
     }
     return days;
-  }, [events]);
+  }, [periodEvents, reportPeriod]);
+
+  const chartAxisLabels = useMemo(() => {
+    if (chartSeries.length <= 12) return chartSeries.map((d) => d.label);
+    const idxs = [0, 7, 14, 21, chartSeries.length - 1];
+    return idxs.map((i) => chartSeries[i]?.label || '');
+  }, [chartSeries]);
 
   const maxDailyValue = useMemo(() => {
     let maxVal = 1;
-    for (const d of dailySeries) {
+    for (const d of chartSeries) {
       maxVal = Math.max(maxVal, d.scans, d.generated, d.redirects);
     }
     return maxVal;
-  }, [dailySeries]);
+  }, [chartSeries]);
 
   const buildSeriesPath = (values: number[]) => {
     if (values.length === 0) return '';
@@ -353,15 +528,15 @@ export function ClientPortalView({
       .join(' ');
   };
 
-  const scanLinePath = buildSeriesPath(dailySeries.map((d) => d.scans));
-  const redirectLinePath = buildSeriesPath(dailySeries.map((d) => d.redirects));
+  const scanLinePath = buildSeriesPath(chartSeries.map((d) => d.scans));
+  const redirectLinePath = buildSeriesPath(chartSeries.map((d) => d.redirects));
   const scanAreaPath = scanLinePath ? `${scanLinePath} L 680,210 L 20,210 Z` : '';
   const redirectAreaPath = redirectLinePath ? `${redirectLinePath} L 680,210 L 20,210 Z` : '';
 
-  // Highlight tags frequency computed from real reviewEvents
+  // Highlight tags frequency computed from periodEvents
   const topHighlights = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const ev of events) {
+    for (const ev of periodEvents) {
       if (!Array.isArray(ev.selectedHighlights)) continue;
       for (const h of ev.selectedHighlights) {
         const label = h.trim();
@@ -372,18 +547,65 @@ export function ClientPortalView({
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4);
-  }, [events]);
+  }, [periodEvents]);
 
-  const filteredEvents = useMemo(() => {
-    if (eventFilter === 'all') return events.slice(0, 9);
-    return events.filter((e) => e.eventType === eventFilter).slice(0, 9);
-  }, [events, eventFilter]);
+  const matchingStageEvents = useMemo(() => {
+    if (eventFilter === 'all') return periodEvents;
+    return periodEvents.filter((e) => e.eventType === eventFilter);
+  }, [periodEvents, eventFilter]);
 
-  const scanEventCount = events.filter((e) => e.eventType === 'scan').length;
-  const generateEventCount = events.filter((e) => e.eventType === 'generate').length;
-  const redirectEventCount = events.filter((e) => e.eventType === 'copy_redirect').length;
-  const canReadEventHistory =
-    Boolean(activeBusiness) && (isAdmin || activeBusiness?.ownerId === user.uid);
+  const visibleEvents = useMemo(
+    () => (showAllActivity ? matchingStageEvents : matchingStageEvents.slice(0, 9)),
+    [matchingStageEvents, showAllActivity],
+  );
+
+  const scanEventCount = periodEvents.filter((e) => e.eventType === 'scan').length;
+  const generateEventCount = periodEvents.filter((e) => e.eventType === 'generate').length;
+  const redirectEventCount = periodEvents.filter((e) => e.eventType === 'copy_redirect').length;
+
+  const handleExportReportCsv = () => {
+    if (!activeBusiness) return;
+    const escapeCsv = (val: string | number) => {
+      const s = String(val ?? '');
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const rows: string[] = [];
+    rows.push(['Report Period', reportWindowMeta.label].map(escapeCsv).join(','));
+    rows.push(['Business', activeBusiness.name].map(escapeCsv).join(','));
+    rows.push(['QR Scans', scansCount].map(escapeCsv).join(','));
+    rows.push(['AI Drafts Generated', generatedCount].map(escapeCsv).join(','));
+    rows.push(['Google Redirects', redirectsCount].map(escapeCsv).join(','));
+    rows.push(['Scan-to-Google Rate (%)', conversionRate].map(escapeCsv).join(','));
+    rows.push('');
+    rows.push(['Bucket', 'Scans', 'AI Drafts', 'Google Redirects'].map(escapeCsv).join(','));
+    for (const bucket of chartSeries) {
+      rows.push([bucket.label, bucket.scans, bucket.generated, bucket.redirects].map(escapeCsv).join(','));
+    }
+    if (periodEvents.length > 0) {
+      rows.push('');
+      rows.push(['Timestamp', 'Event Type', 'Tone', 'Sentiment', 'Selected Highlights'].map(escapeCsv).join(','));
+      for (const ev of periodEvents) {
+        rows.push(
+          [
+            formatEventDateTime(ev.createdAt),
+            ev.eventType,
+            ev.reviewStyle || '',
+            ev.sentiment || '',
+            (ev.selectedHighlights || []).join(' | '),
+          ]
+            .map(escapeCsv)
+            .join(','),
+        );
+      }
+    }
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeBusiness.slug}-${reportPeriod}-report.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
@@ -732,188 +954,267 @@ export function ClientPortalView({
                   </div>
                 </div>
 
-                {/* 4 KPI Telemetry Scorecards */}
+                {/* Report Period Selector + 4 KPI Telemetry Scorecards */}
                 {activeBusiness.enabledFeatures.analyticsView && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Card 1: Total QR Scans */}
-                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            QR Scans
-                          </span>
-                          <div className="flex items-baseline gap-2 mt-1">
-                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
-                              {scansCount}
-                            </span>
-                            <span className="text-xs text-slate-500">Total visits</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
-                          <QrCode className="w-5 h-5" />
-                        </div>
-                      </div>
-
-                      <div className="my-3">
-                        <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
-                          <path
-                            d="M0,32 Q25,28 50,22 T105,16 T160,6"
-                            fill="none"
-                            stroke="#0f766e"
-                            strokeLinecap="round"
-                            strokeWidth="2.5"
-                          />
-                          <path
-                            d="M0,32 Q25,28 50,22 T105,16 T160,6 L160,36 L0,36 Z"
-                            fill="rgba(15,118,110,0.08)"
-                          />
-                          <circle cx="160" cy="6" fill="#0f766e" r="3" />
-                        </svg>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="font-semibold text-[#005c55] tabular-nums">
-                          {draftCompletionRate}% started AI draft
-                        </span>
-                        <span className="text-slate-500 font-mono">Rev {activeBusiness.qrConfig.token}</span>
-                      </div>
-                    </div>
-
-                    {/* Card 2: AI Drafts Generated */}
-                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            AI Drafts Generated
-                          </span>
-                          <div className="flex items-baseline gap-2 mt-1">
-                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
-                              {generatedCount}
-                            </span>
-                            <span className="text-xs text-slate-500">Personalized drafts</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
-                          <Sparkles className="w-5 h-5" />
-                        </div>
-                      </div>
-
-                      <div className="my-3">
-                        <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
-                          <path
-                            d="M0,30 Q30,26 60,18 T115,14 T160,5"
-                            fill="none"
-                            stroke="#006b5f"
-                            strokeLinecap="round"
-                            strokeWidth="2.5"
-                          />
-                          <path
-                            d="M0,30 Q30,26 60,18 T115,14 T160,5 L160,36 L0,36 Z"
-                            fill="rgba(0,107,95,0.08)"
-                          />
-                          <circle cx="160" cy="5" fill="#006b5f" r="3" />
-                        </svg>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="font-semibold text-[#005c55]">
-                          {activeBusiness.enabledFeatures.aiReviewDrafts ? 'AI Active' : 'Manual Mode'}
-                        </span>
-                        <span className="text-slate-500 capitalize">
-                          Default: {activeBusiness.branding.defaultReviewStyle}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Card 3: Review Style Breakdown */}
-                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            Draft Tone Mix
-                          </span>
-                          <div className="flex items-baseline gap-2 mt-1">
-                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
-                              {styleTotal}
-                            </span>
-                            <span className="text-xs text-slate-500">Style selections</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
-                          <BarChart3 className="w-5 h-5" />
-                        </div>
-                      </div>
-
-                      <div className="my-3">
-                        <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden flex gap-0.5">
-                          <div
-                            className="h-full bg-[#0f766e] transition-all"
-                            style={{ width: `${styleTotal > 0 ? pctShort : 34}%` }}
-                            title={`Short: ${pctShort}%`}
-                          />
-                          <div
-                            className="h-full bg-[#006b5f] transition-all"
-                            style={{ width: `${styleTotal > 0 ? pctDetailed : 33}%` }}
-                            title={`Detailed: ${pctDetailed}%`}
-                          />
-                          <div
-                            className="h-full bg-[#8bd6b6] transition-all"
-                            style={{ width: `${styleTotal > 0 ? pctProfessional : 33}%` }}
-                            title={`Professional: ${pctProfessional}%`}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 font-mono tabular-nums">
-                          <span>Short {pctShort}%</span>
-                          <span>Detail {pctDetailed}%</span>
-                          <span>Pro {pctProfessional}%</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="font-semibold text-slate-700">3 customer tones</span>
-                        <span className="text-[#005c55] font-semibold">Policy safe</span>
-                      </div>
-                    </div>
-
-                    {/* Card 4: Google Redirects */}
-                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            Google Redirects
-                          </span>
-                          <div className="flex items-baseline gap-2 mt-1">
-                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
-                              {redirectsCount}
-                            </span>
-                            <span className="text-xs text-slate-500">Copied &amp; opened</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
-                          <TrendingUp className="w-5 h-5" />
-                        </div>
-                      </div>
-
-                      <div className="my-3 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[#f0fdfa] text-[#005c55] flex items-center justify-center font-bold text-xs tabular-nums shrink-0">
-                          {conversionRate}%
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:px-5 sm:py-3.5 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55] shrink-0">
+                          <Calendar className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900">Scan-to-Google Rate</p>
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {reportWindowMeta.label}
+                          </p>
                           <p className="text-[11px] text-slate-500 truncate">
-                            Equal access · No star gating
+                            Filter metrics, trend chart, highlights, and Customer Review Flow Activity
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="inline-flex items-center gap-1 font-semibold text-[#005c55]">
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Google Compliant</span>
-                        </span>
-                        <span className="text-slate-500 tabular-nums">
-                          {activeBusiness.questions.length} prompts
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100">
+                          {(
+                            [
+                              { id: 'daily', label: 'Daily' },
+                              { id: '7d', label: '7 Days' },
+                              { id: '1m', label: '1 Month' },
+                              { id: 'date', label: 'Specific Date' },
+                              { id: 'all', label: 'All Time' },
+                            ] as { id: ReportPeriod; label: string }[]
+                          ).map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => setReportPeriod(opt.id)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                                reportPeriod === opt.id
+                                  ? 'bg-[#0f766e] text-white shadow-sm'
+                                  : 'text-slate-600 hover:text-[#005c55] hover:bg-white/70'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {reportPeriod === 'date' && (
+                          <input
+                            type="date"
+                            value={selectedDate}
+                            max={todayIso}
+                            onChange={(e) => {
+                              if (e.target.value) setSelectedDate(e.target.value);
+                            }}
+                            aria-label="Choose report date"
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0f766e]/20 focus:border-[#0f766e]"
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleExportReportCsv}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-[#f0fdfa] text-xs font-semibold text-slate-700 hover:text-[#005c55] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export CSV</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Card 1: QR Scans */}
+                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                              QR Scans ({reportWindowMeta.shortLabel})
+                            </span>
+                            <div className="flex items-baseline gap-2 mt-1">
+                              <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                                {scansCount}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {reportPeriod === 'all'
+                                  ? 'Total visits'
+                                  : `All-time: ${stats?.scans ?? 0}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                            <QrCode className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="my-3">
+                          <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
+                            <path
+                              d="M0,32 Q25,28 50,22 T105,16 T160,6"
+                              fill="none"
+                              stroke="#0f766e"
+                              strokeLinecap="round"
+                              strokeWidth="2.5"
+                            />
+                            <path
+                              d="M0,32 Q25,28 50,22 T105,16 T160,6 L160,36 L0,36 Z"
+                              fill="rgba(15,118,110,0.08)"
+                            />
+                            <circle cx="160" cy="6" fill="#0f766e" r="3" />
+                          </svg>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="font-semibold text-[#005c55] tabular-nums">
+                            {draftCompletionRate}% started AI draft
+                          </span>
+                          <span className="text-slate-500 font-mono">Rev {activeBusiness.qrConfig.token}</span>
+                        </div>
+                      </div>
+
+                      {/* Card 2: AI Drafts Generated */}
+                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                              AI Drafts ({reportWindowMeta.shortLabel})
+                            </span>
+                            <div className="flex items-baseline gap-2 mt-1">
+                              <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                                {generatedCount}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {reportPeriod === 'all'
+                                  ? 'Personalized drafts'
+                                  : `All-time: ${stats?.generated ?? 0}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="my-3">
+                          <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
+                            <path
+                              d="M0,30 Q30,26 60,18 T115,14 T160,5"
+                              fill="none"
+                              stroke="#006b5f"
+                              strokeLinecap="round"
+                              strokeWidth="2.5"
+                            />
+                            <path
+                              d="M0,30 Q30,26 60,18 T115,14 T160,5 L160,36 L0,36 Z"
+                              fill="rgba(0,107,95,0.08)"
+                            />
+                            <circle cx="160" cy="5" fill="#006b5f" r="3" />
+                          </svg>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="font-semibold text-[#005c55]">
+                            {activeBusiness.enabledFeatures.aiReviewDrafts ? 'AI Active' : 'Manual Mode'}
+                          </span>
+                          <span className="text-slate-500 capitalize">
+                            Default: {activeBusiness.branding.defaultReviewStyle}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card 3: Review Style Breakdown */}
+                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                              Draft Tone Mix
+                            </span>
+                            <div className="flex items-baseline gap-2 mt-1">
+                              <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                                {styleTotal}
+                              </span>
+                              <span className="text-xs text-slate-500">Style selections</span>
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                            <BarChart3 className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="my-3">
+                          <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden flex gap-0.5">
+                            <div
+                              className="h-full bg-[#0f766e] transition-all"
+                              style={{ width: `${styleTotal > 0 ? pctShort : 34}%` }}
+                              title={`Short: ${pctShort}%`}
+                            />
+                            <div
+                              className="h-full bg-[#006b5f] transition-all"
+                              style={{ width: `${styleTotal > 0 ? pctDetailed : 33}%` }}
+                              title={`Detailed: ${pctDetailed}%`}
+                            />
+                            <div
+                              className="h-full bg-[#8bd6b6] transition-all"
+                              style={{ width: `${styleTotal > 0 ? pctProfessional : 33}%` }}
+                              title={`Professional: ${pctProfessional}%`}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 font-mono tabular-nums">
+                            <span>Short {pctShort}%</span>
+                            <span>Detail {pctDetailed}%</span>
+                            <span>Pro {pctProfessional}%</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="font-semibold text-slate-700">3 customer tones</span>
+                          <span className="text-[#005c55] font-semibold">Policy safe</span>
+                        </div>
+                      </div>
+
+                      {/* Card 4: Google Redirects */}
+                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                              Google Redirects ({reportWindowMeta.shortLabel})
+                            </span>
+                            <div className="flex items-baseline gap-2 mt-1">
+                              <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                                {redirectsCount}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {reportPeriod === 'all'
+                                  ? 'Copied & opened'
+                                  : `All-time: ${stats?.redirects ?? 0}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                            <TrendingUp className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="my-3 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-[#f0fdfa] text-[#005c55] flex items-center justify-center font-bold text-xs tabular-nums shrink-0">
+                            {conversionRate}%
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900">Scan-to-Google Rate</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              Equal access · No star gating
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="inline-flex items-center gap-1 font-semibold text-[#005c55]">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Google Compliant</span>
+                          </span>
+                          <span className="text-slate-500 tabular-nums">
+                            {activeBusiness.questions.length} prompts
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -923,13 +1224,21 @@ export function ClientPortalView({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                   {/* Left Major Column (7 cols) */}
                   <div className="lg:col-span-7 flex flex-col space-y-6">
-                    {/* 7-Day Activity Velocity Chart */}
+                    {/* Period Activity Velocity Chart */}
                     {activeBusiness.enabledFeatures.analyticsView && (
                       <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4">
                           <div>
                             <h2 className="font-display text-lg font-bold text-slate-900">
-                              7-Day Scan &amp; Google Redirect Activity
+                              {reportPeriod === 'daily'
+                                ? 'Hourly Scan & Google Redirect Report (Today)'
+                                : reportPeriod === 'date'
+                                  ? `Hourly Scan & Google Redirect Report (${formatDateLabel(selectedDate)})`
+                                  : reportPeriod === '7d'
+                                    ? '7-Day Scan & Google Redirect Report'
+                                    : reportPeriod === '1m'
+                                      ? '1-Month (30-Day) Scan & Google Redirect Report'
+                                      : '30-Day Scan & Google Redirect Trend'}
                             </h2>
                             <p className="text-xs text-slate-500 mt-0.5">
                               Live scan volume compared with Google Review copy &amp; handoff events
@@ -947,7 +1256,7 @@ export function ClientPortalView({
                           </div>
                         </div>
 
-                        {canReadEventHistory && events.length > 0 ? (
+                        {canReadEventHistory && periodEvents.length > 0 ? (
                           <>
                             <div className="relative w-full h-56 mt-2">
                               <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-40">
@@ -961,7 +1270,7 @@ export function ClientPortalView({
                                 className="w-full h-full"
                                 preserveAspectRatio="none"
                                 viewBox="0 0 700 220"
-                                aria-label="7-day customer scan and redirect chart"
+                                aria-label="Customer scan and redirect report chart"
                               >
                                 <defs>
                                   <linearGradient id="portalScanGrad" x1="0%" x2="0%" y1="0%" y2="100%">
@@ -994,8 +1303,8 @@ export function ClientPortalView({
                               </svg>
                             </div>
                             <div className="flex items-center justify-between text-[11px] text-slate-500 pt-3 font-mono tabular-nums">
-                              {dailySeries.map((d) => (
-                                <span key={d.key}>{d.label}</span>
+                              {chartAxisLabels.map((lbl, idx) => (
+                                <span key={`${lbl}-${idx}`}>{lbl}</span>
                               ))}
                             </div>
                           </>
@@ -1004,13 +1313,13 @@ export function ClientPortalView({
                             <BarChart3 className="w-8 h-8 text-slate-400 mx-auto mb-2.5" />
                             <p className="text-sm font-semibold text-slate-800">
                               {canReadEventHistory
-                                ? 'No daily scan events recorded yet'
-                                : 'Aggregate totals are shown above'}
+                                ? `No scan events found for ${reportWindowMeta.shortLabel}`
+                                : 'Linking your client report view'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
                               {canReadEventHistory
-                                ? 'Once customers scan your QR standee, their daily scans and Google handoffs will plot here automatically.'
-                                : 'Scan, draft, and Google redirect totals above update live as customers use your QR code.'}
+                                ? 'Switch to 7 Days, 1 Month, or All Time—or scan your QR code—to populate hourly and daily trend curves.'
+                                : 'Aggregate totals above update live while detailed event access connects for your account.'}
                             </p>
                           </div>
                         )}
@@ -1023,12 +1332,12 @@ export function ClientPortalView({
                         <div>
                           <h2 className="font-display text-lg font-bold text-slate-900">
                             {topHighlights.length > 0
-                              ? 'Top Customer-Selected Highlights'
+                              ? `Top Customer-Selected Highlights (${reportWindowMeta.shortLabel})`
                               : 'Active Business Features & Form Summary'}
                           </h2>
                           <p className="text-xs text-slate-500 mt-0.5">
                             {topHighlights.length > 0
-                              ? `Most frequently tapped tags across ${events.length} recorded customer sessions`
+                              ? `Most frequently tapped tags across ${periodEvents.length} recorded customer sessions`
                               : `Capabilities and feedback questions configured for ${activeBusiness.name}`}
                           </p>
                         </div>
@@ -1271,20 +1580,20 @@ export function ClientPortalView({
                           Customer Review Flow Activity
                         </h2>
                         <span className="px-2.5 py-0.5 rounded-full bg-[#f0fdfa] text-[#005c55] text-xs font-bold tabular-nums">
-                          {scansCount} Total Scans
+                          {periodEvents.length} Events ({reportWindowMeta.shortLabel})
                         </span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                         Real-time QR scans, generated drafts, and Google review handoffs for{' '}
-                        {activeBusiness.name}
+                        {activeBusiness.name} ({reportWindowMeta.label})
                       </p>
                     </div>
 
-                    {canReadEventHistory && events.length > 0 && (
+                    {canReadEventHistory && periodEvents.length > 0 && (
                       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                         {(
                           [
-                            { id: 'all', label: `All (${events.length})` },
+                            { id: 'all', label: `All (${periodEvents.length})` },
                             { id: 'scan', label: `Scans (${scanEventCount})` },
                             { id: 'generate', label: `Drafts (${generateEventCount})` },
                             { id: 'copy_redirect', label: `Google (${redirectEventCount})` },
@@ -1311,74 +1620,94 @@ export function ClientPortalView({
                     <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center gap-3 shadow-sm">
                       <Store className="w-5 h-5 text-[#005c55] shrink-0" />
                       <span>
-                        Aggregate scan, draft, and Google redirect totals above update in real time.
-                        Detailed per-tap logs are visible to the business creator / platform admin.
+                        Linking detailed Customer Review Flow Activity for your client account.
+                        Aggregate scan, draft, and Google redirect totals above are already live.
                       </span>
                     </div>
-                  ) : filteredEvents.length === 0 ? (
+                  ) : visibleEvents.length === 0 ? (
                     <div className="p-8 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2 shadow-sm">
                       <Clock className="w-7 h-7 text-slate-400 mx-auto" />
                       <p className="text-sm font-semibold text-slate-900">
-                        No matching customer activity yet
+                        No matching customer activity in {reportWindowMeta.shortLabel}
                       </p>
                       <p className="text-xs text-slate-500 max-w-md mx-auto">
-                        Share or scan your QR standee to see live scans, selected service tags,
-                        and Google handoff events appear here.
+                        Select another report window (Daily, 7 Days, 1 Month, Specific Date, or All Time)
+                        or scan your QR standee to see live activity cards here.
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {filteredEvents.map((ev) => (
-                        <div
-                          key={ev.id}
-                          className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3"
-                        >
-                          <div className="space-y-2.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-[#005c55] uppercase tracking-wide">
-                                {ev.eventType === 'copy_redirect'
-                                  ? 'Copied & Opened Google'
-                                  : ev.eventType === 'generate'
-                                  ? 'Generated AI Draft'
-                                  : 'QR Code Scanned'}
-                              </span>
-                              <span className="text-xs text-slate-400 tabular-nums">
-                                {formatRelativeTime(ev.createdAt)}
-                              </span>
-                            </div>
-
-                            <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              {ev.reviewStyle && (
-                                <span className="capitalize font-semibold text-slate-800">
-                                  Tone: {ev.reviewStyle}
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {visibleEvents.map((ev) => (
+                          <div
+                            key={ev.id}
+                            className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-[#005c55] uppercase tracking-wide">
+                                  {ev.eventType === 'copy_redirect'
+                                    ? 'Copied & Opened Google'
+                                    : ev.eventType === 'generate'
+                                    ? 'Generated AI Draft'
+                                    : 'QR Code Scanned'}
                                 </span>
-                              )}
-                              {ev.sentiment && (
-                                <>
-                                  <span aria-hidden="true">·</span>
-                                  <span>Sentiment: {ev.sentiment}</span>
-                                </>
-                              )}
+                                <span className="text-xs text-slate-400 tabular-nums">
+                                  {formatRelativeTime(ev.createdAt)}
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] font-medium text-slate-500">
+                                {formatEventDateTime(ev.createdAt)}
+                              </p>
+
+                              <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                {ev.reviewStyle && (
+                                  <span className="capitalize font-semibold text-slate-800">
+                                    Tone: {ev.reviewStyle}
+                                  </span>
+                                )}
+                                {ev.sentiment && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>Sentiment: {ev.sentiment}</span>
+                                  </>
+                                )}
+                              </div>
+
+                              {Array.isArray(ev.selectedHighlights) &&
+                                ev.selectedHighlights.length > 0 && (
+                                  <p className="text-xs text-slate-600 leading-relaxed">
+                                    {ev.selectedHighlights.join(' · ')}
+                                  </p>
+                                )}
                             </div>
 
-                            {Array.isArray(ev.selectedHighlights) &&
-                              ev.selectedHighlights.length > 0 && (
-                                <p className="text-xs text-slate-600 leading-relaxed">
-                                  {ev.selectedHighlights.join(' · ')}
-                                </p>
-                              )}
+                            <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                              <span className="font-mono">/{ev.slug}</span>
+                              <span className="inline-flex items-center gap-1 text-[#005c55] font-semibold">
+                                <Check className="w-3 h-3" />
+                                Recorded
+                              </span>
+                            </div>
                           </div>
+                        ))}
+                      </div>
 
-                          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                            <span className="font-mono">/{ev.slug}</span>
-                            <span className="inline-flex items-center gap-1 text-[#005c55] font-semibold">
-                              <Check className="w-3 h-3" />
-                              Recorded
-                            </span>
-                          </div>
+                      {matchingStageEvents.length > 9 && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowAllActivity((prev) => !prev)}
+                            className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-[#f0fdfa] text-xs font-semibold text-slate-700 hover:text-[#005c55] cursor-pointer transition-colors"
+                          >
+                            {showAllActivity
+                              ? 'Show Fewer Events'
+                              : `Show All ${matchingStageEvents.length} Events`}
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

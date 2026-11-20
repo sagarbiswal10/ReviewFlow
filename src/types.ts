@@ -56,6 +56,7 @@ export interface Business {
   ownerId: string;
   ownerName?: string;
   clientEmail: string;
+  clientUid?: string;
   clientAccessLevel: ClientAccessLevel;
   enabledFeatures: EnabledFeatures;
   slug: string;
@@ -78,6 +79,7 @@ export interface Business {
 export interface PublicProfile {
   businessId: string;
   ownerId: string;
+  clientUid?: string;
   slug: string;
   name: string;
   category: BusinessCategory;
@@ -112,6 +114,7 @@ export interface ReviewEvent {
   id: string;
   businessId: string;
   ownerId: string;
+  clientUid?: string;
   slug: string;
   eventType: ReviewEventType;
   reviewStyle: string;

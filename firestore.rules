@@ -136,7 +136,7 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'ownerId', 'ownerName', 'clientEmail', 'clientAccessLevel', 'enabledFeatures',
+          'ownerId', 'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
           'slug', 'name', 'category', 'address', 'phone',
           'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
           'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
@@ -145,6 +145,7 @@ service cloud.firestore {
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 120)) &&
         data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         data.clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
         isValidEnabledFeatures(data.enabledFeatures) &&
         isValidSlug(data.slug) &&
@@ -173,13 +174,14 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'businessId', 'ownerId', 'slug', 'name', 'category',
+          'businessId', 'ownerId', 'clientUid', 'slug', 'name', 'category',
           'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
           'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         isValidCategory(data.category) &&
@@ -226,11 +228,12 @@ service cloud.firestore {
           'reviewStyle', 'sentiment', 'selectedHighlights', 'createdAt'
         ]) &&
         data.keys().hasOnly([
-          'businessId', 'ownerId', 'slug', 'eventType',
+          'businessId', 'ownerId', 'clientUid', 'slug', 'eventType',
           'reviewStyle', 'sentiment', 'selectedHighlights', 'createdAt'
         ]) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
         data.eventType in ['scan', 'generate', 'copy_redirect'] &&
         data.reviewStyle is string && data.reviewStyle.size() <= 40 &&
@@ -368,7 +371,7 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'ownerName', 'clientEmail', 'clientAccessLevel', 'enabledFeatures',
+              'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
               'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
               'questions', 'seoKeywords', 'slug', 'lifecycleStatus', 'tenantFirebase', 'updatedAt'
@@ -396,6 +399,14 @@ service cloud.firestore {
             incoming().enabledFeatures == existing().enabledFeatures &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'qrConfig', 'questions', 'updatedAt'
+            ])
+          ) ||
+          // Action 4: Assigned Client links verified clientUid for Portal event history
+          (
+            isAssignedClient(existing()) &&
+            incoming().clientUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'clientUid', 'updatedAt'
             ])
           )
         );
@@ -431,7 +442,7 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'category', 'googleReviewUrl', 'logoDataUrl',
+              'clientUid', 'name', 'category', 'googleReviewUrl', 'logoDataUrl',
               'enabledFeatures', 'branding', 'qrConfig', 'questions', 'seoKeywords',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
@@ -454,6 +465,12 @@ service cloud.firestore {
                 incoming().enabledFeatures == existing().enabledFeatures &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'qrConfig', 'questions', 'updatedAt'
+                ])
+              ) ||
+              (
+                incoming().clientUid == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'clientUid', 'updatedAt'
                 ])
               )
             )
@@ -532,15 +549,33 @@ service cloud.firestore {
 
     // 5. Immutable Review Analytics Events
     match /reviewEvents/{eventId} {
-      allow get: if isVerifiedUser() && isValidId(eventId) && (isAdmin() || (resource != null && existing().ownerId == request.auth.uid));
-      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
+      allow get: if isVerifiedUser() && isValidId(eventId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerId == request.auth.uid ||
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+        ))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+      );
       allow create: if isValidId(eventId) &&
         isValidReviewEvent(incoming()) &&
         incoming().createdAt == request.time &&
         exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
-        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId;
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+        (
+          !('clientUid' in incoming()) ||
+          incoming().clientUid == '' ||
+          (
+            'clientUid' in get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data &&
+            incoming().clientUid == get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.clientUid
+          )
+        );
       allow update, delete: if false;
     }
 

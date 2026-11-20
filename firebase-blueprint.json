@@ -21,6 +21,11 @@
           "description": "Normalized lowercase email of the assigned business client for Portal access.",
           "maxLength": 120
         },
+        "clientUid": {
+          "type": "string",
+          "description": "Linked non-PII Firebase Auth UID of the assigned client for analytics event reads.",
+          "maxLength": 128
+        },
         "clientAccessLevel": {
           "type": "string",
           "description": "Self-service editing tier granted to the business client in /portal.",
@@ -146,6 +151,10 @@
         "ownerId": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 128
+        },
+        "clientUid": {
+          "type": "string",
           "maxLength": 128
         },
         "slug": {
@@ -296,6 +305,10 @@
         "ownerId": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 128
+        },
+        "clientUid": {
+          "type": "string",
           "maxLength": 128
         },
         "slug": {

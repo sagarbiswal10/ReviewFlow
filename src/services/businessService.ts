@@ -186,6 +186,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
     clientEmail: normalizeEmail(data.clientEmail || ''),
+    clientUid: clampString(data.clientUid, 128),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
     enabledFeatures: sanitizeEnabledFeatures(data.enabledFeatures),
     slug: data.slug || '',
@@ -477,6 +478,29 @@ function getEventTimeMs(value: unknown): number {
   return 0;
 }
 
+export async function claimBusinessClientUid(
+  business: Business,
+  clientUid: string,
+): Promise<void> {
+  const cleanUid = clampString(clientUid, 128);
+  if (!cleanUid || business.clientUid === cleanUid) return;
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'businesses', business.id), {
+    clientUid: cleanUid,
+    updatedAt: now,
+  });
+  batch.update(doc(db, 'publicProfiles', business.slug), {
+    clientUid: cleanUid,
+    updatedAt: now,
+  });
+  try {
+    await batch.commit();
+  } catch {
+    // Non-blocking if user isn't eligible or profile is missing
+  }
+}
+
 export function subscribeToBusinessEvents(
   businessId: string,
   ownerId: string,
@@ -484,16 +508,22 @@ export function subscribeToBusinessEvents(
   isAdmin: boolean,
   onData: (events: ReviewEvent[]) => void,
   onError?: (err: Error) => void,
+  clientUid?: string,
 ): Unsubscribe {
-  if (!isAdmin && ownerId !== viewerUid) {
+  const isOwner = ownerId === viewerUid;
+  const isLinkedClient = Boolean(clientUid && clientUid === viewerUid);
+
+  if (!isAdmin && !isOwner && !isLinkedClient) {
     onData([]);
     return () => {};
   }
 
   const path = 'reviewEvents';
   const q = isAdmin
-    ? query(collection(db, path), where('businessId', '==', businessId), limit(150))
-    : query(collection(db, path), where('ownerId', '==', viewerUid), limit(200));
+    ? query(collection(db, path), where('businessId', '==', businessId), limit(1000))
+    : isOwner
+      ? query(collection(db, path), where('ownerId', '==', viewerUid), limit(1000))
+      : query(collection(db, path), where('clientUid', '==', viewerUid), limit(1000));
 
   return onSnapshot(
     q,
@@ -836,10 +866,14 @@ export async function updateBusiness(
     businessUpdates.website = clampString(updates.website, 300);
   }
 
+  const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
     businessUpdates.clientEmail = nextClientEmail;
     businessUpdates.clientAccessLevel = nextAccessLevel;
     businessUpdates.enabledFeatures = nextFeatures;
+    if (clientEmailChanged) {
+      businessUpdates.clientUid = '';
+    }
   }
 
   batch.update(doc(db, 'businesses', current.id), businessUpdates);
@@ -849,6 +883,7 @@ export async function updateBusiness(
     batch.set(doc(db, 'publicProfiles', nextSlug), {
       businessId: current.id,
       ownerId: current.ownerId,
+      clientUid: clientEmailChanged ? '' : current.clientUid || '',
       slug: nextSlug,
       name: nextName,
       category: nextCategory,
@@ -876,6 +911,9 @@ export async function updateBusiness(
     };
     if (isAdmin) {
       publicUpdates.enabledFeatures = nextFeatures;
+      if (clientEmailChanged) {
+        publicUpdates.clientUid = '';
+      }
     }
     batch.update(doc(db, 'publicProfiles', current.slug), publicUpdates);
   }
@@ -926,6 +964,7 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
     const profile: PublicProfile = {
       businessId: raw.businessId || '',
       ownerId: raw.ownerId || '',
+      clientUid: clampString(raw.clientUid, 128),
       slug: raw.slug || normalized,
       name: raw.name || 'Business',
       category: raw.category || 'Other Businesses',
@@ -985,6 +1024,7 @@ export async function recordReviewEvent(
   const payload = {
     businessId: profile.businessId,
     ownerId: profile.ownerId,
+    ...(profile.clientUid ? { clientUid: profile.clientUid } : {}),
     slug: profile.slug,
     eventType,
     reviewStyle: clampString(details.reviewStyle ?? '', 40),
