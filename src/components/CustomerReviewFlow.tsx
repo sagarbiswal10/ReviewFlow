@@ -30,6 +30,16 @@ const REVIEW_STYLE_OPTIONS: { id: ReviewStyle; label: string; hint: string }[] =
   { id: 'professional', label: 'Professional', hint: 'Polished & balanced' },
 ];
 
+function normalizeExternalUrl(raw?: string): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return 'https://www.google.com/maps';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return 'https://www.google.com/maps';
+}
+
 export function CustomerReviewFlow({
   profile,
   isPreview = false,
@@ -134,12 +144,20 @@ export function CustomerReviewFlow({
         }),
       });
 
-      const data = (await res.json()) as {
+      const rawBody = await res.text();
+      let data: {
         review?: string;
         drafts?: Partial<Record<ReviewStyle, string>>;
         keywordsUsed?: string[];
         error?: string;
-      };
+      } = {};
+      try {
+        data = rawBody ? (JSON.parse(rawBody) as typeof data) : {};
+      } catch {
+        throw new Error(
+          'Review draft service did not return a valid API response. Ensure /api/generate-review and GEMINI_API_KEY are configured on this deployment.',
+        );
+      }
       if (!res.ok || !data.review) {
         throw new Error(data.error || 'Could not generate review draft.');
       }
@@ -269,7 +287,7 @@ export function CustomerReviewFlow({
     setStep('feedback');
   };
 
-  const googleUrl = profile.googleReviewUrl?.trim() || 'https://www.google.com/maps';
+  const googleUrl = normalizeExternalUrl(profile.googleReviewUrl);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
