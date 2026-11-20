@@ -37,7 +37,7 @@ export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-
 export const GEMINI_FALLBACK_MODEL =
   process.env.GEMINI_FALLBACK_MODEL !== undefined
     ? cleanSecretEnv(process.env.GEMINI_FALLBACK_MODEL)
-    : 'gemini-3.5-flash-lite';
+    : 'gemini-4-hydrogen';
 export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
 function resolveFirebaseProjectId(): string {
@@ -226,7 +226,7 @@ export function checkRateLimit(key: string, maxRequests: number, windowMs: numbe
 }
 
 function getGeminiApiKey(): string {
-  return cleanSecretEnv(process.env.GEMINI_API_KEY);
+  return cleanSecretEnv(process.env.GEMINI_API_KEY) || cleanSecretEnv(process.env.API_KEY);
 }
 
 function sanitizeApiErrorDetail(message: string): string {
@@ -269,11 +269,12 @@ function createGenAIClient(useVertexAi: boolean) {
 }
 
 function getVertexEndpointModes(): boolean[] {
-  const explicit = cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI).toLowerCase();
-  if (explicit === 'true') return [true];
-  if (explicit === 'false') return [false];
   const apiKey = getGeminiApiKey();
-  return apiKey.startsWith('AQ.') ? [false, true] : [false];
+  const explicit = cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI).toLowerCase();
+  if (explicit === 'true') return apiKey.startsWith('AQ.') ? [true, false] : [true];
+  if (apiKey.startsWith('AQ.')) return [false, true];
+  if (explicit === 'false') return [false];
+  return [false];
 }
 
 async function generateGeminiContentWithFallback(
@@ -486,11 +487,13 @@ export function getHealthPayload() {
     AI_PROVIDER === 'openai'
       ? (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
       : GEMINI_MODEL;
+  const geminiKey = getGeminiApiKey();
   return {
     ok: true,
     provider: AI_PROVIDER,
     model: activeModel,
     authRequired: API_AUTH_REQUIRED,
+    keyConfigured: Boolean(geminiKey && geminiKey !== 'MY_GEMINI_API_KEY'),
   };
 }
 
@@ -592,11 +595,24 @@ export async function processGenerateSeoKeywords(
 
     return { status: 200, data: { keywords: keywords.slice(0, 12) } };
   } catch (err: unknown) {
-    console.error('SEO keyword generation error:', err);
     const message = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeApiErrorDetail(message);
+    if (
+      message.includes('PERMISSION_DENIED') ||
+      message.includes('API_KEY_INVALID') ||
+      message.toLowerCase().includes('api key not valid')
+    ) {
+      return {
+        status: 400,
+        data: {
+          error: `API key error when generating SEO keywords: ${detail || 'Please check GEMINI_API_KEY in Settings > Secrets or your server environment.'}`,
+        },
+      };
+    }
+    console.error('SEO keyword generation error:', detail || message);
     return {
       status: 500,
-      data: { error: `Failed to generate SEO keywords: ${message.slice(0, 180)}` },
+      data: { error: `Failed to generate SEO keywords: ${detail.slice(0, 180) || message.slice(0, 180)}` },
     };
   }
 }
@@ -753,8 +769,8 @@ export async function processGenerateReview(
       },
     };
   } catch (err: unknown) {
-    console.error('Review generation error:', err);
     const message = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeApiErrorDetail(message);
     const status =
       typeof err === 'object' && err !== null && 'status' in err
         ? Number((err as { status?: unknown }).status)
@@ -763,16 +779,16 @@ export async function processGenerateReview(
       status === 403 ||
       status === 400 ||
       message.includes('PERMISSION_DENIED') ||
-      message.includes('API_KEY_INVALID')
+      message.includes('API_KEY_INVALID') ||
+      message.toLowerCase().includes('api key not valid')
     ) {
-      const detail = sanitizeApiErrorDetail(message);
       const isRefererBlock = detail.toLowerCase().includes('referer');
       return {
         status: status === 400 ? 400 : 403,
         data: {
           error: isRefererBlock
             ? 'Your Google API key has HTTP referrer restrictions enabled, which blocks server-side calls from Vercel. In Google Cloud Console, switch this key to None (or API-only restrictions), or use a standard server Gemini API key.'
-            : `API key error when generating review: ${detail || 'Please check GEMINI_API_KEY in your server environment.'}`,
+            : `API key error when generating review: ${detail || 'Please check GEMINI_API_KEY in Settings > Secrets or your server environment.'} Please verify your GEMINI_API_KEY in Settings > Secrets.`,
         },
       };
     }
@@ -782,9 +798,10 @@ export async function processGenerateReview(
         data: { error: 'AI generation rate limit reached. Please wait a moment and try again.' },
       };
     }
+    console.error('Review generation error:', detail || message);
     return {
       status: 500,
-      data: { error: `Failed to generate review draft: ${message.slice(0, 180)}` },
+      data: { error: `Failed to generate review draft: ${(detail || message).slice(0, 180)}` },
     };
   }
 }

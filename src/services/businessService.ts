@@ -432,6 +432,87 @@ export function subscribeToAllEvents(
   );
 }
 
+function getEventTimeMs(value: unknown): number {
+  if (!value) return 0;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const candidate = value as {
+      toMillis?: () => number;
+      toDate?: () => Date;
+      seconds?: unknown;
+      _seconds?: unknown;
+    };
+    if (typeof candidate.toMillis === 'function') {
+      try {
+        const ms = candidate.toMillis();
+        if (Number.isFinite(ms)) return ms;
+      } catch {
+        // Fallback to seconds fields below
+      }
+    }
+    if (typeof candidate.toDate === 'function') {
+      try {
+        const ms = candidate.toDate().getTime();
+        if (Number.isFinite(ms)) return ms;
+      } catch {
+        // Fallback to seconds fields below
+      }
+    }
+    const rawSeconds = candidate.seconds ?? candidate._seconds;
+    if (rawSeconds !== undefined && rawSeconds !== null) {
+      const sec = Number(rawSeconds);
+      if (Number.isFinite(sec)) return sec * 1000;
+    }
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+export function subscribeToBusinessEvents(
+  businessId: string,
+  ownerId: string,
+  viewerUid: string,
+  isAdmin: boolean,
+  onData: (events: ReviewEvent[]) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  if (!isAdmin && ownerId !== viewerUid) {
+    onData([]);
+    return () => {};
+  }
+
+  const path = 'reviewEvents';
+  const q = isAdmin
+    ? query(collection(db, path), where('businessId', '==', businessId), limit(150))
+    : query(collection(db, path), where('ownerId', '==', viewerUid), limit(200));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: ReviewEvent[] = snapshot.docs
+        .map((docSnap) => ({
+          ...(docSnap.data() as Omit<ReviewEvent, 'id'>),
+          id: docSnap.id,
+        }))
+        .filter((item) => item.businessId === businessId)
+        .sort((a, b) => getEventTimeMs(b.createdAt) - getEventTimeMs(a.createdAt));
+      onData(items);
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
 export function subscribeToAdmins(
   onData: (admins: AdminUser[]) => void,
   onError?: (err: Error) => void,

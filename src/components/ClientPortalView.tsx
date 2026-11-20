@@ -1,20 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   ArrowRight,
+  ArrowUpRight,
   BarChart3,
   Check,
   CheckCircle2,
   ChevronDown,
+  Clock,
   Copy,
   Download,
   ExternalLink,
   Eye,
   FileText,
   Home,
+  LayoutDashboard,
   Lock,
   LogOut,
-  Menu,
   Palette,
   PauseCircle,
   Plus,
@@ -22,10 +24,14 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
-  X,
+  Store,
+  TrendingUp,
 } from 'lucide-react';
-import type { Business, BusinessStats, PublicProfile } from '../types';
-import { subscribeToBusinessStats } from '../services/businessService';
+import type { Business, BusinessStats, PublicProfile, ReviewEvent, ReviewEventType } from '../types';
+import {
+  subscribeToBusinessEvents,
+  subscribeToBusinessStats,
+} from '../services/businessService';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
 import { BusinessLogo } from './BusinessLogo';
@@ -35,6 +41,7 @@ import { BrandingTab } from './BrandingTab';
 import { CustomerReviewFlow } from './CustomerReviewFlow';
 
 type PortalTab = 'qr_features' | 'qr_editor' | 'questions' | 'branding' | 'preview';
+type EventFilter = 'all' | ReviewEventType;
 
 interface ClientPortalViewProps {
   user: User;
@@ -54,6 +61,65 @@ const ACCESS_LABELS = {
   full: 'Full Self-Service',
 } as const;
 
+function parseEventMs(ts: unknown): number {
+  if (!ts) return 0;
+  if (typeof ts === 'number') {
+    return Number.isFinite(ts) ? ts : 0;
+  }
+  if (ts instanceof Date) {
+    const ms = ts.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (typeof ts === 'object' && ts !== null) {
+    const candidate = ts as {
+      toMillis?: () => number;
+      toDate?: () => Date;
+      seconds?: unknown;
+      _seconds?: unknown;
+    };
+    if (typeof candidate.toMillis === 'function') {
+      try {
+        const ms = candidate.toMillis();
+        if (Number.isFinite(ms)) return ms;
+      } catch {
+        // Fallback to seconds fields below
+      }
+    }
+    if (typeof candidate.toDate === 'function') {
+      try {
+        const ms = candidate.toDate().getTime();
+        if (Number.isFinite(ms)) return ms;
+      } catch {
+        // Fallback to seconds fields below
+      }
+    }
+    const rawSeconds = candidate.seconds ?? candidate._seconds;
+    if (rawSeconds !== undefined && rawSeconds !== null) {
+      const sec = Number(rawSeconds);
+      if (Number.isFinite(sec)) return sec * 1000;
+    }
+  }
+  if (typeof ts === 'string') {
+    const parsed = Date.parse(ts);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function formatRelativeTime(ts: unknown): string {
+  const ms = parseEventMs(ts);
+  if (!ms) return 'Just now';
+  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
 export function ClientPortalView({
   user,
   isAdmin,
@@ -67,26 +133,60 @@ export function ClientPortalView({
 }: ClientPortalViewProps) {
   const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
   const [stats, setStats] = useState<BusinessStats | null>(null);
+  const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [eventFilter, setEventFilter] = useState<EventFilter>('all');
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const switcherRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [switcherOpen]);
 
   useEffect(() => {
     if (!activeBusiness) {
       setStats(null);
+      setEvents([]);
       return;
     }
-    return subscribeToBusinessStats(activeBusiness.id, (next) => {
+    const unsubStats = subscribeToBusinessStats(activeBusiness.id, (next) => {
       setStats(next);
     });
-  }, [activeBusiness?.id]);
+    const unsubEvents = subscribeToBusinessEvents(
+      activeBusiness.id,
+      activeBusiness.ownerId,
+      user.uid,
+      isAdmin,
+      (nextEvents) => {
+        setEvents(nextEvents);
+      },
+      () => {
+        setEvents([]);
+      },
+    );
+    return () => {
+      unsubStats();
+      unsubEvents();
+    };
+  }, [activeBusiness?.id, activeBusiness?.ownerId, user.uid, isAdmin]);
 
   // Reset tab if permission level restricts current tab
   useEffect(() => {
     if (!activeBusiness) return;
-    if (activeBusiness.clientAccessLevel === 'read_only' && activeTab !== 'qr_features' && activeTab !== 'preview') {
+    if (
+      activeBusiness.clientAccessLevel === 'read_only' &&
+      activeTab !== 'qr_features' &&
+      activeTab !== 'preview'
+    ) {
       setActiveTab('qr_features');
     } else if (
       activeBusiness.clientAccessLevel === 'qr_and_questions' &&
@@ -120,10 +220,10 @@ export function ClientPortalView({
   const canEditBranding = accessLevel === 'full';
 
   const navItems: { id: PortalTab; label: string; icon: typeof QrCode; visible: boolean }[] = [
-    { id: 'qr_features', label: 'My QR & Features', icon: QrCode, visible: true },
+    { id: 'qr_features', label: 'Overview & QR', icon: LayoutDashboard, visible: true },
     {
       id: 'qr_editor',
-      label: 'QR Customizer',
+      label: 'QR Studio',
       icon: SlidersHorizontal,
       visible: canEditQrOrQuestions,
     },
@@ -191,205 +291,218 @@ export function ClientPortalView({
       }
     : null;
 
-  const sidebarContent = (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200">
-      <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
-        <span className="font-display text-lg font-bold tracking-tight text-slate-900">
-          ReviewFlow
-        </span>
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
-          aria-label="Close menu"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
+  // Derived Real Analytics Metrics
+  const scansCount = stats?.scans ?? 0;
+  const generatedCount = stats?.generated ?? 0;
+  const redirectsCount = stats?.redirects ?? 0;
+  const conversionRate = scansCount > 0 ? Math.round((redirectsCount / scansCount) * 100) : 0;
+  const draftCompletionRate = scansCount > 0 ? Math.round((generatedCount / scansCount) * 100) : 0;
 
-      {/* Business Selector (scoped strictly to client's assigned businesses) */}
-      <div className="p-4 border-b border-slate-200 relative">
-        <p className="text-[11px] font-medium text-slate-500 mb-2">Your Business</p>
-        {activeBusiness ? (
-          businesses.length > 1 ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setSwitcherOpen((p) => !p)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 flex items-center justify-between gap-2.5 text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <BusinessLogo
-                    src={activeBusiness.logoDataUrl}
-                    name={activeBusiness.name}
-                    primaryColor={activeBusiness.branding.primaryColor}
-                    sizeClass="w-8 h-8"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 truncate">
-                      {activeBusiness.name}
-                    </p>
-                    <p className="text-[11px] text-slate-500 truncate">
-                      {activeBusiness.category}
-                    </p>
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-              </button>
+  const styleShort = stats?.styleShort ?? 0;
+  const styleDetailed = stats?.styleDetailed ?? 0;
+  const styleProfessional = stats?.styleProfessional ?? 0;
+  const styleTotal = styleShort + styleDetailed + styleProfessional;
+  const pctShort = styleTotal > 0 ? Math.round((styleShort / styleTotal) * 100) : 0;
+  const pctDetailed = styleTotal > 0 ? Math.round((styleDetailed / styleTotal) * 100) : 0;
+  const pctProfessional =
+    styleTotal > 0 ? Math.max(0, 100 - pctShort - pctDetailed) : 0;
 
-              {switcherOpen && (
-                <div className="mt-2 rounded-xl border border-slate-200 bg-white shadow-lg p-1.5 space-y-1 z-30">
-                  {businesses.map((biz) => (
-                    <button
-                      key={biz.id}
-                      type="button"
-                      onClick={() => {
-                        onSelectBusiness(biz.id);
-                        setSwitcherOpen(false);
-                      }}
-                      className={`w-full px-2.5 py-2 rounded-lg flex items-center gap-2.5 text-left text-xs cursor-pointer ${
-                        biz.id === activeBusiness.id
-                          ? 'bg-teal-50 text-teal-900 font-semibold'
-                          : 'text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <BusinessLogo
-                        src={biz.logoDataUrl}
-                        name={biz.name}
-                        primaryColor={biz.branding.primaryColor}
-                        sizeClass="w-6 h-6"
-                      />
-                      <span className="truncate">{biz.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-2.5">
-              <BusinessLogo
-                src={activeBusiness.logoDataUrl}
-                name={activeBusiness.name}
-                primaryColor={activeBusiness.branding.primaryColor}
-                sizeClass="w-8 h-8"
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 truncate">
-                  {activeBusiness.name}
-                </p>
-                <p className="text-[11px] text-slate-500 truncate">{activeBusiness.category}</p>
-              </div>
-            </div>
-          )
-        ) : (
-          <p className="text-xs text-slate-500">No business assigned yet</p>
-        )}
-      </div>
+  // Daily 7-day trend computed from real reviewEvents
+  const dailySeries = useMemo(() => {
+    const days: { label: string; key: string; scans: number; generated: number; redirects: number }[] =
+      [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      days.push({ label, key, scans: 0, generated: 0, redirects: 0 });
+    }
+    const dayMap = new Map(days.map((d) => [d.key, d]));
+    for (const ev of events) {
+      const ms = parseEventMs(ev.createdAt);
+      if (!ms) continue;
+      const d = new Date(ms);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const bucket = dayMap.get(key);
+      if (!bucket) continue;
+      if (ev.eventType === 'scan') bucket.scans += 1;
+      else if (ev.eventType === 'generate') bucket.generated += 1;
+      else if (ev.eventType === 'copy_redirect') bucket.redirects += 1;
+    }
+    return days;
+  }, [events]);
 
-      {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1">
-        {navItems
-          .filter((item) => item.visible)
-          .map((item) => {
-            const Icon = item.icon;
-            const active = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={!activeBusiness}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-40 ${
-                  active
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-      </nav>
+  const maxDailyValue = useMemo(() => {
+    let maxVal = 1;
+    for (const d of dailySeries) {
+      maxVal = Math.max(maxVal, d.scans, d.generated, d.redirects);
+    }
+    return maxVal;
+  }, [dailySeries]);
 
-      {/* Footer */}
-      <div className="p-4 border-t border-slate-200 space-y-2.5">
-        {isAdmin && onSwitchToAdmin ? (
-          <button
-            type="button"
-            onClick={onSwitchToAdmin}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Business Management</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onViewLanding}
-            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>Landing Page</span>
-          </button>
-        )}
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-900 truncate">Client Portal</p>
-          <p className="text-xs text-slate-500 truncate">{user.email}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sign Out</span>
-        </button>
-      </div>
-    </div>
-  );
+  const buildSeriesPath = (values: number[]) => {
+    if (values.length === 0) return '';
+    return values
+      .map((v, idx) => {
+        const x = 20 + (idx / Math.max(1, values.length - 1)) * 660;
+        const y = 200 - (v / maxDailyValue) * 165;
+        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  };
+
+  const scanLinePath = buildSeriesPath(dailySeries.map((d) => d.scans));
+  const redirectLinePath = buildSeriesPath(dailySeries.map((d) => d.redirects));
+  const scanAreaPath = scanLinePath ? `${scanLinePath} L 680,210 L 20,210 Z` : '';
+  const redirectAreaPath = redirectLinePath ? `${redirectLinePath} L 680,210 L 20,210 Z` : '';
+
+  // Highlight tags frequency computed from real reviewEvents
+  const topHighlights = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ev of events) {
+      if (!Array.isArray(ev.selectedHighlights)) continue;
+      for (const h of ev.selectedHighlights) {
+        const label = h.trim();
+        if (!label) continue;
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4);
+  }, [events]);
+
+  const filteredEvents = useMemo(() => {
+    if (eventFilter === 'all') return events.slice(0, 9);
+    return events.filter((e) => e.eventType === eventFilter).slice(0, 9);
+  }, [events, eventFilter]);
+
+  const scanEventCount = events.filter((e) => e.eventType === 'scan').length;
+  const generateEventCount = events.filter((e) => e.eventType === 'generate').length;
+  const redirectEventCount = events.filter((e) => e.eventType === 'copy_redirect').length;
+  const canReadEventHistory =
+    Boolean(activeBusiness) && (isAdmin || activeBusiness?.ownerId === user.uid);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
-      <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
-        {sidebarContent}
-      </aside>
-
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div
-            className="fixed inset-0 bg-slate-900/40"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <div className="relative w-72 max-w-[85vw] h-full z-10">{sidebarContent}</div>
-        </div>
-      )}
-
-      <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
+      {/* Two-Tier Executive Portal Header */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
+        {/* Top Utility Row */}
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+            {/* Brand Lockup */}
             <button
               type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100"
-              aria-label="Open menu"
+              onClick={onViewLanding}
+              className="flex items-center gap-2.5 text-left cursor-pointer shrink-0 group"
             >
-              <Menu className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-[#0f766e] text-white flex items-center justify-center shadow-sm group-hover:bg-[#005c55] transition-colors">
+                <QrCode className="w-5 h-5" />
+              </div>
+              <div className="hidden sm:flex flex-col">
+                <span className="font-display text-base font-bold text-slate-900 leading-tight">
+                  ReviewFlow
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500 leading-tight">
+                  Client Portal
+                </span>
+              </div>
             </button>
-            <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="text-slate-500 truncate">Client Portal</span>
-              <span className="text-slate-300" aria-hidden="true">/</span>
-              <span className="font-semibold text-slate-900 truncate">
-                {activeBusiness ? activeBusiness.name : 'Pending Assignment'}
+
+            <div className="h-6 w-px bg-slate-200 hidden sm:block shrink-0" />
+
+            {/* Assigned Business Switcher */}
+            {activeBusiness ? (
+              <div className="relative min-w-0" ref={switcherRef}>
+                {businesses.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSwitcherOpen((p) => !p)}
+                    className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#f0fdfa] transition-colors text-left cursor-pointer max-w-[230px] sm:max-w-xs"
+                  >
+                    <BusinessLogo
+                      src={activeBusiness.logoDataUrl}
+                      name={activeBusiness.name}
+                      primaryColor={activeBusiness.branding.primaryColor}
+                      sizeClass="w-7 h-7"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 truncate leading-tight">
+                        {activeBusiness.name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate leading-tight">
+                        {businesses.length} locations assigned
+                      </p>
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl bg-slate-100 max-w-[230px] sm:max-w-xs">
+                    <BusinessLogo
+                      src={activeBusiness.logoDataUrl}
+                      name={activeBusiness.name}
+                      primaryColor={activeBusiness.branding.primaryColor}
+                      sizeClass="w-7 h-7"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate leading-tight">
+                        {activeBusiness.name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate leading-tight">
+                        {activeBusiness.category}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {switcherOpen && businesses.length > 1 && (
+                  <div className="absolute left-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl p-1.5 space-y-1 z-50">
+                    {businesses.map((biz) => (
+                      <button
+                        key={biz.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectBusiness(biz.id);
+                          setSwitcherOpen(false);
+                        }}
+                        className={`w-full px-3 py-2 rounded-xl flex items-center gap-2.5 text-left text-xs transition-colors cursor-pointer ${
+                          biz.id === activeBusiness.id
+                            ? 'bg-[#f0fdfa] text-[#005c55] font-bold'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <BusinessLogo
+                          src={biz.logoDataUrl}
+                          name={biz.name}
+                          primaryColor={biz.branding.primaryColor}
+                          sizeClass="w-7 h-7"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">{biz.name}</p>
+                          <p className="text-[11px] font-normal text-slate-500 truncate">
+                            {biz.category}
+                          </p>
+                        </div>
+                        {biz.id === activeBusiness.id && (
+                          <Check className="w-3.5 h-3.5 text-[#005c55] shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs font-semibold text-slate-500 truncate">
+                Pending Assignment
               </span>
-            </div>
+            )}
           </div>
 
-          {activeBusiness && (
-            <div className="flex items-center gap-3 shrink-0">
+          {/* Right Actions & Profile */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {activeBusiness && (
               <button
                 type="button"
                 onClick={() => {
@@ -400,158 +513,643 @@ export function ClientPortalView({
                   );
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }}
-                className="px-3.5 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors whitespace-nowrap cursor-pointer"
               >
-                <span>Open Live Review Page</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Open Live Review Page</span>
+                <span className="sm:hidden">Live Page</span>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
               </button>
-            </div>
-          )}
-        </header>
+            )}
 
-        <main className="flex-1 p-4 sm:p-8 max-w-6xl w-full mx-auto">
-          {!activeBusiness ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-5 max-w-xl mx-auto mt-8">
-              <QrCode className="w-10 h-10 text-slate-400 mx-auto" />
-              <div className="space-y-2">
-                <h1 className="font-display text-2xl font-bold text-slate-900">
-                  {isAdmin ? 'No Business Selected Yet' : 'Client Portal Access Not Assigned'}
-                </h1>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  {isAdmin ? (
-                    <>
-                      Signed in as <span className="font-mono text-slate-900">{user.email}</span>. Create a new business profile or switch back to Business Management.
-                    </>
-                  ) : (
-                    <>
-                      You are signed in as <span className="font-mono text-slate-900">{user.email}</span>, which is not assigned to any business yet. Ask your business manager to add this Gmail account in Business Management to unlock Client Portal access.
-                    </>
-                  )}
+            {isAdmin && onSwitchToAdmin ? (
+              <button
+                type="button"
+                onClick={onSwitchToAdmin}
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 whitespace-nowrap cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#005c55]" />
+                <span>Business Management</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onViewLanding}
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 whitespace-nowrap cursor-pointer"
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Home</span>
+              </button>
+            )}
+
+            <div className="hidden lg:flex items-center gap-2.5 pl-1">
+              <div className="w-8 h-8 rounded-full bg-[#005c55] text-white flex items-center justify-center text-xs font-bold">
+                {(user.email || 'U').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="text-left max-w-[160px]">
+                <p className="text-xs font-semibold text-slate-900 truncate leading-tight">
+                  {user.displayName || user.email?.split('@')[0] || 'Client'}
+                </p>
+                <p className="text-[11px] font-medium text-[#005c55] truncate leading-tight">
+                  {activeBusiness ? ACCESS_LABELS[accessLevel] : 'Client Account'}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                {isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={onOpenNewBusiness}
-                    className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Register Business</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={onViewLanding}
-                    className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
-                  >
-                    <Home className="w-4 h-4" />
-                    <span>Go to Landing Page</span>
-                  </button>
-                )}
-              </div>
             </div>
-          ) : (
-            <>
-              {activeTab === 'qr_features' && (
-                <div className="space-y-6">
-                  {/* Top Summary Strip */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <BusinessLogo
-                        src={activeBusiness.logoDataUrl}
-                        name={activeBusiness.name}
-                        primaryColor={activeBusiness.branding.primaryColor}
-                        sizeClass="w-14 h-14"
-                      />
-                      <div className="min-w-0">
-                        <h1 className="font-display text-2xl font-bold text-slate-900 truncate">
+
+            <button
+              type="button"
+              onClick={onSignOut}
+              title="Sign Out"
+              aria-label="Sign Out"
+              className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Horizontal Tab Navigation Bar */}
+        {activeBusiness && (
+          <div className="border-t border-slate-100 bg-white">
+            <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 overflow-x-auto">
+              <nav className="flex items-center gap-1 min-w-max">
+                {navItems
+                  .filter((item) => item.visible)
+                  .map((item) => {
+                    const Icon = item.icon;
+                    const active = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setActiveTab(item.id)}
+                        className={`px-4 py-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          active
+                            ? 'border-[#0f766e] text-[#005c55] bg-[#f0fdfa]/60'
+                            : 'border-transparent text-slate-600 hover:text-[#005c55] hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+              </nav>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Main Content Container */}
+      <main className="flex-1 w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-7 sm:py-8">
+        {!activeBusiness ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-5 max-w-xl mx-auto mt-8 shadow-sm">
+            <QrCode className="w-10 h-10 text-slate-400 mx-auto" />
+            <div className="space-y-2">
+              <h1 className="font-display text-2xl font-bold text-slate-900">
+                {isAdmin ? 'No Business Selected Yet' : 'Client Portal Access Not Assigned'}
+              </h1>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {isAdmin ? (
+                  <>
+                    Signed in as <span className="font-mono text-slate-900">{user.email}</span>.
+                    Create a new business profile or switch back to Business Management.
+                  </>
+                ) : (
+                  <>
+                    You are signed in as{' '}
+                    <span className="font-mono text-slate-900">{user.email}</span>, which is not
+                    assigned to any business yet. Ask your business manager to add this Gmail
+                    account in Business Management to unlock Client Portal access.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={onOpenNewBusiness}
+                  className="px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Register Business</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onViewLanding}
+                  className="px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Home className="w-4 h-4" />
+                  <span>Go to Landing Page</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            {activeTab === 'qr_features' && (
+              <div className="flex flex-col space-y-6 pb-8">
+                {/* Executive Business Header Bar */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                  <div className="flex items-start sm:items-center gap-4 min-w-0">
+                    <BusinessLogo
+                      src={activeBusiness.logoDataUrl}
+                      name={activeBusiness.name}
+                      primaryColor={activeBusiness.branding.primaryColor}
+                      sizeClass="w-14 h-14"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <h1 className="font-display text-2xl font-bold text-slate-900 tracking-tight truncate">
                           {activeBusiness.name}
                         </h1>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span>{activeBusiness.category}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="inline-flex items-center gap-1 font-medium text-slate-800">
-                            {activeBusiness.qrConfig.isActive ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>QR Active</span>
-                              </>
-                            ) : (
-                              <>
-                                <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
-                                <span>QR Paused</span>
-                              </>
-                            )}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Access: {ACCESS_LABELS[accessLevel]}</span>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#005c55] bg-[#f0fdfa] px-2.5 py-1 rounded-full">
+                          {activeBusiness.qrConfig.isActive ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>QR Active</span>
+                            </>
+                          ) : (
+                            <>
+                              <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
+                              <span className="text-amber-700">QR Paused</span>
+                            </>
+                          )}
+                        </span>
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('preview')}
-                        className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Preview Customer Form</span>
-                      </button>
+                      <p className="text-xs sm:text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span>{activeBusiness.category}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Access: {ACCESS_LABELS[accessLevel]}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono text-xs text-slate-600">
+                          Token: {activeBusiness.qrConfig.token}
+                        </span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Stats Strip (if analyticsView enabled) */}
-                  {activeBusiness.enabledFeatures.analyticsView && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                        <p className="text-xs font-medium text-slate-500">Total QR Scans</p>
-                        <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                          {stats?.scans ?? 0}
-                        </p>
+                  {/* Quick Actions */}
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('preview')}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-[#005c55]" />
+                      <span>Preview Form</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-[#f0fdfa] text-xs font-semibold text-slate-800 hover:text-[#005c55] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Link Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-[#005c55]" />
+                          <span>Copy Link</span>
+                        </>
+                      )}
+                    </button>
+                    {activeBusiness.enabledFeatures.pdfPosterExport && (
+                      <button
+                        type="button"
+                        disabled={isExportingPdf}
+                        onClick={handleDownloadPdf}
+                        className="px-4 py-2 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{isExportingPdf ? 'Exporting...' : 'PDF Poster Kit'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4 KPI Telemetry Scorecards */}
+                {activeBusiness.enabledFeatures.analyticsView && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Card 1: Total QR Scans */}
+                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            QR Scans
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                              {scansCount}
+                            </span>
+                            <span className="text-xs text-slate-500">Total visits</span>
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                          <QrCode className="w-5 h-5" />
+                        </div>
                       </div>
-                      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                        <p className="text-xs font-medium text-slate-500">AI Drafts Generated</p>
-                        <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                          {stats?.generated ?? 0}
-                        </p>
+
+                      <div className="my-3">
+                        <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
+                          <path
+                            d="M0,32 Q25,28 50,22 T105,16 T160,6"
+                            fill="none"
+                            stroke="#0f766e"
+                            strokeLinecap="round"
+                            strokeWidth="2.5"
+                          />
+                          <path
+                            d="M0,32 Q25,28 50,22 T105,16 T160,6 L160,36 L0,36 Z"
+                            fill="rgba(15,118,110,0.08)"
+                          />
+                          <circle cx="160" cy="6" fill="#0f766e" r="3" />
+                        </svg>
                       </div>
-                      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                        <p className="text-xs font-medium text-slate-500">Google Redirects</p>
-                        <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                          {stats?.redirects ?? 0}
-                        </p>
-                      </div>
-                      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                        <p className="text-xs font-medium text-slate-500">Scan-to-Google Rate</p>
-                        <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                          {stats && stats.scans > 0
-                            ? Math.round((stats.redirects / stats.scans) * 100)
-                            : 0}
-                          %
-                        </p>
+
+                      <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="font-semibold text-[#005c55] tabular-nums">
+                          {draftCompletionRate}% started AI draft
+                        </span>
+                        <span className="text-slate-500 font-mono">Rev {activeBusiness.qrConfig.token}</span>
                       </div>
                     </div>
-                  )}
 
-                  {/* Two-Column: QR Card & Active Business Features */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {/* Left: Business QR Code */}
-                    <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 flex flex-col items-center text-center">
-                      <div className="w-full flex items-center justify-between text-xs text-slate-500 mb-4">
-                        <span className="font-semibold text-slate-800">Your Business QR</span>
-                        <span className="font-mono">Rev {activeBusiness.qrConfig.token}</span>
+                    {/* Card 2: AI Drafts Generated */}
+                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            AI Drafts Generated
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                              {generatedCount}
+                            </span>
+                            <span className="text-xs text-slate-500">Personalized drafts</span>
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div className="my-3">
+                        <svg className="w-full h-9 overflow-visible" viewBox="0 0 160 36" aria-hidden="true">
+                          <path
+                            d="M0,30 Q30,26 60,18 T115,14 T160,5"
+                            fill="none"
+                            stroke="#006b5f"
+                            strokeLinecap="round"
+                            strokeWidth="2.5"
+                          />
+                          <path
+                            d="M0,30 Q30,26 60,18 T115,14 T160,5 L160,36 L0,36 Z"
+                            fill="rgba(0,107,95,0.08)"
+                          />
+                          <circle cx="160" cy="5" fill="#006b5f" r="3" />
+                        </svg>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="font-semibold text-[#005c55]">
+                          {activeBusiness.enabledFeatures.aiReviewDrafts ? 'AI Active' : 'Manual Mode'}
+                        </span>
+                        <span className="text-slate-500 capitalize">
+                          Default: {activeBusiness.branding.defaultReviewStyle}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 3: Review Style Breakdown */}
+                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            Draft Tone Mix
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                              {styleTotal}
+                            </span>
+                            <span className="text-xs text-slate-500">Style selections</span>
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                          <BarChart3 className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div className="my-3">
+                        <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden flex gap-0.5">
+                          <div
+                            className="h-full bg-[#0f766e] transition-all"
+                            style={{ width: `${styleTotal > 0 ? pctShort : 34}%` }}
+                            title={`Short: ${pctShort}%`}
+                          />
+                          <div
+                            className="h-full bg-[#006b5f] transition-all"
+                            style={{ width: `${styleTotal > 0 ? pctDetailed : 33}%` }}
+                            title={`Detailed: ${pctDetailed}%`}
+                          />
+                          <div
+                            className="h-full bg-[#8bd6b6] transition-all"
+                            style={{ width: `${styleTotal > 0 ? pctProfessional : 33}%` }}
+                            title={`Professional: ${pctProfessional}%`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 font-mono tabular-nums">
+                          <span>Short {pctShort}%</span>
+                          <span>Detail {pctDetailed}%</span>
+                          <span>Pro {pctProfessional}%</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="font-semibold text-slate-700">3 customer tones</span>
+                        <span className="text-[#005c55] font-semibold">Policy safe</span>
+                      </div>
+                    </div>
+
+                    {/* Card 4: Google Redirects */}
+                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            Google Redirects
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">
+                              {redirectsCount}
+                            </span>
+                            <span className="text-xs text-slate-500">Copied &amp; opened</span>
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55]">
+                          <TrendingUp className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div className="my-3 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#f0fdfa] text-[#005c55] flex items-center justify-center font-bold text-xs tabular-nums shrink-0">
+                          {conversionRate}%
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900">Scan-to-Google Rate</p>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            Equal access · No star gating
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="inline-flex items-center gap-1 font-semibold text-[#005c55]">
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Google Compliant</span>
+                        </span>
+                        <span className="text-slate-500 tabular-nums">
+                          {activeBusiness.questions.length} prompts
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Central Two-Column Analytics & QR Workspace */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left Major Column (7 cols) */}
+                  <div className="lg:col-span-7 flex flex-col space-y-6">
+                    {/* 7-Day Activity Velocity Chart */}
+                    {activeBusiness.enabledFeatures.analyticsView && (
+                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4">
+                          <div>
+                            <h2 className="font-display text-lg font-bold text-slate-900">
+                              7-Day Scan &amp; Google Redirect Activity
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              Live scan volume compared with Google Review copy &amp; handoff events
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs font-semibold">
+                            <span className="inline-flex items-center gap-1.5 text-slate-700">
+                              <span className="w-2.5 h-2.5 rounded-sm bg-[#4fdbc8]" />
+                              Scans
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 text-slate-700">
+                              <span className="w-2.5 h-2.5 rounded-sm bg-[#0f766e]" />
+                              Google Redirects
+                            </span>
+                          </div>
+                        </div>
+
+                        {canReadEventHistory && events.length > 0 ? (
+                          <>
+                            <div className="relative w-full h-56 mt-2">
+                              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-40">
+                                <div className="w-full border-b border-slate-200" />
+                                <div className="w-full border-b border-slate-200" />
+                                <div className="w-full border-b border-slate-200" />
+                                <div className="w-full border-b border-slate-200" />
+                              </div>
+
+                              <svg
+                                className="w-full h-full"
+                                preserveAspectRatio="none"
+                                viewBox="0 0 700 220"
+                                aria-label="7-day customer scan and redirect chart"
+                              >
+                                <defs>
+                                  <linearGradient id="portalScanGrad" x1="0%" x2="0%" y1="0%" y2="100%">
+                                    <stop offset="0%" stopColor="#4fdbc8" stopOpacity="0.32" />
+                                    <stop offset="100%" stopColor="#4fdbc8" stopOpacity="0" />
+                                  </linearGradient>
+                                  <linearGradient id="portalRedirGrad" x1="0%" x2="0%" y1="0%" y2="100%">
+                                    <stop offset="0%" stopColor="#0f766e" stopOpacity="0.4" />
+                                    <stop offset="100%" stopColor="#0f766e" stopOpacity="0" />
+                                  </linearGradient>
+                                </defs>
+                                <path d={scanAreaPath} fill="url(#portalScanGrad)" />
+                                <path
+                                  d={scanLinePath}
+                                  fill="none"
+                                  stroke="#4fdbc8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="3"
+                                />
+                                <path d={redirectAreaPath} fill="url(#portalRedirGrad)" />
+                                <path
+                                  d={redirectLinePath}
+                                  fill="none"
+                                  stroke="#0f766e"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="3"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-3 font-mono tabular-nums">
+                              {dailySeries.map((d) => (
+                                <span key={d.key}>{d.label}</span>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-xl bg-slate-50 border border-dashed border-slate-200 p-8 text-center my-2">
+                            <BarChart3 className="w-8 h-8 text-slate-400 mx-auto mb-2.5" />
+                            <p className="text-sm font-semibold text-slate-800">
+                              {canReadEventHistory
+                                ? 'No daily scan events recorded yet'
+                                : 'Aggregate totals are shown above'}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                              {canReadEventHistory
+                                ? 'Once customers scan your QR standee, their daily scans and Google handoffs will plot here automatically.'
+                                : 'Scan, draft, and Google redirect totals above update live as customers use your QR code.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Top Customer Highlights OR Active Form Questions & Keywords */}
+                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h2 className="font-display text-lg font-bold text-slate-900">
+                            {topHighlights.length > 0
+                              ? 'Top Customer-Selected Highlights'
+                              : 'Active Business Features & Form Summary'}
+                          </h2>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {topHighlights.length > 0
+                              ? `Most frequently tapped tags across ${events.length} recorded customer sessions`
+                              : `Capabilities and feedback questions configured for ${activeBusiness.name}`}
+                          </p>
+                        </div>
+                        {canEditQrOrQuestions && activeBusiness.enabledFeatures.customQuestions && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('questions')}
+                            className="text-xs font-semibold text-[#005c55] hover:underline inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          >
+                            <span>Edit Form</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {topHighlights.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                          {topHighlights.map(([label, count]) => {
+                            const maxCount = topHighlights[0][1] || 1;
+                            const pct = Math.max(12, Math.round((count / maxCount) * 100));
+                            return (
+                              <div
+                                key={label}
+                                className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-2"
+                              >
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="font-bold text-slate-900 truncate">{label}</span>
+                                  <span className="font-mono font-bold text-[#005c55] tabular-nums shrink-0">
+                                    {count}x
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 rounded-full bg-white overflow-hidden">
+                                  <div
+                                    className="h-full bg-[#0f766e] rounded-full"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="divide-y divide-slate-100">
+                        <div className="py-3 flex items-center justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <Sparkles className="w-4 h-4 text-[#005c55] mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                AI Review Draft Generator
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Generates Short, Detailed, and Professional drafts tailored to{' '}
+                                {activeBusiness.category}.
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-[#005c55] whitespace-nowrap">
+                            {activeBusiness.enabledFeatures.aiReviewDrafts ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+
+                        <div className="py-3 flex items-center justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <SlidersHorizontal className="w-4 h-4 text-[#005c55] mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                Dynamic Feedback Form ({activeBusiness.questions.length} questions)
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Single-select, multi-select, and optional customer comments.
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                            {canEditQrOrQuestions ? 'Editable' : 'Managed'}
+                          </span>
+                        </div>
+
+                        <div className="py-3 flex items-center justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <FileText className="w-4 h-4 text-[#005c55] mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                Printable Counter Poster PDF &amp; PNG
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Print-ready QR standee kit with your business logo and branding.
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                            {activeBusiness.enabledFeatures.pdfPosterExport ? 'Included' : 'Locked'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Minor Column (5 cols): QR Stand & Destination */}
+                  <div className="lg:col-span-5 flex flex-col space-y-6">
+                    {/* Your Business QR Stand Card */}
+                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col items-center text-center">
+                      <div className="w-full flex items-center justify-between text-xs mb-4">
+                        <span className="font-bold text-slate-900 inline-flex items-center gap-1.5">
+                          <QrCode className="w-4 h-4 text-[#005c55]" />
+                          <span>Business QR Stand</span>
+                        </span>
+                        <span className="font-mono text-slate-500">
+                          Rev {activeBusiness.qrConfig.token}
+                        </span>
                       </div>
 
                       <div
-                        className="p-4 rounded-2xl border border-slate-200"
+                        className="p-4 rounded-2xl border border-slate-200 shadow-inner"
                         style={{ backgroundColor: activeBusiness.qrConfig.bgColor }}
                       >
-                        <canvas ref={qrCanvasRef} className="w-56 h-56 block" />
+                        <canvas ref={qrCanvasRef} className="w-52 h-52 block" />
                       </div>
 
-                      <p className="mt-4 font-mono text-xs text-slate-500 break-all">
+                      <p className="mt-4 font-mono text-[11px] text-slate-500 break-all px-2">
                         {reviewUrl}
                       </p>
 
@@ -570,7 +1168,7 @@ export function ClientPortalView({
                             type="button"
                             disabled={isExportingPdf}
                             onClick={handleDownloadPdf}
-                            className="min-h-[42px] px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                            className="min-h-[42px] px-4 py-2 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                           >
                             <FileText className="w-3.5 h-3.5" />
                             <span>{isExportingPdf ? 'Exporting...' : 'Printable PDF'}</span>
@@ -578,197 +1176,274 @@ export function ClientPortalView({
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={handleCopyLink}
-                        className="mt-2.5 w-full min-h-[40px] px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {copiedLink ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Copied Review Link</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>Copy Customer Review Link</span>
-                          </>
+                      <div className="mt-2.5 w-full flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyLink}
+                          className="flex-1 min-h-[40px] px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-[#005c55] hover:bg-[#f0fdfa] inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          {copiedLink ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Copied Link</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Customer Link</span>
+                            </>
+                          )}
+                        </button>
+                        {canEditQrOrQuestions && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('qr_editor')}
+                            className="flex-1 min-h-[40px] px-3 py-2 rounded-xl text-xs font-semibold text-[#005c55] bg-[#f0fdfa] hover:bg-[#ccfbf1]/60 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            <span>Customize QR</span>
+                          </button>
                         )}
-                      </button>
+                      </div>
 
-                      {(publicBaseUrl.includes('localhost') || publicBaseUrl.includes('127.0.0.1')) && (
-                        <p className="mt-4 text-[11px] text-slate-500 leading-relaxed text-left bg-slate-50 border border-slate-200 rounded-xl p-3">
-                          Local environment detected. Set <span className="font-mono">VITE_PUBLIC_APP_URL</span> to your live domain so printed QR codes resolve on customer phones.
+                      {(publicBaseUrl.includes('localhost') ||
+                        publicBaseUrl.includes('127.0.0.1')) && (
+                        <p className="mt-4 text-[11px] text-slate-600 leading-relaxed text-left bg-slate-50 border border-slate-200 rounded-xl p-3">
+                          Local environment detected. Deploy to your live domain or set{' '}
+                          <span className="font-mono">VITE_PUBLIC_APP_URL</span> so printed QR codes
+                          resolve on customer phones.
                         </p>
                       )}
                     </div>
 
-                    {/* Right: Enabled Features & Business Details */}
-                    <div className="lg:col-span-7 space-y-6">
-                      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h2 className="font-display text-lg font-bold text-slate-900">
-                              Active Business Features
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              Capabilities and customer workflow enabled for {activeBusiness.name}.
-                            </p>
-                          </div>
-                          {accessLevel === 'read_only' && (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                              <Lock className="w-3.5 h-3.5" />
-                              <span>Managed by Admin</span>
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="divide-y divide-slate-100">
-                          <div className="py-3.5 flex items-center justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                              <Sparkles className="w-4 h-4 text-teal-700 mt-0.5 shrink-0" />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  AI Review Draft Generator
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  Generates Short &amp; Simple, Natural &amp; Detailed, and Professional drafts from customer taps.
-                                </p>
-                              </div>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-                              {activeBusiness.enabledFeatures.aiReviewDrafts ? 'Enabled' : 'Disabled'}
-                            </span>
-                          </div>
-
-                          <div className="py-3.5 flex items-center justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                              <SlidersHorizontal className="w-4 h-4 text-teal-700 mt-0.5 shrink-0" />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  Dynamic Feedback Form ({activeBusiness.questions.length} questions)
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  Tailored for {activeBusiness.category} with direct Google Review link handoff.
-                                </p>
-                              </div>
-                            </div>
-                            {canEditQrOrQuestions && activeBusiness.enabledFeatures.customQuestions ? (
-                              <button
-                                type="button"
-                                onClick={() => setActiveTab('questions')}
-                                className="text-xs font-semibold text-teal-700 hover:text-teal-800 inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                              >
-                                <span>Edit Form</span>
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </button>
-                            ) : (
-                              <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-                                Active
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="py-3.5 flex items-center justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                              <FileText className="w-4 h-4 text-teal-700 mt-0.5 shrink-0" />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  Printable A4 Counter Poster PDF
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  Print-ready PDF standee with your logo, welcome message, and scannable QR.
-                                </p>
-                              </div>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-                              {activeBusiness.enabledFeatures.pdfPosterExport ? 'Included' : 'Locked'}
-                            </span>
-                          </div>
-
-                          <div className="py-3.5 flex items-center justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                              <BarChart3 className="w-4 h-4 text-teal-700 mt-0.5 shrink-0" />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  Live QR Scan &amp; Google Redirect Tracking
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  Real-time tracking across scans, AI drafts, and Google review clicks.
-                                </p>
-                              </div>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-                              {activeBusiness.enabledFeatures.analyticsView ? 'Active' : 'Hidden'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Google Link & Target SEO Keywords Snapshot */}
-                      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-semibold text-slate-900">
-                            Connected Google Review Destination
-                          </h3>
-                          {canEditBranding && (
-                            <button
-                              type="button"
-                              onClick={() => setActiveTab('branding')}
-                              className="text-xs font-semibold text-teal-700 hover:text-teal-800 cursor-pointer"
-                            >
-                              Edit Branding &amp; Keywords
-                            </button>
-                          )}
-                        </div>
-                        <p className="font-mono text-xs text-slate-600 break-all">
-                          {activeBusiness.googleReviewUrl || 'https://www.google.com/maps'}
-                        </p>
-                        {activeBusiness.seoKeywords && activeBusiness.seoKeywords.length > 0 && (
-                          <div className="pt-3 border-t border-slate-100">
-                            <p className="text-xs font-medium text-slate-500 mb-1.5">
-                              AI Google Ranking Keywords
-                            </p>
-                            <p className="text-xs text-slate-700 leading-relaxed">
-                              {activeBusiness.seoKeywords.join(' · ')}
-                            </p>
-                          </div>
+                    {/* Connected Google Review Destination & SEO Keywords */}
+                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-display text-base font-bold text-slate-900">
+                          Google Review Destination
+                        </h3>
+                        {canEditBranding && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('branding')}
+                            className="text-xs font-semibold text-[#005c55] hover:underline cursor-pointer whitespace-nowrap"
+                          >
+                            Edit Branding
+                          </button>
                         )}
                       </div>
+
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-2">
+                        <p className="font-mono text-xs text-slate-700 truncate">
+                          {activeBusiness.googleReviewUrl || 'https://www.google.com/maps'}
+                        </p>
+                        <a
+                          href={activeBusiness.googleReviewUrl || 'https://www.google.com/maps'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-semibold text-[#005c55] hover:underline inline-flex items-center gap-1 shrink-0"
+                        >
+                          <span>Test</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+
+                      {activeBusiness.seoKeywords && activeBusiness.seoKeywords.length > 0 && (
+                        <div className="pt-2 border-t border-slate-100">
+                          <p className="text-xs font-semibold text-slate-500 mb-2">
+                            AI Google Search Keywords
+                          </p>
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {activeBusiness.seoKeywords.join(' · ')}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-              )}
 
-              {activeTab === 'qr_editor' && canEditQrOrQuestions && (
-                <QrStudioTab business={activeBusiness} />
-              )}
+                {/* Live Customer Interaction Stream */}
+                <div className="flex flex-col space-y-4 pt-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="font-display text-xl font-bold text-slate-900">
+                          Customer Review Flow Activity
+                        </h2>
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#f0fdfa] text-[#005c55] text-xs font-bold tabular-nums">
+                          {scansCount} Total Scans
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                        Real-time QR scans, generated drafts, and Google review handoffs for{' '}
+                        {activeBusiness.name}
+                      </p>
+                    </div>
 
-              {activeTab === 'questions' &&
-                canEditQrOrQuestions &&
-                activeBusiness.enabledFeatures.customQuestions && (
-                  <QuestionBuilderTab
-                    business={activeBusiness}
-                    onOpenPreview={() => setActiveTab('preview')}
-                  />
-                )}
+                    {canReadEventHistory && events.length > 0 && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                        {(
+                          [
+                            { id: 'all', label: `All (${events.length})` },
+                            { id: 'scan', label: `Scans (${scanEventCount})` },
+                            { id: 'generate', label: `Drafts (${generateEventCount})` },
+                            { id: 'copy_redirect', label: `Google (${redirectEventCount})` },
+                          ] as { id: EventFilter; label: string }[]
+                        ).map((pill) => (
+                          <button
+                            key={pill.id}
+                            type="button"
+                            onClick={() => setEventFilter(pill.id)}
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                              eventFilter === pill.id
+                                ? 'bg-[#0f766e] text-white shadow-sm'
+                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-[#f0fdfa] hover:text-[#005c55]'
+                            }`}
+                          >
+                            {pill.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-              {activeTab === 'branding' && canEditBranding && (
-                <BrandingTab
+                  {!canReadEventHistory ? (
+                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center gap-3 shadow-sm">
+                      <Store className="w-5 h-5 text-[#005c55] shrink-0" />
+                      <span>
+                        Aggregate scan, draft, and Google redirect totals above update in real time.
+                        Detailed per-tap logs are visible to the business creator / platform admin.
+                      </span>
+                    </div>
+                  ) : filteredEvents.length === 0 ? (
+                    <div className="p-8 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2 shadow-sm">
+                      <Clock className="w-7 h-7 text-slate-400 mx-auto" />
+                      <p className="text-sm font-semibold text-slate-900">
+                        No matching customer activity yet
+                      </p>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Share or scan your QR standee to see live scans, selected service tags,
+                        and Google handoff events appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {filteredEvents.map((ev) => (
+                        <div
+                          key={ev.id}
+                          className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3"
+                        >
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-[#005c55] uppercase tracking-wide">
+                                {ev.eventType === 'copy_redirect'
+                                  ? 'Copied & Opened Google'
+                                  : ev.eventType === 'generate'
+                                  ? 'Generated AI Draft'
+                                  : 'QR Code Scanned'}
+                              </span>
+                              <span className="text-xs text-slate-400 tabular-nums">
+                                {formatRelativeTime(ev.createdAt)}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {ev.reviewStyle && (
+                                <span className="capitalize font-semibold text-slate-800">
+                                  Tone: {ev.reviewStyle}
+                                </span>
+                              )}
+                              {ev.sentiment && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>Sentiment: {ev.sentiment}</span>
+                                </>
+                              )}
+                            </div>
+
+                            {Array.isArray(ev.selectedHighlights) &&
+                              ev.selectedHighlights.length > 0 && (
+                                <p className="text-xs text-slate-600 leading-relaxed">
+                                  {ev.selectedHighlights.join(' · ')}
+                                </p>
+                              )}
+                          </div>
+
+                          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                            <span className="font-mono">/{ev.slug}</span>
+                            <span className="inline-flex items-center gap-1 text-[#005c55] font-semibold">
+                              <Check className="w-3 h-3" />
+                              Recorded
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'qr_editor' && canEditQrOrQuestions && (
+              <QrStudioTab business={activeBusiness} />
+            )}
+
+            {activeTab === 'questions' &&
+              canEditQrOrQuestions &&
+              activeBusiness.enabledFeatures.customQuestions && (
+                <QuestionBuilderTab
                   business={activeBusiness}
-                  onDeleted={() => setActiveTab('qr_features')}
+                  onOpenPreview={() => setActiveTab('preview')}
                 />
               )}
 
-              {activeTab === 'preview' && previewProfile && (
-                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50">
-                  <CustomerReviewFlow profile={previewProfile} isPreview />
-                </div>
-              )}
-            </>
-          )}
-        </main>
-      </div>
+            {activeTab === 'branding' && canEditBranding && (
+              <BrandingTab
+                business={activeBusiness}
+                onDeleted={() => setActiveTab('qr_features')}
+              />
+            )}
+
+            {activeTab === 'preview' && previewProfile && (
+              <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 shadow-sm">
+                <CustomerReviewFlow profile={previewProfile} isPreview />
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Quiet Workspace Footer */}
+      <footer className="w-full bg-white border-t border-slate-200/80 py-4 mt-auto">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <span>ReviewFlow Client Portal · Multi-Business Google Review Workflow</span>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('qr_features')}
+              className="hover:text-[#005c55] transition-colors cursor-pointer"
+            >
+              Overview
+            </button>
+            {activeBusiness && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('preview')}
+                className="hover:text-[#005c55] transition-colors cursor-pointer"
+              >
+                Preview Form
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onViewLanding}
+              className="hover:text-[#005c55] transition-colors cursor-pointer"
+            >
+              Landing Page
+            </button>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
