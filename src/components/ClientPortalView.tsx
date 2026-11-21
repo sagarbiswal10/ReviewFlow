@@ -165,6 +165,7 @@ export function ClientPortalView({
   const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
   const [stats, setStats] = useState<BusinessStats | null>(null);
   const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [eventsAccessError, setEventsAccessError] = useState<string | null>(null);
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('7d');
   const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateStr(new Date()));
   const [showAllActivity, setShowAllActivity] = useState(false);
@@ -172,8 +173,6 @@ export function ClientPortalView({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [isClaiming, setIsClaiming] = useState(false);
-  const [claimFailed, setClaimFailed] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const claimedAttemptRef = useRef<Set<string>>(new Set());
@@ -189,7 +188,7 @@ export function ClientPortalView({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [switcherOpen]);
 
-  const triggerClaim = async () => {
+  useEffect(() => {
     if (
       !activeBusiness ||
       isAdmin ||
@@ -200,38 +199,17 @@ export function ClientPortalView({
     }
     const normalizedEmail = (user.email || '').trim().toLowerCase();
     const attemptKey = `${activeBusiness.id}:${user.uid}`;
-    if (normalizedEmail && activeBusiness.clientEmail === normalizedEmail) {
-      claimedAttemptRef.current.add(attemptKey);
-      setIsClaiming(true);
-      setClaimFailed(false);
-      try {
-        const ok = await claimBusinessClientUid(activeBusiness, user.uid);
-        if (!ok) {
-          claimedAttemptRef.current.delete(attemptKey);
-          setClaimFailed(true);
-        }
-      } catch (err) {
-        console.error('Error during clientUid claim:', err);
-        claimedAttemptRef.current.delete(attemptKey);
-        setClaimFailed(true);
-      } finally {
-        setIsClaiming(false);
-      }
-    }
-  };
-
-  useEffect(() => {
     if (
-      !activeBusiness ||
-      isAdmin ||
-      activeBusiness.ownerId === user.uid ||
-      activeBusiness.clientUid === user.uid
+      normalizedEmail &&
+      activeBusiness.clientEmail === normalizedEmail &&
+      !claimedAttemptRef.current.has(attemptKey)
     ) {
-      return;
-    }
-    const attemptKey = `${activeBusiness.id}:${user.uid}`;
-    if (!claimedAttemptRef.current.has(attemptKey)) {
-      triggerClaim();
+      claimedAttemptRef.current.add(attemptKey);
+      claimBusinessClientUid(activeBusiness, user.uid).then((res) => {
+        if (!res.ok && res.error) {
+          setEventsAccessError(res.error);
+        }
+      });
     }
   }, [
     activeBusiness?.id,
@@ -251,8 +229,10 @@ export function ClientPortalView({
     if (!activeBusiness) {
       setStats(null);
       setEvents([]);
+      setEventsAccessError(null);
       return;
     }
+    setEventsAccessError(null);
     const unsubStats = subscribeToBusinessStats(activeBusiness.id, (next) => {
       setStats(next);
     });
@@ -263,9 +243,11 @@ export function ClientPortalView({
       isAdmin,
       (nextEvents) => {
         setEvents(nextEvents);
+        setEventsAccessError(null);
       },
-      () => {
+      (err) => {
         setEvents([]);
+        setEventsAccessError(err?.message || 'Unable to load event history from Firestore.');
       },
       activeBusiness.clientUid,
     );
@@ -1663,31 +1645,28 @@ export function ClientPortalView({
                     )}
                   </div>
 
-                  {!canReadEventHistory ? (
-                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center justify-between gap-4 shadow-sm flex-wrap">
-                      <div className="flex items-center gap-3">
-                        <Store className="w-5 h-5 text-[#005c55] shrink-0" />
-                        <span>
-                          {isClaiming
-                            ? 'Connecting detailed Customer Review Flow Activity to your client account...'
-                            : claimFailed
-                            ? 'Unable to automatically link event activity. Click to retry or ensure Firestore security rules are published.'
-                            : 'Linking detailed Customer Review Flow Activity for your client account. Aggregate scan, draft, and Google redirect totals above are already live.'}
-                        </span>
+                  {eventsAccessError ? (
+                    <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start gap-3 shadow-sm">
+                      <Shield className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold">
+                          Customer Review Flow Activity is blocked by Firebase Firestore Rules
+                        </p>
+                        <p className="text-xs text-amber-800 leading-relaxed">
+                          Publish the latest <span className="font-mono">firestore.rules</span> file in your
+                          Firebase Console (Firestore Database → Rules) so client accounts can link{' '}
+                          <span className="font-mono">clientUid</span> and read{' '}
+                          <span className="font-mono">reviewEvents</span>. Aggregate scan totals above remain live.
+                        </p>
                       </div>
-                      {claimFailed && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const attemptKey = `${activeBusiness?.id}:${user.uid}`;
-                            claimedAttemptRef.current.delete(attemptKey);
-                            triggerClaim();
-                          }}
-                          className="px-3.5 py-1.5 rounded-lg bg-[#005c55] hover:bg-[#004d47] text-white text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors"
-                        >
-                          Retry Linking
-                        </button>
-                      )}
+                    </div>
+                  ) : !canReadEventHistory ? (
+                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center gap-3 shadow-sm">
+                      <Store className="w-5 h-5 text-[#005c55] shrink-0" />
+                      <span>
+                        Linking detailed Customer Review Flow Activity for your client account.
+                        Aggregate scan, draft, and Google redirect totals above are already live.
+                      </span>
                     </div>
                   ) : visibleEvents.length === 0 ? (
                     <div className="p-8 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2 shadow-sm">
@@ -1696,8 +1675,9 @@ export function ClientPortalView({
                         No matching customer activity in {reportWindowMeta.shortLabel}
                       </p>
                       <p className="text-xs text-slate-500 max-w-md mx-auto">
-                        Select another report window (Daily, 7 Days, 1 Month, Specific Date, or All Time)
-                        or scan your QR standee to see live activity cards here.
+                        {events.length === 0 && (stats?.scans ?? 0) > 0 && !isAdmin && activeBusiness.ownerId !== user.uid
+                          ? 'Older scans recorded before client UID linking are already included in your lifetime totals. New QR scans and AI drafts will appear here in real time.'
+                          : 'Select another report window (Daily, 7 Days, 1 Month, Specific Date, or All Time) or scan your QR standee to see live activity cards here.'}
                       </p>
                     </div>
                   ) : (
