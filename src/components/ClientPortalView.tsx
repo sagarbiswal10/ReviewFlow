@@ -172,6 +172,8 @@ export function ClientPortalView({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [claimFailed, setClaimFailed] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const claimedAttemptRef = useRef<Set<string>>(new Set());
@@ -187,7 +189,7 @@ export function ClientPortalView({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [switcherOpen]);
 
-  useEffect(() => {
+  const triggerClaim = async () => {
     if (
       !activeBusiness ||
       isAdmin ||
@@ -198,13 +200,38 @@ export function ClientPortalView({
     }
     const normalizedEmail = (user.email || '').trim().toLowerCase();
     const attemptKey = `${activeBusiness.id}:${user.uid}`;
-    if (
-      normalizedEmail &&
-      activeBusiness.clientEmail === normalizedEmail &&
-      !claimedAttemptRef.current.has(attemptKey)
-    ) {
+    if (normalizedEmail && activeBusiness.clientEmail === normalizedEmail) {
       claimedAttemptRef.current.add(attemptKey);
-      claimBusinessClientUid(activeBusiness, user.uid);
+      setIsClaiming(true);
+      setClaimFailed(false);
+      try {
+        const ok = await claimBusinessClientUid(activeBusiness, user.uid);
+        if (!ok) {
+          claimedAttemptRef.current.delete(attemptKey);
+          setClaimFailed(true);
+        }
+      } catch (err) {
+        console.error('Error during clientUid claim:', err);
+        claimedAttemptRef.current.delete(attemptKey);
+        setClaimFailed(true);
+      } finally {
+        setIsClaiming(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (
+      !activeBusiness ||
+      isAdmin ||
+      activeBusiness.ownerId === user.uid ||
+      activeBusiness.clientUid === user.uid
+    ) {
+      return;
+    }
+    const attemptKey = `${activeBusiness.id}:${user.uid}`;
+    if (!claimedAttemptRef.current.has(attemptKey)) {
+      triggerClaim();
     }
   }, [
     activeBusiness?.id,
@@ -1637,12 +1664,30 @@ export function ClientPortalView({
                   </div>
 
                   {!canReadEventHistory ? (
-                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center gap-3 shadow-sm">
-                      <Store className="w-5 h-5 text-[#005c55] shrink-0" />
-                      <span>
-                        Linking detailed Customer Review Flow Activity for your client account.
-                        Aggregate scan, draft, and Google redirect totals above are already live.
-                      </span>
+                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center justify-between gap-4 shadow-sm flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <Store className="w-5 h-5 text-[#005c55] shrink-0" />
+                        <span>
+                          {isClaiming
+                            ? 'Connecting detailed Customer Review Flow Activity to your client account...'
+                            : claimFailed
+                            ? 'Unable to automatically link event activity. Click to retry or ensure Firestore security rules are published.'
+                            : 'Linking detailed Customer Review Flow Activity for your client account. Aggregate scan, draft, and Google redirect totals above are already live.'}
+                        </span>
+                      </div>
+                      {claimFailed && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const attemptKey = `${activeBusiness?.id}:${user.uid}`;
+                            claimedAttemptRef.current.delete(attemptKey);
+                            triggerClaim();
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-[#005c55] hover:bg-[#004d47] text-white text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors"
+                        >
+                          Retry Linking
+                        </button>
+                      )}
                     </div>
                   ) : visibleEvents.length === 0 ? (
                     <div className="p-8 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2 shadow-sm">

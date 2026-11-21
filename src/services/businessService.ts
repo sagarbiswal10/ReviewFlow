@@ -481,24 +481,34 @@ function getEventTimeMs(value: unknown): number {
 export async function claimBusinessClientUid(
   business: Business,
   clientUid: string,
-): Promise<void> {
+): Promise<boolean> {
   const cleanUid = clampString(clientUid, 128);
-  if (!cleanUid || business.clientUid === cleanUid) return;
+  if (!cleanUid) return false;
+  if (business.clientUid === cleanUid) return true;
+
   const now = serverTimestamp();
-  const batch = writeBatch(db);
-  batch.update(doc(db, 'businesses', business.id), {
-    clientUid: cleanUid,
-    updatedAt: now,
-  });
-  batch.update(doc(db, 'publicProfiles', business.slug), {
-    clientUid: cleanUid,
-    updatedAt: now,
-  });
+  let bizSuccess = false;
+
   try {
-    await batch.commit();
-  } catch {
-    // Non-blocking if user isn't eligible or profile is missing
+    await updateDoc(doc(db, 'businesses', business.id), {
+      clientUid: cleanUid,
+      updatedAt: now,
+    });
+    bizSuccess = true;
+  } catch (error) {
+    console.error('Failed to link clientUid on business doc:', error);
   }
+
+  try {
+    await updateDoc(doc(db, 'publicProfiles', business.slug), {
+      clientUid: cleanUid,
+      updatedAt: now,
+    });
+  } catch (error) {
+    console.warn('Failed to link clientUid on publicProfile doc:', error);
+  }
+
+  return bizSuccess;
 }
 
 export function subscribeToBusinessEvents(
