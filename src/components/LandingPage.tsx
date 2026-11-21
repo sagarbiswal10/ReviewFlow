@@ -43,6 +43,7 @@ import type { User } from 'firebase/auth';
 import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
 import { HERO_TABLETOP_IMAGE } from '../data/categoryPresets';
 import { ShaderArt } from './ui/shader-art';
+import { WarpCarousel, type WarpCard } from './ui/warp-carousel';
 
 interface LandingPageProps {
   user?: User | null;
@@ -302,6 +303,55 @@ export function LandingPage({
   const activeCategoryMeta = CATEGORY_SHOWCASE_DATA[selectedCategory];
   const combinedError = localError || authError;
 
+  const warpCards: WarpCard[] = [
+    {
+      title: 'Reviews\ncollected',
+      value: '12.4',
+      unit: 'K+',
+      footer: 'Across all storefronts',
+      detail: 'wave',
+      numeral: ['#5eead4', '#0f766e'],
+      accent: '#0f766e',
+      glow: '#0f766e',
+      mesh: ['#022852', '#031e3f', '#031934', '#021831', '#021b36', '#022246', '#022345', '#020e1e', '#01040f', '#000416', '#020b31', '#021c57', '#01172f', '#01010c', '#03001d', '#0a0f4c', '#112383', '#0b36af', '#021142', '#050b47', '#0c2e8f', '#165bd4', '#1675fd', '#167bff', '#03288e', '#0438af', '#0d66e7', '#107eec', '#30afff', '#71dcff', '#0356e8', '#0259ec', '#0945b0', '#001a49', '#3f7c9d', '#d4ffff', '#0365ff', '#0256ea', '#052a87', '#00001f', '#1f4c7b', '#9ee7ff'],
+    },
+    {
+      title: 'Visit to\npost time',
+      value: '20',
+      unit: 's',
+      footer: 'Seamless every loop',
+      detail: 'cross',
+      labels: ['Draft', 'in', 'out'],
+      numeral: ['#a7f3d0', '#0f766e'],
+      accent: '#14b8a6',
+      glow: '#14b8a6',
+      mesh: ['#0f2a2a', '#0c3331', '#103835', '#0c2e2c', '#0d3531', '#123a36', '#13403b', '#0a2422', '#06181a', '#051c1f', '#0a2a2c', '#0f3a3d', '#0c282a', '#050f10', '#04181c', '#0a3136', '#0f4146', '#0b4f54', '#08292e', '#051c22', '#0a3f44', '#0e6b6f', '#108a8e', '#12a5a8', '#07484c', '#08606a', '#0b8088', '#0e9aa0', '#2dd4bf', '#5eead4', '#0a7a80', '#0a8a8e', '#0c6669', '#043036', '#2a8a86', '#a7f3d0', '#0d9aa0', '#0b8a90', '#06606a', '#022226', '#1a5a56', '#7fd4cd'],
+    },
+    {
+      title: 'Tap-to-post\nrate',
+      value: '94',
+      unit: '%',
+      footer: 'Tuned per screen',
+      detail: 'slider',
+      labels: ['Calm', 'Lively'],
+      numeral: ['#f0fdfa', '#0f766e'],
+      accent: '#0f766e',
+      glow: '#0d9488',
+      mesh: ['#1a2e2c', '#152624', '#1a2e2c', '#142220', '#1a2826', '#20302e', '#243a38', '#1a2c2a', '#2d4a46', '#30504c', '#1e3430', '#223a36', '#162624', '#0e1a18', '#2a4642', '#5eead4', '#5eead4', '#14b8a6', '#101a18', '#080c0a', '#142a26', '#1a3a34', '#236060', '#2d8080', '#112a26', '#0e3430', '#124040', '#16504c', '#2dd4bf', '#5eead4', '#103a3a', '#103a3a', '#0e3030', '#041a1a', '#2a605a', '#ccfbf1', '#0f766e', '#0d9488', '#0a4a4a', '#021c1c', '#1a4a46', '#5eead4'],
+    },
+    {
+      title: 'Local map\nboost',
+      value: '284',
+      unit: '%',
+      footer: 'Made by hand',
+      detail: 'ring',
+      numeral: ['#ccfbf1', '#0f766e'],
+      accent: '#0f766e',
+      glow: '#0f766e',
+      mesh: ['#0a3a36', '#08332f', '#0a3a36', '#0c3e3a', '#0a3632', '#0a3a34', '#124a44', '#14504a', '#0c3e3a', '#040c0a', '#0a1816', '#0c2a26', '#14b8a6', '#2dd4bf', '#0d6e68', '#060c0a', '#030604', '#0a2420', '#5eead4', '#14b8a6', '#0a4a44', '#080c0a', '#020402', '#0a2420', '#5eead4', '#0d4a44', '#000000', '#060c0a', '#103a34', '#0d5a54', '#14b8a6', '#0a2a26', '#062a24', '#0a3a34', '#0a2a26', '#14b8a6', '#0d6e60', '#0a4a44', '#0a3a34', '#062a26', '#0a2a26', '#0d5a54'],
+    },
+  ];
+
   const renderPrimaryWorkspaceCta = (label: string, extraClass = '') => {
     if (user && isAdmin && onOpenAdmin) {
       return (
@@ -446,6 +496,32 @@ export function LandingPage({
           </div>
         </div>
       </header>
+
+      {/* Warp Carousel showcase strip — below navbar, above main content */}
+      <section className="w-full bg-[#0a1614] border-y border-[#0f766e]/20">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex items-center justify-between gap-4 mb-2 px-1">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#5eead4]/80">
+              Platform at a glance
+            </span>
+            <span className="text-[11px] font-semibold text-white/40 hidden sm:inline">
+              Drag or use arrow keys to explore
+            </span>
+          </div>
+          <div className="h-[260px] sm:h-[340px] w-full rounded-2xl overflow-hidden ring-1 ring-[#0f766e]/25">
+            <WarpCarousel
+              cards={warpCards}
+              background="#0a1614"
+              glow="#0f766e"
+              warp={0.85}
+              autoplay
+              interval={4.5}
+              step={1}
+              style={{ width: '100%', height: '100%', minHeight: 'unset', aspectRatio: 'unset' }}
+            />
+          </div>
+        </div>
+      </section>
 
       <main id="top" className="w-full overflow-x-clip">
         {/* ==========================================
