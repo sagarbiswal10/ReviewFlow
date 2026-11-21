@@ -1,42 +1,70 @@
-"use client";
+// Warp Carousel by Louis Studios.
+// Adapted cleanly for Vite + React + TypeScript with WebGL2 ring distortion and 2D Canvas fallback.
 
 import * as React from "react";
 
+/** The small graphic under each numeral. */
 export type WarpCardDetail = "slider" | "ring" | "wave" | "cross" | "none";
 
+/** One stat card on the ring. */
 export interface WarpCard {
+  /** Two-line title, top left. Use "\n" for the line break. */
   title: string;
+  /** The big thin numeral, for example "25". */
   value: string;
+  /** Small superscript unit after the numeral, for example "%". */
   unit?: string;
+  /** Small label at the bottom left. */
   footer?: string;
+  /** Mesh gradient: 42 colours, a 6 by 7 grid read row by row from the top left, smoothed with a B-spline. Fewer colours are spread evenly over the grid. */
   mesh?: string[];
+  /** Numeral fill, left to right. */
   numeral?: [string, string];
+  /** Colour of the glow this card casts onto the top and bottom edges while it faces the viewer. */
   glow?: string;
+  /** The small graphic under the numeral. */
   detail?: WarpCardDetail;
+  /** Detail accent colour: slider knob glow, waveform marker, ring ticks. */
   accent?: string;
+  /** Labels for the detail: slider ends, or the crosshair pill and its two badges. */
   labels?: string[];
 }
 
 export interface WarpCarouselProps {
+  /** The cards on the ring, in order. The next card always enters from the right. Four is the designed count; fewer are repeated to fill the ring. */
   cards?: WarpCard[];
+  /** Controlled front card index. Pair it with onIndexChange. */
   index?: number;
+  /** Front card when uncontrolled. */
   defaultIndex?: number;
+  /** Called when the front card should change: autoplay, drag, click, or arrow keys. */
   onIndexChange?: (index: number) => void;
+  /** Spin to the next card on a timer. */
   autoplay?: boolean;
+  /** Seconds between autoplay spins. Longer intervals only stretch the slow tail of the spin; shorter ones compress the whole curve. */
   interval?: number;
+  /** Cards advanced per autoplay spin. The reference turns two at a time, so the card in between whips past. */
   step?: number;
+  /** Stage colour behind the ring. */
   background?: string;
+  /** Overrides every card's own glow colour for the top and bottom glows. */
   glow?: string;
+  /** Strength of the wide-lens flare at the left and right edges, 0 to 1. */
   warp?: number;
+  /** Font stack for all card copy. */
   font?: string;
+  /** Freeze the animation at this many seconds of autoplay time. For stills and tests. */
   seconds?: number;
+  /** Accessible name for the carousel region. */
   ariaLabel?: string;
+  /** Extra class on the outer element. */
   className?: string;
+  /** Extra style on the outer element. The root fills its container (width and height 100%), falls back to a 5 / 4 aspect ratio when the container has no height, and is never shorter than 420 px. */
   style?: React.CSSProperties;
 }
 
 const DEFAULT_FONT =
-  '"Inter", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif';
+  '"Plus Jakarta Sans", "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif';
 
 export const WARP_CAROUSEL_CARDS: WarpCard[] = [
   {
@@ -86,6 +114,11 @@ export const WARP_CAROUSEL_CARDS: WarpCard[] = [
   },
 ];
 
+/* ------------------------------------------------------------------ */
+/* Geometry: measured from the reference and fitted frame by frame.    */
+/* Stage units: the stage is 720 units wide; a card is 256 by 320.     */
+/* ------------------------------------------------------------------ */
+
 const CW = 256;
 const CH = 320;
 const CR = 10;
@@ -113,6 +146,7 @@ const G = {
 
 type Pose = [number, number, number];
 
+/** Pose of a card at ring offset q (0 front, +1 right, -1 left): centre x, depth behind the front plane, yaw. */
 function poseAt(q0: number): Pose {
   let q = q0;
   if (Math.abs(q) < 1) q -= G.kB * Math.sin(Math.PI * q) ** 2;
@@ -153,10 +187,14 @@ function poseAt(q0: number): Pose {
   const bP = s < 0 ? G.bPL : G.bP;
   const LP = qP - G.qA;
   const tp = Math.min(1, (a - G.qA) / LP);
-  const psi = (2 * tp ** 3 - 3 * tp ** 2 + 1) * G.psiA + (tp ** 3 - 2 * tp ** 2 + tp) * LP * dps * bP + (-2 * tp ** 3 + 3 * tp ** 2) * Math.PI;
+  const psi =
+    (2 * tp ** 3 - 3 * tp ** 2 + 1) * G.psiA +
+    (tp ** 3 - 2 * tp ** 2 + tp) * LP * dps * bP +
+    (-2 * tp ** 3 + 3 * tp ** 2) * Math.PI;
   return [s * (Hx - half * Math.cos(psi)), Hz - half * Math.sin(psi), s * psi];
 }
 
+/* Spin curve: ring progress over one autoplay step, in reference frames (30 fps). */
 const TK = [0, 3, 6, 8, 10, 11, 12, 13, 14, 16, 18, 21, 25, 30, 36, 45, 55, 70, 88, 110];
 const TB = [0, 0.02175, 0.12069, 0.22549, 0.35493, 0.43254, 0.51436, 0.5952, 0.6751, 0.83199, 0.9709, 1.12669, 1.27958, 1.40975, 1.53561, 1.68385, 1.79183, 1.89191, 1.95233, 2];
 const DRIFT = 0.06511;
@@ -212,6 +250,10 @@ function autoplayProgress(t: number, start: number, step: number, interval: numb
   return start + k * step + DRIFT + step * spinN(tau, interval * 30);
 }
 
+/* ------------------------------------------------------------------ */
+/* Colour helpers                                                      */
+/* ------------------------------------------------------------------ */
+
 function parseColor(c: string, fallback: [number, number, number] = [0, 0, 0]): [number, number, number] {
   const s = (c || "").trim();
   let m = /^#([0-9a-f]{3,8})$/i.exec(s);
@@ -243,6 +285,10 @@ function parseColor(c: string, fallback: [number, number, number] = [0, 0, 0]): 
 function rgba(c: [number, number, number], a: number) {
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
 }
+
+/* ------------------------------------------------------------------ */
+/* Card painter                                                        */
+/* ------------------------------------------------------------------ */
 
 function bspline(t: number, out: number[]) {
   const it = 1 - t;
@@ -349,8 +395,9 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
   const white: [number, number, number] = [255, 255, 255];
   const accent = parseColor(card.accent || "#ffffff");
 
-  const small = sizeForCap(ctx, 300, family, 7.9, "H");
-  ctx.font = fontStr(300, small, family);
+  // title and footer
+  const small = sizeForCap(ctx, 400, family, 7.9, "H");
+  ctx.font = fontStr(400, small, family);
   ctx.fillStyle = rgba(white, 0.9);
   const lines = (card.title || "").split("\n");
   lines.slice(0, 2).forEach((ln, i) => ctx.fillText(ln, 17, 37 + i * 14));
@@ -359,6 +406,7 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
     ctx.fillText(card.footer, 17, 295);
   }
 
+  // numeral
   const big = sizeForCap(ctx, 300, family, 50);
   const unitPx = big * 0.31;
   ctx.font = fontStr(300, big, family);
@@ -375,6 +423,7 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
   grad.addColorStop(0, rgba(n0, 1));
   grad.addColorStop(1, rgba(n1, 1));
 
+  // detail under the numeral
   if (detail === "ring") {
     const cx0 = 126;
     const cy0 = 156;
@@ -535,6 +584,10 @@ function glowShape(pose: Pose): [number, number, number] {
   const r = Math.max(6, sd / 0.581);
   return [mu, r, (m * 3) / (1.813 * r)];
 }
+
+/* ------------------------------------------------------------------ */
+/* WebGL renderer                                                      */
+/* ------------------------------------------------------------------ */
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -732,7 +785,9 @@ function createGL(canvas: HTMLCanvasElement): GLState | null {
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   const tex = gl.createTexture()!;
   const loc: Record<string, WebGLUniformLocation | null> = {};
-  for (const n of ["uTex", "uRes", "uUnit", "uPose", "uGlowCol", "uGlowShape", "uBg", "uWarp", "uMix"]) loc[n] = gl.getUniformLocation(prog, n);
+  for (const n of ["uTex", "uRes", "uUnit", "uPose", "uGlowCol", "uGlowShape", "uBg", "uWarp", "uMix"]) {
+    loc[n] = gl.getUniformLocation(prog, n);
+  }
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   (tex as unknown as { aniso: unknown }).aniso = aniso;
   return { gl, prog, tex, loc, layers: 0, texW: 0 };
@@ -757,6 +812,10 @@ function uploadCards(st: GLState, canvases: HTMLCanvasElement[]) {
   st.layers = canvases.length;
   st.texW = w;
 }
+
+/* ------------------------------------------------------------------ */
+/* Canvas 2D fallback: per-strip affine approximation, no lens blur.   */
+/* ------------------------------------------------------------------ */
 
 function drawFallback(
   ctx: CanvasRenderingContext2D,
@@ -860,6 +919,10 @@ function drawFallback(
     }
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = React.useState(false);
@@ -1233,6 +1296,7 @@ export function WarpCarousel({
         gls.gl.deleteProgram(gls.prog);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, background, glow, warp, font, N]);
 
   React.useEffect(() => {
@@ -1240,6 +1304,7 @@ export function WarpCarousel({
     else handles.current.kick();
   }, [seconds, autoplay, reduced]);
 
+  /* ---------------- interaction ---------------- */
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (seconds !== undefined || e.button > 0) return;
     const L = live.current;

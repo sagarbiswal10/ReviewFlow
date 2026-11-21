@@ -42,7 +42,6 @@ import {
 import type { User } from 'firebase/auth';
 import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
 import { HERO_TABLETOP_IMAGE } from '../data/categoryPresets';
-import { ShaderArt } from './ui/shader-art';
 import { WarpCarousel, type WarpCard } from './ui/warp-carousel';
 
 interface LandingPageProps {
@@ -135,6 +134,93 @@ const CATEGORY_SHOWCASE_DATA: Record<BusinessCategory, CategoryShowcaseMeta> = {
   },
 };
 
+const FEATURE_WARP_CARDS: WarpCard[] = [
+  {
+    title: 'Visit-to-post\naverage',
+    value: '20.4',
+    unit: 's',
+    footer: "Zero writer's block",
+    detail: 'slider',
+    labels: ['Scan', 'Post'],
+    numeral: ['#5eead4', '#e0f2fe'],
+    accent: '#5eead4',
+    glow: '#0f766e',
+    mesh: [
+      '#042f2e', '#063b38', '#084743', '#094e49', '#063d3a', '#042b2a',
+      '#06403c', '#0b5c55', '#0d6f67', '#0e786f', '#0a5e57', '#053533',
+      '#09544e', '#0f766e', '#149085', '#15988d', '#0f766e', '#07433e',
+      '#0d6a62', '#149085', '#1eb8aa', '#2dd4bf', '#179b8e', '#094f49',
+      '#09544e', '#12857b', '#26cbbd', '#5eead4', '#22b3a6', '#0a534d',
+      '#063d39', '#0d6860', '#199d90', '#29c4b5', '#15847a', '#063834',
+      '#042826', '#084440', '#0e6961', '#127c72', '#094a44', '#032321',
+    ],
+  },
+  {
+    title: 'Tap-to-post\ncompletion',
+    value: '94.2',
+    unit: '%',
+    footer: 'iOS Safari & Chrome',
+    detail: 'ring',
+    numeral: ['#bae6fd', '#f0fdf4'],
+    accent: '#7dd3fc',
+    glow: '#0284c7',
+    mesh: [
+      '#0f172a', '#142038', '#172947', '#162845', '#111d33', '#0c1322',
+      '#15233d', '#1b3154', '#1e406d', '#1c3c66', '#162b4a', '#0f1b30',
+      '#182e4f', '#1f4473', '#235993', '#21538a', '#193b63', '#11223b',
+      '#133052', '#184e7c', '#1a759f', '#2596be', '#196488', '#0e2c47',
+      '#0f2640', '#144468', '#166e8f', '#38bdf8', '#157094', '#0b253b',
+      '#0b1b2e', '#10314b', '#145374', '#1d6f94', '#114461', '#081829',
+      '#07111e', '#0b1e30', '#0e324a', '#113c57', '#0a2436', '#060e18',
+    ],
+  },
+  {
+    title: 'Industry\ntemplates',
+    value: '10',
+    footer: 'Pre-configured forms',
+    detail: 'cross',
+    labels: ['QR Kit', 'Tones', 'SEO'],
+    numeral: ['#a7f3d0', '#ffffff'],
+    accent: '#6ee7b7',
+    glow: '#059669',
+    mesh: [
+      '#022c22', '#04382c', '#064738', '#064435', '#043328', '#02241c',
+      '#043c30', '#075946', '#0a7159', '#096953', '#064c3c', '#032f25',
+      '#075342', '#0b7a60', '#0f9676', '#0e8b6d', '#09624d', '#053d30',
+      '#065041', '#0b7862', '#10b981', '#34d399', '#0d8a68', '#054436',
+      '#053f34', '#096352', '#109c74', '#6ee7b7', '#0f785c', '#043429',
+      '#042c24', '#07483c', '#0c735a', '#148f6e', '#0a5543', '#03231c',
+      '#021c17', '#043129', '#074d40', '#095a4a', '#06362c', '#021712',
+    ],
+  },
+  {
+    title: 'Policy-safe\nguidelines',
+    value: '100',
+    unit: '%',
+    footer: 'Equal-access review flow',
+    detail: 'wave',
+    numeral: ['#fde68a', '#f8fafc'],
+    accent: '#5eead4',
+    glow: '#0f766e',
+    mesh: [
+      '#1e293b', '#223146', '#253950', '#213347', '#1b2838', '#141e2b',
+      '#1b2d3f', '#1f3e52', '#204e61', '#1c4657', '#173645', '#112430',
+      '#132f3d', '#144b57', '#0f666c', '#115d63', '#10444b', '#0d2b31',
+      '#0f2f38', '#10545b', '#0f766e', '#14b8a6', '#10625d', '#0a3332',
+      '#162936', '#1c404b', '#1c6361', '#2dd4bf', '#175452', '#0f282a',
+      '#1c2331', '#233140', '#26434b', '#225257', '#1a383f', '#121d26',
+      '#141a24', '#19232f', '#1c2e38', '#19353c', '#13242b', '#0e131b',
+    ],
+  },
+];
+
+const FEATURE_WARP_LABELS = [
+  '20.4s Visit-to-Post',
+  '94.2% Completion',
+  '10 Service Templates',
+  '100% Policy Safe',
+];
+
 function renderCategoryIcon(category: BusinessCategory, active: boolean) {
   const cls = `w-6 h-6 transition-colors ${active ? 'text-[#005c55]' : 'text-slate-500 group-hover:text-[#005c55]'}`;
   switch (category) {
@@ -201,6 +287,7 @@ export function LandingPage({
   const [simulatedScans, setSimulatedScans] = useState(148);
   const [scanJustTriggered, setScanJustTriggered] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<BusinessCategory>('Hair Salons');
+  const [activeFeatureIdx, setActiveFeatureIdx] = useState(0);
 
   const openAuthModal = (initialTab: AuthTab = 'signin') => {
     setAuthTab(initialTab);
@@ -303,55 +390,6 @@ export function LandingPage({
   const activeCategoryMeta = CATEGORY_SHOWCASE_DATA[selectedCategory];
   const combinedError = localError || authError;
 
-  const warpCards: WarpCard[] = [
-    {
-      title: 'Reviews\ncollected',
-      value: '12.4',
-      unit: 'K+',
-      footer: 'Across all storefronts',
-      detail: 'wave',
-      numeral: ['#5eead4', '#0f766e'],
-      accent: '#0f766e',
-      glow: '#0f766e',
-      mesh: ['#022852', '#031e3f', '#031934', '#021831', '#021b36', '#022246', '#022345', '#020e1e', '#01040f', '#000416', '#020b31', '#021c57', '#01172f', '#01010c', '#03001d', '#0a0f4c', '#112383', '#0b36af', '#021142', '#050b47', '#0c2e8f', '#165bd4', '#1675fd', '#167bff', '#03288e', '#0438af', '#0d66e7', '#107eec', '#30afff', '#71dcff', '#0356e8', '#0259ec', '#0945b0', '#001a49', '#3f7c9d', '#d4ffff', '#0365ff', '#0256ea', '#052a87', '#00001f', '#1f4c7b', '#9ee7ff'],
-    },
-    {
-      title: 'Visit to\npost time',
-      value: '20',
-      unit: 's',
-      footer: 'Seamless every loop',
-      detail: 'cross',
-      labels: ['Draft', 'in', 'out'],
-      numeral: ['#a7f3d0', '#0f766e'],
-      accent: '#14b8a6',
-      glow: '#14b8a6',
-      mesh: ['#0f2a2a', '#0c3331', '#103835', '#0c2e2c', '#0d3531', '#123a36', '#13403b', '#0a2422', '#06181a', '#051c1f', '#0a2a2c', '#0f3a3d', '#0c282a', '#050f10', '#04181c', '#0a3136', '#0f4146', '#0b4f54', '#08292e', '#051c22', '#0a3f44', '#0e6b6f', '#108a8e', '#12a5a8', '#07484c', '#08606a', '#0b8088', '#0e9aa0', '#2dd4bf', '#5eead4', '#0a7a80', '#0a8a8e', '#0c6669', '#043036', '#2a8a86', '#a7f3d0', '#0d9aa0', '#0b8a90', '#06606a', '#022226', '#1a5a56', '#7fd4cd'],
-    },
-    {
-      title: 'Tap-to-post\nrate',
-      value: '94',
-      unit: '%',
-      footer: 'Tuned per screen',
-      detail: 'slider',
-      labels: ['Calm', 'Lively'],
-      numeral: ['#f0fdfa', '#0f766e'],
-      accent: '#0f766e',
-      glow: '#0d9488',
-      mesh: ['#1a2e2c', '#152624', '#1a2e2c', '#142220', '#1a2826', '#20302e', '#243a38', '#1a2c2a', '#2d4a46', '#30504c', '#1e3430', '#223a36', '#162624', '#0e1a18', '#2a4642', '#5eead4', '#5eead4', '#14b8a6', '#101a18', '#080c0a', '#142a26', '#1a3a34', '#236060', '#2d8080', '#112a26', '#0e3430', '#124040', '#16504c', '#2dd4bf', '#5eead4', '#103a3a', '#103a3a', '#0e3030', '#041a1a', '#2a605a', '#ccfbf1', '#0f766e', '#0d9488', '#0a4a4a', '#021c1c', '#1a4a46', '#5eead4'],
-    },
-    {
-      title: 'Local map\nboost',
-      value: '284',
-      unit: '%',
-      footer: 'Made by hand',
-      detail: 'ring',
-      numeral: ['#ccfbf1', '#0f766e'],
-      accent: '#0f766e',
-      glow: '#0f766e',
-      mesh: ['#0a3a36', '#08332f', '#0a3a36', '#0c3e3a', '#0a3632', '#0a3a34', '#124a44', '#14504a', '#0c3e3a', '#040c0a', '#0a1816', '#0c2a26', '#14b8a6', '#2dd4bf', '#0d6e68', '#060c0a', '#030604', '#0a2420', '#5eead4', '#14b8a6', '#0a4a44', '#080c0a', '#020402', '#0a2420', '#5eead4', '#0d4a44', '#000000', '#060c0a', '#103a34', '#0d5a54', '#14b8a6', '#0a2a26', '#062a24', '#0a3a34', '#0a2a26', '#14b8a6', '#0d6e60', '#0a4a44', '#0a3a34', '#062a26', '#0a2a26', '#0d5a54'],
-    },
-  ];
-
   const renderPrimaryWorkspaceCta = (label: string, extraClass = '') => {
     if (user && isAdmin && onOpenAdmin) {
       return (
@@ -391,24 +429,37 @@ export function LandingPage({
   };
 
   return (
-    <ShaderArt
-      className="relative min-h-screen w-full text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55]"
-      colors={{ base: '#faf8ff', accent: '#0f766e', ink: '#131b2e' }}
-      speed={0.8}
-      intensity={0.7}
-      scale={1}
-      interactive
-    >
-    <div className="min-h-screen bg-transparent text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55] relative z-10">
-      {/* Fixed 3-Zone Top Navigation Bar */}
-      <header className="sticky top-0 z-40 py-2.5 px-4 sm:px-6 lg:px-8 bg-white/70 backdrop-blur-md">
-        <div className="h-16 max-w-[1280px] mx-auto px-4 lg:px-6 flex items-center justify-between gap-6 rounded-full bg-white/95 backdrop-blur-xl border border-slate-200/70 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
+    <div className="min-h-screen spatial-canvas text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55] relative">
+      {/* Subtle Spatial Ambient Light Fields */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 overflow-hidden z-0"
+      >
+        <div
+          className="absolute -top-44 left-[8%] w-[560px] h-[560px] rounded-full opacity-55 blur-3xl"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(20,184,166,0.16) 0%, rgba(20,184,166,0) 72%)',
+          }}
+        />
+        <div
+          className="absolute top-[18%] -right-32 w-[520px] h-[520px] rounded-full opacity-50 blur-3xl"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(56,189,248,0.15) 0%, rgba(56,189,248,0) 72%)',
+          }}
+        />
+      </div>
+
+      {/* Floating Minimalist Liquid Glass Navigation Bar */}
+      <header className="sticky top-0 z-40 pt-3 pb-2 px-4 sm:px-6 lg:px-8">
+        <div className="h-[60px] max-w-[1280px] mx-auto px-3.5 sm:px-5 flex items-center justify-between gap-4 rounded-full liquid-glass-nav ring-1 ring-slate-900/[0.04]">
           {/* Zone 1: Clean Brand Wordmark */}
           <a
             href="#top"
-            className="flex items-center gap-2.5 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2.5 whitespace-nowrap shrink-0 pl-1"
           >
-            <div className="w-8 h-8 rounded-full bg-[#0f766e] flex items-center justify-center text-white">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#0f766e] to-[#005c55] flex items-center justify-center text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_4px_10px_rgba(15,118,110,0.28)]">
               <BadgeCheck className="w-4 h-4" />
             </div>
             <span className="font-display text-lg font-bold tracking-tight text-slate-900">
@@ -416,40 +467,43 @@ export function LandingPage({
             </span>
           </a>
 
-          {/* Zone 2: Concise Single-Line Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-2 text-sm font-semibold">
+          {/* Zone 2: Minimalist Frosted Well Navigation */}
+          <nav
+            aria-label="Primary navigation"
+            className="hidden lg:flex items-center gap-1 p-1 rounded-full liquid-glass-well text-sm font-semibold"
+          >
             <a
               href="#top"
-              className="px-4 py-1.5 rounded-full bg-[#f0fdfa] text-[#005c55] whitespace-nowrap shrink-0 transition-colors"
+              className="px-4 py-1.5 rounded-full bg-white/90 text-[#005c55] shadow-[0_1px_4px_rgba(15,23,42,0.06)] whitespace-nowrap shrink-0 transition-all"
             >
               Platform
             </a>
             <a
               href="#interactive-cockpit"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-slate-50 whitespace-nowrap shrink-0 transition-colors"
+              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
             >
               Interactive Showcase
             </a>
             <a
               href="#capabilities"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-slate-50 whitespace-nowrap shrink-0 transition-colors"
+              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
             >
               Capabilities
             </a>
             <a
               href="#industries"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-slate-50 whitespace-nowrap shrink-0 transition-colors"
+              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
             >
               Industries
             </a>
           </nav>
 
           {/* Zone 3: Actions */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onTryDemo}
-              className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 rounded-full hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 rounded-full bg-white/55 hover:bg-white/90 border border-white/75 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
               Try Demo
             </button>
@@ -460,7 +514,7 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onOpenAdmin}
-                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-[#0f766e] rounded-full hover:bg-[#005c55] transition-colors shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Business Management
                   </button>
@@ -468,7 +522,7 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onOpenPortal}
-                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-[#0f766e] rounded-full hover:bg-[#005c55] transition-colors shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Client Portal
                   </button>
@@ -477,7 +531,7 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onSignOut}
-                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 bg-white/60 hover:bg-white/90 border border-white/80 rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Sign Out
                   </button>
@@ -488,7 +542,7 @@ export function LandingPage({
                 type="button"
                 onClick={() => openAuthModal('signin')}
                 disabled={isSigningIn}
-                className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-[#0f766e] rounded-full hover:bg-[#005c55] transition-colors shadow-sm whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+                className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
               >
                 Get Started
               </button>
@@ -497,33 +551,7 @@ export function LandingPage({
         </div>
       </header>
 
-      {/* Warp Carousel showcase strip — below navbar, above main content */}
-      <section className="w-full bg-[#0a1614] border-y border-[#0f766e]/20">
-        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center justify-between gap-4 mb-2 px-1">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#5eead4]/80">
-              Platform at a glance
-            </span>
-            <span className="text-[11px] font-semibold text-white/40 hidden sm:inline">
-              Drag or use arrow keys to explore
-            </span>
-          </div>
-          <div className="h-[260px] sm:h-[340px] w-full rounded-2xl overflow-hidden ring-1 ring-[#0f766e]/25">
-            <WarpCarousel
-              cards={warpCards}
-              background="#0a1614"
-              glow="#0f766e"
-              warp={0.85}
-              autoplay
-              interval={4.5}
-              step={1}
-              style={{ width: '100%', height: '100%', minHeight: 'unset', aspectRatio: 'unset' }}
-            />
-          </div>
-        </div>
-      </section>
-
-      <main id="top" className="w-full overflow-x-clip">
+      <main id="top" className="relative z-10 w-full overflow-x-clip">
         {/* ==========================================
             SECTION 01: HERO STAGE
            ========================================== */}
@@ -577,12 +605,12 @@ export function LandingPage({
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-6">
                   {renderPrimaryWorkspaceCta(
                     'Sign In to Workspace',
-                    'px-7 py-3.5 rounded-xl bg-[#0f766e] text-white font-semibold text-sm sm:text-base shadow-md hover:bg-[#005c55] transition-all',
+                    'px-7 py-3.5 rounded-xl bg-gradient-to-b from-[#0f766e] to-[#005c55] text-white font-semibold text-sm sm:text-base shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_-6px_rgba(15,118,110,0.4)] hover:brightness-105 transition-all',
                   )}
 
                   <a
                     href="#interactive-cockpit"
-                    className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-white border border-slate-200 text-slate-900 font-semibold text-sm sm:text-base shadow-sm hover:bg-slate-50 transition-all whitespace-nowrap shrink-0"
+                    className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl liquid-glass text-slate-900 font-semibold text-sm sm:text-base hover:bg-white/85 transition-all whitespace-nowrap shrink-0"
                   >
                     <Smartphone className="w-4 h-4 text-[#005c55]" />
                     <span>Try Live Customer Form</span>
@@ -623,8 +651,8 @@ export function LandingPage({
               {/* Right Column: Tabletop Standee Showcase Card */}
               <div className="lg:col-span-6 relative">
                 <div className="relative mx-auto max-w-[520px] lg:max-w-none">
-                  <div className="rounded-2xl overflow-hidden shadow-xl bg-white p-3 border border-slate-200/80">
-                    <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-900">
+                  <div className="rounded-3xl overflow-hidden liquid-glass p-3">
+                    <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900 ring-1 ring-black/5">
                       {heroImageFailed ? (
                         <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-white bg-gradient-to-br from-slate-900 via-slate-800 to-teal-950">
                           <QrCode className="w-16 h-16 text-teal-400 mb-4" />
@@ -646,16 +674,16 @@ export function LandingPage({
                       )}
 
                       {/* Bottom Floating Overlay Card */}
-                      <div className="absolute bottom-3 left-3 right-3 p-3.5 sm:p-4 rounded-xl bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-between gap-3">
+                      <div className="absolute bottom-3 left-3 right-3 p-3.5 sm:p-4 rounded-2xl bg-white/80 backdrop-blur-2xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_32px_rgba(15,23,42,0.16)] flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-lg bg-[#f0fdfa] flex items-center justify-center text-[#005c55] shrink-0">
+                          <div className="w-10 h-10 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 flex items-center justify-center text-[#005c55] shrink-0">
                             <Nfc className="w-5 h-5" />
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-slate-900 truncate">
                               Tap NFC or Scan QR
                             </p>
-                            <p className="text-xs text-slate-500 truncate">
+                            <p className="text-xs text-slate-600 truncate">
                               Instant launch to tailored feedback flow
                             </p>
                           </div>
@@ -671,8 +699,8 @@ export function LandingPage({
                   </div>
 
                   {/* Asymmetric Top-Left Callout */}
-                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200/80 shadow-lg absolute -top-5 -left-5">
-                    <div className="w-10 h-10 rounded-full bg-[#0f766e] text-white flex items-center justify-center shrink-0">
+                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -top-5 -left-5">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0f766e] to-[#005c55] text-white flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
                       <TrendingUp className="w-5 h-5" />
                     </div>
                     <div>
@@ -686,8 +714,8 @@ export function LandingPage({
                   </div>
 
                   {/* Asymmetric Bottom-Right Callout */}
-                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200/80 shadow-lg absolute -bottom-5 -right-4">
-                    <div className="w-10 h-10 rounded-full bg-[#6df5e1] text-[#005048] flex items-center justify-center shrink-0">
+                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -bottom-5 -right-4">
+                    <div className="w-10 h-10 rounded-full bg-[#6df5e1]/90 text-[#005048] flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                       <ThumbsUp className="w-5 h-5" />
                     </div>
                     <div>
@@ -708,7 +736,7 @@ export function LandingPage({
         {/* ==========================================
             PROOF METRICS STRIP
            ========================================== */}
-        <section className="w-full py-10 bg-transparent border-y border-slate-200/40">
+        <section className="w-full py-10 bg-white/40 backdrop-blur-xl border-y border-white/75">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8 text-center">
               <div className="flex flex-col items-center">
@@ -750,7 +778,7 @@ export function LandingPage({
         {/* ==========================================
             SECTION 02: THE 4-STEP FRICTIONLESS PIPELINE
            ========================================== */}
-        <section id="how-it-works" className="w-full py-20 lg:py-24 bg-transparent">
+        <section id="how-it-works" className="w-full py-20 lg:py-24">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mb-14">
               <span className="text-xs font-bold uppercase tracking-widest text-[#005c55] block mb-2">
@@ -798,14 +826,14 @@ export function LandingPage({
               ].map((step) => (
                 <div
                   key={step.num}
-                  className="group rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
+                  className="group rounded-2xl liquid-glass p-6 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-6">
                       <span className="font-mono text-2xl font-bold text-[#005c55]/35 group-hover:text-[#005c55] transition-colors tabular-nums">
                         {step.num}
                       </span>
-                      <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-[#f0fdfa] text-[#005c55] flex items-center justify-center transition-colors">
+                      <div className="w-10 h-10 rounded-full bg-white/75 border border-white/80 group-hover:bg-[#f0fdfa] text-[#005c55] flex items-center justify-center transition-colors shadow-sm">
                         {step.icon}
                       </div>
                     </div>
@@ -814,7 +842,7 @@ export function LandingPage({
                     </h3>
                     <p className="text-sm text-slate-600 leading-relaxed">{step.body}</p>
                   </div>
-                  <div className="mt-8 pt-4 border-t border-slate-100 flex items-center gap-1.5 text-xs font-bold text-[#005c55]">
+                  <div className="mt-8 pt-4 border-t border-slate-900/[0.06] flex items-center gap-1.5 text-xs font-bold text-[#005c55]">
                     <span>{step.footer}</span>
                     <Check className="w-3.5 h-3.5" />
                   </div>
@@ -829,7 +857,7 @@ export function LandingPage({
            ========================================== */}
         <section
           id="interactive-cockpit"
-          className="w-full py-20 lg:py-24 bg-transparent border-y border-slate-200/40"
+          className="w-full py-20 lg:py-24 bg-white/35 backdrop-blur-md border-y border-white/75"
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-14">
@@ -847,13 +875,13 @@ export function LandingPage({
               </div>
 
               {/* Segmented Tab Switcher */}
-              <div className="inline-flex p-1.5 rounded-full bg-[#eaedff] shadow-sm self-start lg:self-auto">
+              <div className="inline-flex p-1.5 rounded-full liquid-glass-well self-start lg:self-auto">
                 <button
                   type="button"
                   onClick={() => setShowcaseTab('mobile')}
                   className={`px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                     showcaseTab === 'mobile'
-                      ? 'bg-white text-[#005c55] shadow-sm'
+                      ? 'bg-white/95 text-[#005c55] shadow-sm'
                       : 'text-slate-700 hover:text-[#005c55]'
                   }`}
                 >
@@ -865,7 +893,7 @@ export function LandingPage({
                   onClick={() => setShowcaseTab('owner')}
                   className={`px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                     showcaseTab === 'owner'
-                      ? 'bg-white text-[#005c55] shadow-sm'
+                      ? 'bg-white/95 text-[#005c55] shadow-sm'
                       : 'text-slate-700 hover:text-[#005c55]'
                   }`}
                 >
@@ -1042,8 +1070,8 @@ export function LandingPage({
 
                 {/* Right: Flow Psychology Breakdown */}
                 <div className="lg:col-span-6 flex flex-col gap-6">
-                  <div className="p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 shadow-sm">
-                    <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-5">
+                  <div className="p-8 rounded-2xl liquid-glass">
+                    <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-5">
                       <Sparkles className="w-6 h-6" />
                     </div>
                     <h3 className="font-display text-2xl font-bold text-slate-900 mb-3">
@@ -1071,7 +1099,7 @@ export function LandingPage({
                         },
                       ].map((item) => (
                         <div key={item.title} className="flex items-start gap-3">
-                          <div className="w-6 h-6 rounded-full bg-[#f0fdfa] text-[#005c55] flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-6 h-6 rounded-full bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center shrink-0 mt-0.5">
                             <Check className="w-3.5 h-3.5" />
                           </div>
                           <div>
@@ -1083,7 +1111,7 @@ export function LandingPage({
                     </div>
                   </div>
 
-                  <div className="p-6 rounded-2xl bg-[#f0fdfa] border border-[#0f766e]/15 flex flex-wrap items-center justify-between gap-4">
+                  <div className="p-6 rounded-2xl liquid-glass-tint flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <Zap className="w-7 h-7 text-[#005c55] shrink-0" />
                       <div>
@@ -1098,7 +1126,7 @@ export function LandingPage({
                     <button
                       type="button"
                       onClick={onTryDemo}
-                      className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-[#005c55] font-semibold text-xs sm:text-sm shadow-sm hover:bg-slate-50 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      className="px-4 py-2.5 rounded-xl bg-white/85 backdrop-blur-md border border-white text-[#005c55] font-semibold text-xs sm:text-sm shadow-sm hover:bg-white inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                     >
                       <span>Open Live Demo</span>
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -1109,7 +1137,7 @@ export function LandingPage({
             ) : (
               /* TAB VIEW 2: MULTI-LOCATION ANALYTICS & TOKEN CONTROLS */
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-8 rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 sm:p-8 shadow-sm">
+                <div className="lg:col-span-8 rounded-2xl liquid-glass p-6 sm:p-8">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
                     <div>
                       <span className="text-xs font-bold uppercase tracking-wider text-[#005c55]">
@@ -1219,7 +1247,7 @@ export function LandingPage({
 
                 {/* Right Column Controls */}
                 <div className="lg:col-span-4 flex flex-col gap-6">
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 shadow-sm">
+                  <div className="rounded-2xl liquid-glass p-6">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-display text-lg font-bold text-slate-900">
                         Instant Token Controls
@@ -1239,7 +1267,7 @@ export function LandingPage({
                           setSimQrTokenVer(next);
                           triggerOwnerControlToast(`Token rotated to revision v${next}.`);
                         }}
-                        className="w-full py-2.5 px-4 rounded-xl bg-slate-100 text-slate-900 text-sm font-semibold hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors flex items-center justify-between cursor-pointer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-white/65 border border-white/80 text-slate-900 text-sm font-semibold hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors flex items-center justify-between cursor-pointer"
                       >
                         <span>Cycle QR Revision Token (v{simQrTokenVer})</span>
                         <RefreshCw className="w-4 h-4" />
@@ -1249,7 +1277,7 @@ export function LandingPage({
                         onClick={() =>
                           triggerOwnerControlToast('Vector PNG & A4 PDF poster preview ready in portal.')
                         }
-                        className="w-full py-2.5 px-4 rounded-xl bg-slate-100 text-slate-900 text-sm font-semibold hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors flex items-center justify-between cursor-pointer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-white/65 border border-white/80 text-slate-900 text-sm font-semibold hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors flex items-center justify-between cursor-pointer"
                       >
                         <span>Download Print Poster Kit</span>
                         <Download className="w-4 h-4" />
@@ -1266,7 +1294,7 @@ export function LandingPage({
                         className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-between cursor-pointer ${
                           simInflowPaused
                             ? 'bg-[#f0fdfa] text-[#005c55]'
-                            : 'bg-red-50 text-red-800 hover:bg-red-100'
+                            : 'bg-red-50/90 text-red-800 hover:bg-red-100'
                         }`}
                       >
                         <span>
@@ -1285,7 +1313,7 @@ export function LandingPage({
                     )}
                   </div>
 
-                  <div className="rounded-2xl bg-[#005c55] text-white p-6 shadow-sm">
+                  <div className="rounded-2xl bg-gradient-to-br from-[#0f766e]/95 to-[#005c55] backdrop-blur-xl border border-white/20 text-white p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_36px_-14px_rgba(15,118,110,0.45)]">
                     <span className="text-xs font-bold uppercase tracking-wider text-[#9cf2e8] block mb-2">
                       Google SEO Impact
                     </span>
@@ -1294,7 +1322,7 @@ export function LandingPage({
                       Natural, service-specific customer reviews help Google index your storefront
                       for high-intent local Map searches.
                     </p>
-                    <div className="flex items-center gap-2 font-mono text-xs bg-white/10 px-3 py-2 rounded-lg tabular-nums">
+                    <div className="flex items-center gap-2 font-mono text-xs bg-white/15 border border-white/15 px-3 py-2 rounded-lg tabular-nums">
                       <span className="text-[#9cf2e8] font-bold">+284%</span>
                       <span className="text-white/90">Local Map Discovery Impressions</span>
                     </div>
@@ -1306,15 +1334,15 @@ export function LandingPage({
         </section>
 
         {/* ==========================================
-            SECTION 04: THREE CORE ARCHITECTURAL PILLARS
+            SECTION 04: THREE CORE ARCHITECTURAL PILLARS + SPATIAL FEATURE CAROUSEL
            ========================================== */}
-        <section id="capabilities" className="w-full py-20 lg:py-24 bg-transparent">
+        <section id="capabilities" className="w-full py-20 lg:py-24">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-3xl mb-14">
+            <div className="max-w-3xl mb-12">
               <span className="text-xs font-bold uppercase tracking-widest text-[#005c55] block mb-2">
                 Engineered Precision
               </span>
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-4">
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight [text-wrap:balance] mb-4">
                 Built for multi-location operators and independent studios.
               </h2>
               <p className="text-base sm:text-lg text-slate-600">
@@ -1323,11 +1351,50 @@ export function LandingPage({
               </p>
             </div>
 
+            {/* Spatial AI WarpCarousel Feature Stage */}
+            <div className="mb-10 rounded-3xl liquid-glass p-3 sm:p-4">
+              <div className="relative w-full rounded-[22px] overflow-hidden border border-white/80 bg-[#edf3f8] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                <WarpCarousel
+                  cards={FEATURE_WARP_CARDS}
+                  index={activeFeatureIdx}
+                  onIndexChange={setActiveFeatureIdx}
+                  step={1}
+                  interval={4.2}
+                  background="#edf3f8"
+                  warp={0.9}
+                  font='"Plus Jakarta Sans", system-ui, sans-serif'
+                  ariaLabel="ReviewFlow spatial platform features"
+                  style={{ height: 420 }}
+                />
+              </div>
+              <div className="mt-3 px-1 sm:px-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 p-1 rounded-full liquid-glass-well">
+                  {FEATURE_WARP_LABELS.map((label, idx) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setActiveFeatureIdx(idx)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer tabular-nums ${
+                        activeFeatureIdx === idx
+                          ? 'bg-white/95 text-[#005c55] shadow-sm'
+                          : 'text-slate-600 hover:text-[#005c55]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                  Drag or click edges to explore
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-7">
               {/* Pillar 1 */}
-              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <QrCode className="w-6 h-6" />
                   </div>
                   <h3 className="font-display text-xl font-bold text-slate-900 mb-3">
@@ -1339,7 +1406,7 @@ export function LandingPage({
                   </p>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-100 flex items-center justify-between gap-3">
+                <div className="p-4 rounded-xl liquid-glass-well flex items-center justify-between gap-3">
                   <div>
                     <span className="text-[11px] font-bold uppercase text-slate-500 block">
                       Live QR Counter
@@ -1351,7 +1418,7 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={triggerSimulatedScan}
-                    className="px-3 py-1.5 rounded-lg bg-white text-slate-900 text-xs font-bold shadow-sm hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors cursor-pointer whitespace-nowrap"
+                    className="px-3 py-1.5 rounded-lg bg-white/90 border border-white text-slate-900 text-xs font-bold shadow-sm hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors cursor-pointer whitespace-nowrap"
                   >
                     {scanJustTriggered ? 'Scanned!' : 'Simulate Scan'}
                   </button>
@@ -1359,9 +1426,9 @@ export function LandingPage({
               </div>
 
               {/* Pillar 2 */}
-              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <SlidersHorizontal className="w-6 h-6" />
                   </div>
                   <h3 className="font-display text-xl font-bold text-slate-900 mb-3">
@@ -1373,26 +1440,26 @@ export function LandingPage({
                   </p>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-100 flex flex-wrap gap-1.5">
-                  <span className="px-2.5 py-1 rounded-md bg-white text-slate-700 text-xs font-medium shadow-sm">
+                <div className="p-4 rounded-xl liquid-glass-well flex flex-wrap gap-1.5">
+                  <span className="px-2.5 py-1 rounded-md bg-white/90 text-slate-700 text-xs font-medium shadow-sm">
                     Fast Turnaround
                   </span>
-                  <span className="px-2.5 py-1 rounded-md bg-white text-slate-700 text-xs font-medium shadow-sm">
+                  <span className="px-2.5 py-1 rounded-md bg-white/90 text-slate-700 text-xs font-medium shadow-sm">
                     Courteous Staff
                   </span>
                   <span className="px-2.5 py-1 rounded-md bg-[#f0fdfa] text-[#005c55] text-xs font-semibold shadow-sm">
                     Clean Studio
                   </span>
-                  <span className="px-2.5 py-1 rounded-md bg-white text-slate-500 text-xs font-medium shadow-sm">
+                  <span className="px-2.5 py-1 rounded-md bg-white/90 text-slate-500 text-xs font-medium shadow-sm">
                     + Custom Prompt
                   </span>
                 </div>
               </div>
 
               {/* Pillar 3 */}
-              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <Sparkles className="w-6 h-6" />
                   </div>
                   <h3 className="font-display text-xl font-bold text-slate-900 mb-3">
@@ -1404,12 +1471,12 @@ export function LandingPage({
                   </p>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-100 flex items-center justify-between gap-2">
+                <div className="p-4 rounded-xl liquid-glass-well flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
                     <ShieldCheck className="w-4 h-4 text-[#005c55]" />
                     <span>Grounded in Answers</span>
                   </div>
-                  <span className="font-mono text-[11px] font-bold text-[#005c55] bg-white px-2.5 py-1 rounded shadow-sm">
+                  <span className="font-mono text-[11px] font-bold text-[#005c55] bg-white/90 px-2.5 py-1 rounded shadow-sm">
                     Zero Fabrication
                   </span>
                 </div>
@@ -1423,7 +1490,7 @@ export function LandingPage({
            ========================================== */}
         <section
           id="industries"
-          className="w-full py-20 lg:py-24 bg-transparent border-y border-slate-200/40"
+          className="w-full py-20 lg:py-24 bg-white/35 backdrop-blur-md border-y border-white/75"
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
@@ -1459,8 +1526,8 @@ export function LandingPage({
                     onClick={() => setSelectedCategory(category)}
                     className={`group p-4 rounded-2xl transition-all flex flex-col items-center justify-center text-center cursor-pointer ${
                       active
-                        ? 'bg-[#f0fdfa] text-[#005c55] ring-2 ring-[#0f766e]/30 shadow-sm'
-                        : 'bg-white border border-slate-200/80 text-slate-900 shadow-sm hover:shadow-md hover:border-[#0f766e]/30'
+                        ? 'liquid-glass-tint text-[#005c55] ring-2 ring-[#0f766e]/30'
+                        : 'liquid-glass text-slate-900 hover:-translate-y-0.5 hover:border-[#0f766e]/30'
                     }`}
                   >
                     <div className="mb-2">{renderCategoryIcon(category, active)}</div>
@@ -1477,7 +1544,7 @@ export function LandingPage({
             </div>
 
             {/* Dynamic Category Preview Card */}
-            <div className="rounded-3xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 lg:p-10 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
+            <div className="rounded-3xl liquid-glass p-7 lg:p-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
               <div className="flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#005c55] mb-2">
                   {activeCategoryMeta.badge}
@@ -1492,7 +1559,7 @@ export function LandingPage({
                   {activeCategoryMeta.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold"
+                      className="px-3 py-1.5 rounded-lg bg-white/75 border border-white/80 text-slate-700 text-xs font-semibold"
                     >
                       {tag}
                     </span>
@@ -1503,12 +1570,12 @@ export function LandingPage({
               <div className="w-full lg:w-auto shrink-0 flex flex-col sm:flex-row lg:flex-col gap-3">
                 {renderPrimaryWorkspaceCta(
                   'Deploy This Template',
-                  'px-7 py-3.5 rounded-xl bg-[#0f766e] text-white font-semibold text-sm hover:bg-[#005c55] shadow-sm transition-colors',
+                  'px-7 py-3.5 rounded-xl bg-gradient-to-b from-[#0f766e] to-[#005c55] text-white font-semibold text-sm hover:brightness-105 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_20px_-6px_rgba(15,118,110,0.4)] transition-all',
                 )}
                 <button
                   type="button"
                   onClick={onTryDemo}
-                  className="px-7 py-3.5 rounded-xl bg-slate-100 text-slate-900 font-semibold text-sm text-center hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors cursor-pointer whitespace-nowrap"
+                  className="px-7 py-3.5 rounded-xl bg-white/75 border border-white/90 text-slate-900 font-semibold text-sm text-center hover:bg-[#f0fdfa] hover:text-[#005c55] transition-colors cursor-pointer whitespace-nowrap"
                 >
                   Open Live Demo
                 </button>
@@ -1520,10 +1587,10 @@ export function LandingPage({
         {/* ==========================================
             SECTION 06: POLICY & FTC COMPLIANCE
            ========================================== */}
-        <section className="w-full py-16 bg-transparent">
+        <section className="w-full py-16">
           <div className="max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="rounded-2xl bg-[#f0fdfa] border border-[#0f766e]/15 p-7 lg:p-10 flex flex-col md:flex-row items-start gap-6">
-              <div className="w-12 h-12 rounded-xl bg-[#005c55] text-white flex items-center justify-center shrink-0">
+            <div className="rounded-2xl liquid-glass-tint p-7 lg:p-10 flex flex-col md:flex-row items-start gap-6">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#0f766e] to-[#005c55] text-white flex items-center justify-center shrink-0 shadow-sm">
                 <Scale className="w-6 h-6" />
               </div>
               <div>
@@ -1558,9 +1625,14 @@ export function LandingPage({
         {/* ==========================================
             SECTION 07: FINAL CONVERSION BANNER
            ========================================== */}
-        <section className="w-full py-20 lg:py-24 bg-transparent border-t border-slate-200/40">
+        <section className="w-full py-20 lg:py-24 bg-white/35 backdrop-blur-md border-t border-white/75">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="rounded-3xl bg-[#0f766e] text-white p-8 sm:p-12 lg:p-16 shadow-xl relative overflow-hidden">
+            <div className="rounded-3xl bg-gradient-to-br from-[#0f766e] via-[#0d655e] to-[#042f2e] border border-white/20 text-white p-8 sm:p-12 lg:p-16 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_28px_60px_-20px_rgba(15,118,110,0.45)] relative overflow-hidden">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-28 -right-24 w-80 h-80 rounded-full opacity-35 blur-3xl"
+                style={{ background: 'radial-gradient(circle, #5eead4 0%, transparent 70%)' }}
+              />
               <div className="relative max-w-2xl">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#9cf2e8] block mb-3">
                   Instant Storefront Deployment
@@ -1582,7 +1654,7 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onTryDemo}
-                    className="px-7 py-4 rounded-xl bg-white/15 text-white font-semibold text-sm sm:text-base hover:bg-white/25 transition-colors text-center cursor-pointer whitespace-nowrap shrink-0"
+                    className="px-7 py-4 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-semibold text-sm sm:text-base hover:bg-white/25 transition-colors text-center cursor-pointer whitespace-nowrap shrink-0"
                   >
                     Try Live Customer Demo
                   </button>
@@ -1598,7 +1670,7 @@ export function LandingPage({
       </main>
 
       {/* Quiet Editorial Footer */}
-      <footer className="w-full bg-white/70 backdrop-blur-md border-t border-slate-200/60 pt-14 pb-10">
+      <footer className="relative z-10 w-full bg-white/45 backdrop-blur-xl border-t border-white/80 pt-14 pb-10">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-10 border-b border-slate-200/70">
             <div className="lg:col-span-2 flex flex-col gap-3">
@@ -1668,8 +1740,8 @@ export function LandingPage({
 
       {/* Authentication Modal: Google Sign-In + Email/Password */}
       {authModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md p-6 sm:p-8 space-y-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-white/80 w-full max-w-md p-6 sm:p-8 space-y-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_28px_60px_-15px_rgba(15,23,42,0.3)]">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-display text-xl font-bold text-slate-900">
@@ -1869,6 +1941,5 @@ export function LandingPage({
         </div>
       )}
     </div>
-    </ShaderArt>
   );
 }
