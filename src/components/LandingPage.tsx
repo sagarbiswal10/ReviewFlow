@@ -344,14 +344,14 @@ export function LandingPage({
     <ShaderArt
       className="relative min-h-screen w-full text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55]"
       colors={{ base: '#faf8ff', accent: '#0f766e', ink: '#131b2e' }}
-      speed={0.6}
-      intensity={0.45}
-      scale={1.1}
+      speed={0.8}
+      intensity={0.7}
+      scale={1}
       interactive
     >
     <div className="min-h-screen bg-transparent text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55] relative z-10">
       {/* Fixed 3-Zone Top Navigation Bar */}
-      <header className="sticky top-0 z-40 py-2.5 px-4 sm:px-6 lg:px-8 bg-[#faf8ff]/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 py-2.5 px-4 sm:px-6 lg:px-8 bg-white/70 backdrop-blur-md">
         <div className="h-16 max-w-[1280px] mx-auto px-4 lg:px-6 flex items-center justify-between gap-6 rounded-full bg-white/95 backdrop-blur-xl border border-slate-200/70 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
           {/* Zone 1: Clean Brand Wordmark */}
           <a
@@ -632,7 +632,7 @@ export function LandingPage({
         {/* ==========================================
             PROOF METRICS STRIP
            ========================================== */}
-        <section className="w-full py-10 bg-[#f8fafc] border-y border-slate-200/70">
+        <section className="w-full py-10 bg-transparent border-y border-slate-200/40">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8 text-center">
               <div className="flex flex-col items-center">
@@ -674,7 +674,7 @@ export function LandingPage({
         {/* ==========================================
             SECTION 02: THE 4-STEP FRICTIONLESS PIPELINE
            ========================================== */}
-        <section id="how-it-works" className="w-full py-20 lg:py-24 bg-[#faf8ff]">
+        <section id="how-it-works" className="w-full py-20 lg:py-24 bg-transparent">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mb-14">
               <span className="text-xs font-bold uppercase tracking-widest text-[#005c55] block mb-2">
@@ -722,7 +722,7 @@ export function LandingPage({
               ].map((step) => (
                 <div
                   key={step.num}
-                  className="group rounded-2xl bg-white border border-slate-200/80 p-6 shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
+                  className="group rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-6">
@@ -753,7 +753,7 @@ export function LandingPage({
            ========================================== */}
         <section
           id="interactive-cockpit"
-          className="w-full py-20 lg:py-24 bg-[#f8fafc] border-y border-slate-200/70"
+          className="w-full py-20 lg:py-24 bg-transparent border-y border-slate-200/40"
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-14">
@@ -966,7 +966,7 @@ export function LandingPage({
 
                 {/* Right: Flow Psychology Breakdown */}
                 <div className="lg:col-span-6 flex flex-col gap-6">
-                  <div className="p-8 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
+                  <div className="p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 shadow-sm">
                     <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-5">
                       <Sparkles className="w-6 h-6" />
                     </div>
@@ -1033,7 +1033,7 @@ export function LandingPage({
             ) : (
               /* TAB VIEW 2: MULTI-LOCATION ANALYTICS & TOKEN CONTROLS */
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-8 rounded-2xl bg-white border border-slate-200/80 p-6 sm:p-8 shadow-sm">
+                <div className="lg:col-span-8 rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 sm:p-8 shadow-sm">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
                     <div>
                       <span className="text-xs font-bold uppercase tracking-wider text-[#005c55]">
@@ -1143,7 +1143,7 @@ export function LandingPage({
 
                 {/* Right Column Controls */}
                 <div className="lg:col-span-4 flex flex-col gap-6">
-                  <div className="rounded-2xl bg-white border border-slate-200/80 p-6 shadow-sm">
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-display text-lg font-bold text-slate-900">
                         Instant Token Controls
@@ -1232,7 +1232,7 @@ export function LandingPage({
         {/* ==========================================
             SECTION 04: THREE CORE ARCHITECTURAL PILLARS
            ========================================== */}
-        <section id="capabilities" className="w-full py-20 lg:py-24 bg-[#faf8ff]">
+        <section id="capabilities" className="w-full py-20 lg:py-24 bg-transparent">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl mb-14">
               <span className="text-xs font-bold uppercase tracking-widest text-[#005c55] block mb-2">
@@ -1249,7 +1249,7 @@ export function LandingPage({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-7">
               {/* Pillar 1 */}
-              <div className="rounded-2xl bg-white border border-slate-200/80 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
                     <QrCode className="w-6 h-6" />
@@ -1283,7 +1283,7 @@ export function LandingPage({
               </div>
 
               {/* Pillar 2 */}
-              <div className="rounded-2xl bg-white border border-slate-200/80 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
                     <SlidersHorizontal className="w-6 h-6" />
@@ -1314,7 +1314,7 @@ export function LandingPage({
               </div>
 
               {/* Pillar 3 */}
-              <div className="rounded-2xl bg-white border border-slate-200/80 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
+              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] text-[#005c55] flex items-center justify-center mb-6">
                     <Sparkles className="w-6 h-6" />
@@ -1347,7 +1347,7 @@ export function LandingPage({
            ========================================== */}
         <section
           id="industries"
-          className="w-full py-20 lg:py-24 bg-[#f8fafc] border-y border-slate-200/70"
+          className="w-full py-20 lg:py-24 bg-transparent border-y border-slate-200/40"
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
@@ -1401,7 +1401,7 @@ export function LandingPage({
             </div>
 
             {/* Dynamic Category Preview Card */}
-            <div className="rounded-3xl bg-white border border-slate-200/80 p-7 lg:p-10 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
+            <div className="rounded-3xl bg-white/80 backdrop-blur-md border border-slate-200/60 p-7 lg:p-10 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
               <div className="flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#005c55] mb-2">
                   {activeCategoryMeta.badge}
@@ -1444,7 +1444,7 @@ export function LandingPage({
         {/* ==========================================
             SECTION 06: POLICY & FTC COMPLIANCE
            ========================================== */}
-        <section className="w-full py-16 bg-[#faf8ff]">
+        <section className="w-full py-16 bg-transparent">
           <div className="max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="rounded-2xl bg-[#f0fdfa] border border-[#0f766e]/15 p-7 lg:p-10 flex flex-col md:flex-row items-start gap-6">
               <div className="w-12 h-12 rounded-xl bg-[#005c55] text-white flex items-center justify-center shrink-0">
@@ -1482,7 +1482,7 @@ export function LandingPage({
         {/* ==========================================
             SECTION 07: FINAL CONVERSION BANNER
            ========================================== */}
-        <section className="w-full py-20 lg:py-24 bg-[#f8fafc] border-t border-slate-200/70">
+        <section className="w-full py-20 lg:py-24 bg-transparent border-t border-slate-200/40">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="rounded-3xl bg-[#0f766e] text-white p-8 sm:p-12 lg:p-16 shadow-xl relative overflow-hidden">
               <div className="relative max-w-2xl">
@@ -1522,7 +1522,7 @@ export function LandingPage({
       </main>
 
       {/* Quiet Editorial Footer */}
-      <footer className="w-full bg-[#faf8ff] border-t border-slate-200/80 pt-14 pb-10">
+      <footer className="w-full bg-white/70 backdrop-blur-md border-t border-slate-200/60 pt-14 pb-10">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-10 border-b border-slate-200/70">
             <div className="lg:col-span-2 flex flex-col gap-3">
