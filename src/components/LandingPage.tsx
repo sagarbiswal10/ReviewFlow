@@ -42,6 +42,7 @@ import {
 import type { User } from 'firebase/auth';
 import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
 import { HERO_TABLETOP_IMAGE } from '../data/categoryPresets';
+import { ShaderArt } from './ui/shader-art';
 
 interface LandingPageProps {
   user?: User | null;
@@ -340,7 +341,15 @@ export function LandingPage({
   };
 
   return (
-    <div className="min-h-screen bg-[#faf8ff] text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55]">
+    <ShaderArt
+      className="relative min-h-screen w-full text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55]"
+      colors={{ base: '#faf8ff', accent: '#0f766e', ink: '#131b2e' }}
+      speed={0.6}
+      intensity={0.45}
+      scale={1.1}
+      interactive
+    >
+    <div className="min-h-screen bg-transparent text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55] relative z-10">
       {/* Fixed 3-Zone Top Navigation Bar */}
       <header className="sticky top-0 z-40 py-2.5 px-4 sm:px-6 lg:px-8 bg-[#faf8ff]/80 backdrop-blur-md">
         <div className="h-16 max-w-[1280px] mx-auto px-4 lg:px-6 flex items-center justify-between gap-6 rounded-full bg-white/95 backdrop-blur-xl border border-slate-200/70 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
@@ -1784,5 +1793,6 @@ export function LandingPage({
         </div>
       )}
     </div>
+    </ShaderArt>
   );
 }
