@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -28,7 +28,9 @@ import {
   approveAndPublishGbpReply,
   disconnectGbpConnection,
   generateAndStoreGbpReviewReply,
+  getGoogleOAuthClientId,
   ignoreGbpReview,
+  isCustomGbpOAuthClientConfigured,
   listGbpLocationsWithToken,
   requestGbpOAuthToken,
   saveGbpConnection,
@@ -92,6 +94,10 @@ export function GbpAutoReplyTab({
   const [incomingStars, setIncomingStars] = useState<number>(5);
   const [incomingComment, setIncomingComment] = useState('');
   const [isProcessingIncoming, setIsProcessingIncoming] = useState(false);
+  const oauthAttemptRef = useRef(0);
+  const hasCustomOAuthClient = isCustomGbpOAuthClientConfigured();
+  const activeOAuthClientId = getGoogleOAuthClientId();
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
   useEffect(() => {
     setSettings(
@@ -152,15 +158,27 @@ export function GbpAutoReplyTab({
     };
   }, [reviews]);
 
+  const handleCancelOAuthWait = () => {
+    oauthAttemptRef.current += 1;
+    setIsConnecting(false);
+    setIsSyncing(false);
+    setConnError(
+      'Google authorization was cancelled. You can use "Process Incoming Review" below without OAuth, or configure your OAuth Client ID and try again.',
+    );
+  };
+
   const handleConnectGoogleOAuth = async () => {
     setConnError(null);
     setConnNotice(null);
+    const attemptId = ++oauthAttemptRef.current;
     setIsConnecting(true);
     try {
       const token = await requestGbpOAuthToken();
+      if (oauthAttemptRef.current !== attemptId) return;
       setGbpToken(token);
       try {
         const locations = await listGbpLocationsWithToken(token);
+        if (oauthAttemptRef.current !== attemptId) return;
         setDiscoveredLocations(locations);
         if (locations.length > 0) {
           setSelectedLocName(locations[0].locationName);
@@ -189,6 +207,7 @@ export function GbpAutoReplyTab({
           setConnNotice('OAuth authorized, but no Google Business Profile locations were returned for this Google account.');
         }
       } catch (apiErr) {
+        if (oauthAttemptRef.current !== attemptId) return;
         const msg = apiErr instanceof Error ? apiErr.message : String(apiErr);
         await saveGbpConnection({
           business,
@@ -205,9 +224,12 @@ export function GbpAutoReplyTab({
         );
       }
     } catch (err) {
+      if (oauthAttemptRef.current !== attemptId) return;
       setConnError(err instanceof Error ? err.message : 'Google Business Profile OAuth failed.');
     } finally {
-      setIsConnecting(false);
+      if (oauthAttemptRef.current === attemptId) {
+        setIsConnecting(false);
+      }
     }
   };
 
@@ -252,11 +274,13 @@ export function GbpAutoReplyTab({
   const handleSyncNow = async () => {
     setConnError(null);
     setConnNotice(null);
+    const attemptId = ++oauthAttemptRef.current;
     setIsSyncing(true);
     try {
       let tokenToUse = gbpToken;
       if (!tokenToUse) {
         tokenToUse = await requestGbpOAuthToken();
+        if (oauthAttemptRef.current !== attemptId) return;
         setGbpToken(tokenToUse);
       }
       const locName = connection?.locationName || selectedLocName;
@@ -269,15 +293,19 @@ export function GbpAutoReplyTab({
         locationName: locName,
         existingReviews: reviews,
       });
+      if (oauthAttemptRef.current !== attemptId) return;
       setConnNotice(
         imported > 0
           ? `Synced ${imported} new Google review(s) and generated AI replies.`
           : 'Sync complete. All latest Google reviews are already in your queue.',
       );
     } catch (err) {
+      if (oauthAttemptRef.current !== attemptId) return;
       setConnError(err instanceof Error ? err.message : 'Unable to sync Google reviews.');
     } finally {
-      setIsSyncing(false);
+      if (oauthAttemptRef.current === attemptId) {
+        setIsSyncing(false);
+      }
     }
   };
 
@@ -457,11 +485,23 @@ export function GbpAutoReplyTab({
                   <Link2 className="w-4 h-4" />
                 )}
                 <span>
-                  {connection?.connectionStatus === 'connected'
-                    ? 'Reconnect Google Account'
-                    : 'Connect Google Business'}
+                  {isConnecting
+                    ? 'Waiting for Google...'
+                    : connection?.connectionStatus === 'connected'
+                      ? 'Reconnect Google Account'
+                      : 'Connect Google Business'}
                 </span>
               </button>
+
+              {(isConnecting || isSyncing) && (
+                <button
+                  type="button"
+                  onClick={handleCancelOAuthWait}
+                  className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
+                >
+                  Cancel
+                </button>
+              )}
 
               {connection?.connectionStatus === 'connected' && (
                 <>
@@ -520,6 +560,24 @@ export function GbpAutoReplyTab({
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
             <span>{connError}</span>
+          </div>
+        )}
+        {!hasCustomOAuthClient && connection?.connectionStatus !== 'connected' && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs text-slate-700 space-y-1">
+            <p className="font-semibold text-slate-900">
+              Google Business Profile OAuth Setup Note
+            </p>
+            <p>
+              Live GBP OAuth requires a Google Cloud Web OAuth Client ID (
+              <span className="font-mono">VITE_GOOGLE_OAUTH_CLIENT_ID</span>) with{' '}
+              <span className="font-mono">{currentOrigin || 'this app URL'}</span> in Authorized
+              JavaScript Origins, Google Business Profile APIs enabled, and your Gmail added as a
+              Test User (otherwise Google blocks the popup with &ldquo;Access blocked: Authorisation
+              error&rdquo;). Current fallback ID:{' '}
+              <span className="font-mono">{activeOAuthClientId || 'not set'}</span>. You can use{' '}
+              <span className="font-semibold">Process Incoming Review</span> below immediately
+              without OAuth.
+            </p>
           </div>
         )}
         {connNotice && (

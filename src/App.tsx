@@ -73,6 +73,19 @@ function formatAuthError(err: unknown): string {
   if (raw.includes('auth/operation-not-allowed')) {
     return 'Email/Password sign-in is not enabled in Firebase Authentication yet. Enable it under Authentication > Sign-in method in Firebase Console, or sign in with Google.';
   }
+  if (raw.includes('auth/unauthorized-domain')) {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    return `This domain (${host}) is not listed in Firebase Authentication -> Settings -> Authorized domains. Add it in Firebase Console or sign in from an authorized domain.`;
+  }
+  if (raw.includes('auth/popup-blocked')) {
+    return 'Google Sign-In popup was blocked by your browser. Allow popups for this site or sign in with Email & Password below.';
+  }
+  if (raw.includes('auth/cancelled-popup-request')) {
+    return 'Previous sign-in popup was cancelled. Please try signing in again.';
+  }
+  if (raw.includes('auth/network-request-failed')) {
+    return 'Network error while contacting Google/Firebase sign-in. Check your connection and try again.';
+  }
   if (raw.includes('auth/invalid-credential') || raw.includes('auth/wrong-password')) {
     return 'Incorrect email or password. Please check your credentials and try again.';
   }
@@ -133,6 +146,9 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [navigatedInternally, setNavigatedInternally] = useState(false);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState(false);
+  const [openAuthFromRoute] = useState(() =>
+    typeof window !== 'undefined' && /^\/(signin|login|auth)\/?$/i.test(window.location.pathname),
+  );
 
   const authIdentityRef = useRef<{ uid: string; emailVerified: boolean; email: string } | null>(null);
   const loadedUidRef = useRef<string | null>(null);
@@ -227,8 +243,20 @@ export default function App() {
   // Auth & Role Resolution
   useEffect(() => {
     let active = true;
+    let initialAuthSettled = false;
+
+    const authFallbackTimer = window.setTimeout(() => {
+      if (!active || initialAuthSettled) return;
+      initialAuthSettled = true;
+      setAuthReady(true);
+      setRoleReady(true);
+    }, 4000);
+
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       if (!active) return;
+      initialAuthSettled = true;
+      window.clearTimeout(authFallbackTimer);
+      setIsSigningIn(false);
 
       if (!nextUser || !nextUser.emailVerified) {
         authIdentityRef.current = nextUser
@@ -268,13 +296,22 @@ export default function App() {
       }
 
       setRoleReady(false);
-      const adminStatus = await checkIsAdmin(nextUser);
-      if (!active) return;
-      setIsAdmin(adminStatus);
-      setRoleReady(true);
+      try {
+        const adminStatus = await checkIsAdmin(nextUser);
+        if (!active) return;
+        setIsAdmin(adminStatus);
+      } catch {
+        if (!active) return;
+        setIsAdmin(false);
+      } finally {
+        if (active) {
+          setRoleReady(true);
+        }
+      }
     });
     return () => {
       active = false;
+      window.clearTimeout(authFallbackTimer);
       unsub();
     };
   }, []);
@@ -421,12 +458,16 @@ export default function App() {
     setIsSigningIn(true);
     setAuthError(null);
     setRedirectAfterLogin(true);
+    const guardTimer = window.setTimeout(() => {
+      setIsSigningIn(false);
+    }, 45_000);
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       setRedirectAfterLogin(false);
       setAuthError(formatAuthError(err));
     } finally {
+      window.clearTimeout(guardTimer);
       setIsSigningIn(false);
     }
   };
@@ -609,7 +650,7 @@ export default function App() {
     );
   }
 
-  // 3. Signed-out Landing Page (for /, /admin, /portal when unauthenticated)
+  // 3. Signed-out Landing Page (for /, /admin, /portal, /signin when unauthenticated)
   if (!user) {
     return (
       <LandingPage
@@ -618,6 +659,7 @@ export default function App() {
         onEmailSignUp={handleEmailSignUp}
         onResetPassword={handleResetPassword}
         onTryDemo={() => navigateTo(`/review/${BUILTIN_DEMO_PROFILE.slug}`)}
+        initialAuthModalOpen={openAuthFromRoute}
         isSigningIn={isSigningIn}
         authError={authError}
       />

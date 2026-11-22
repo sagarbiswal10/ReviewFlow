@@ -442,6 +442,10 @@ export function getGoogleOAuthClientId(): string {
   return (firebaseConfig.oAuthClientId || '').trim();
 }
 
+export function isCustomGbpOAuthClientConfigured(): boolean {
+  return Boolean((import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim());
+}
+
 interface GoogleTokenClient {
   requestAccessToken: (opts?: { prompt?: string }) => void;
 }
@@ -455,6 +459,7 @@ declare global {
             client_id: string;
             scope: string;
             callback: (resp: { access_token?: string; error?: string; error_description?: string }) => void;
+            error_callback?: (err: { type?: string; message?: string }) => void;
           }) => GoogleTokenClient;
         };
       };
@@ -476,8 +481,23 @@ function loadGoogleIdentityScript(): Promise<void> {
         'script[src="https://accounts.google.com/gsi/client"]',
       );
       if (existing) {
-        existing.addEventListener('load', () => resolve());
-        existing.addEventListener('error', () => reject(new Error('Failed to load Google OAuth script.')));
+        if (window.google?.accounts?.oauth2) {
+          resolve();
+          return;
+        }
+        const onLoad = () => resolve();
+        const onError = () => {
+          gsiScriptPromise = null;
+          existing.remove();
+          reject(new Error('Failed to load Google OAuth script.'));
+        };
+        existing.addEventListener('load', onLoad, { once: true });
+        existing.addEventListener('error', onError, { once: true });
+        window.setTimeout(() => {
+          if (window.google?.accounts?.oauth2) {
+            resolve();
+          }
+        }, 1200);
         return;
       }
       const script = document.createElement('script');
@@ -485,7 +505,11 @@ function loadGoogleIdentityScript(): Promise<void> {
       script.async = true;
       script.defer = true;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Google Identity Services.'));
+      script.onerror = () => {
+        gsiScriptPromise = null;
+        script.remove();
+        reject(new Error('Failed to load Google Identity Services.'));
+      };
       document.head.appendChild(script);
     });
   }
@@ -502,20 +526,76 @@ export async function requestGbpOAuthToken(): Promise<string> {
   if (!oauth2) {
     throw new Error('Google Identity Services OAuth client is unavailable.');
   }
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      fn();
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      finish(() =>
+        reject(
+          new Error(
+            'Google authorization timed out. If the popup showed "Access blocked: Authorisation error" or was closed, verify your Authorized JavaScript Origins and Test Users in Google Cloud Console.',
+          ),
+        ),
+      );
+    }, 90_000);
+
     const client = oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/business.manage',
       callback: (resp) => {
         if (resp.error) {
-          reject(new Error(resp.error_description || resp.error));
+          const desc = resp.error_description || resp.error;
+          finish(() =>
+            reject(
+              new Error(
+                `Google OAuth error (${desc}). Make sure ${currentOrigin || 'this app URL'} is authorized for OAuth Client ${clientId} and Google Business Profile API access is approved.`,
+              ),
+            ),
+          );
           return;
         }
         if (!resp.access_token) {
-          reject(new Error('Google did not return an OAuth access token.'));
+          finish(() => reject(new Error('Google did not return an OAuth access token.')));
           return;
         }
-        resolve(resp.access_token);
+        finish(() => resolve(resp.access_token as string));
+      },
+      error_callback: (err) => {
+        if (err?.type === 'popup_closed') {
+          finish(() =>
+            reject(
+              new Error(
+                `Authorization popup was closed. If Google showed "Access blocked: Authorisation error", add ${currentOrigin || 'this domain'} to Authorized JavaScript Origins on a Google Cloud Web OAuth Client (set VITE_GOOGLE_OAUTH_CLIENT_ID) and add your Gmail under OAuth Consent Screen -> Test Users.`,
+              ),
+            ),
+          );
+          return;
+        }
+        if (err?.type === 'popup_failed_to_open') {
+          finish(() =>
+            reject(
+              new Error(
+                'Google authorization popup was blocked by your browser. Please allow popups for this site and try again.',
+              ),
+            ),
+          );
+          return;
+        }
+        finish(() =>
+          reject(
+            new Error(
+              err?.message ||
+                'Google OAuth could not start. Check your OAuth Client ID and Authorized JavaScript Origins.',
+            ),
+          ),
+        );
       },
     });
     client.requestAccessToken({ prompt: 'consent' });

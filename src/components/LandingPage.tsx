@@ -58,6 +58,7 @@ interface LandingPageProps {
   onOpenPortal?: () => void;
   onOpenAdmin?: () => void;
   onSignOut?: () => void;
+  initialAuthModalOpen?: boolean;
   isSigningIn: boolean;
   authError: string | null;
 }
@@ -261,16 +262,25 @@ export function LandingPage({
   onOpenPortal,
   onOpenAdmin,
   onSignOut,
+  initialAuthModalOpen = false,
   isSigningIn,
   authError,
 }: LandingPageProps) {
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(() => Boolean(initialAuthModalOpen && !user));
   const [authTab, setAuthTab] = useState<AuthTab>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [heroImageFailed, setHeroImageFailed] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setAuthModalOpen(false);
+    } else if (initialAuthModalOpen) {
+      setAuthModalOpen(true);
+    }
+  }, [user, initialAuthModalOpen]);
 
   // Interactive Showcase State
   const [showcaseTab, setShowcaseTab] = useState<ShowcaseTab>('mobile');
