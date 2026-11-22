@@ -30,54 +30,70 @@ async function readJsonBody(req: NodeReq): Promise<Record<string, unknown>> {
 }
 
 export default async function handler(req: NodeReq, res: ServerResponse) {
-  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-  const host = typeof req.headers.host === 'string' ? req.headers.host : '';
+  try {
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const forwardedHost =
+      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
+    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
+      .filter(Boolean)
+      .join(',');
 
-  if (origin && !isOriginAllowed(origin, host)) {
+    if (origin && !isOriginAllowed(origin, host)) {
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 403;
+        res.end();
+        return;
+      }
+      sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
+      return;
+    }
+
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
     if (req.method === 'OPTIONS') {
-      res.statusCode = 403;
+      res.statusCode = 204;
       res.end();
       return;
     }
-    sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
-    return;
-  }
 
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
-    res.setHeader('Vary', 'Origin');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Method not allowed.' });
+      return;
+    }
 
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
+    const forwarded = req.headers['x-forwarded-for'];
+    const clientIp =
+      (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    if (!checkRateLimit(`ip:${clientIp}`, 30, 5 * 60 * 1000)) {
+      sendJson(res, 429, {
+        error: 'Rate limit exceeded. Please wait a minute before trying again.',
+      });
+      return;
+    }
 
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed.' });
-    return;
-  }
+    let body: Partial<GenerateReviewBody>;
+    try {
+      body = (await readJsonBody(req)) as Partial<GenerateReviewBody>;
+    } catch {
+      sendJson(res, 400, { error: 'Invalid JSON request payload.' });
+      return;
+    }
 
-  const forwarded = req.headers['x-forwarded-for'];
-  const clientIp =
-    (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) ||
-    req.socket?.remoteAddress ||
-    'unknown';
-  if (!checkRateLimit(`ip:${clientIp}`, 30, 5 * 60 * 1000)) {
-    sendJson(res, 429, {
-      error: 'Rate limit exceeded. Please wait a minute before trying again.',
-    });
-    return;
-  }
-
-  try {
-    const body = (await readJsonBody(req)) as Partial<GenerateReviewBody>;
     const result = await processGenerateReview(body);
     sendJson(res, result.status, result.data);
-  } catch {
-    sendJson(res, 400, { error: 'Invalid JSON request payload.' });
+  } catch (err) {
+    console.error('generate-review error:', err);
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: 'Internal server error while generating review draft.' });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
   }
 }

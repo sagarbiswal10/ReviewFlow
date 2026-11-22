@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -23,14 +23,40 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isDirtyRef = useRef(false);
+  const lastSyncedRef = useRef<{ id: string; sig: string }>({
+    id: business.id,
+    sig: JSON.stringify(business.questions),
+  });
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setQuestions(business.questions);
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const incomingSig = JSON.stringify(business.questions);
+    if (lastSyncedRef.current.id !== business.id) {
+      isDirtyRef.current = false;
+      lastSyncedRef.current = { id: business.id, sig: incomingSig };
+      setQuestions(business.questions);
+      setNewOptionDrafts({});
+      setError(null);
+      setSavedNotice(null);
+      return;
+    }
+    if (!isDirtyRef.current && incomingSig !== lastSyncedRef.current.sig) {
+      lastSyncedRef.current = { id: business.id, sig: incomingSig };
+      setQuestions(business.questions);
+    }
   }, [business.id, business.questions]);
 
   const moveQuestion = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= questions.length) return;
+    isDirtyRef.current = true;
     const copy = [...questions];
     const [removed] = copy.splice(index, 1);
     copy.splice(target, 0, removed);
@@ -42,12 +68,14 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
     field: K,
     value: FeedbackQuestion[K],
   ) => {
+    isDirtyRef.current = true;
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, [field]: value } : q)),
     );
   };
 
   const handleTypeChange = (id: string, nextType: QuestionType) => {
+    isDirtyRef.current = true;
     setQuestions((prev) =>
       prev.map((q) => {
         if (q.id !== id) return q;
@@ -68,6 +96,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   const addOption = (questionId: string) => {
     const text = (newOptionDrafts[questionId] ?? '').trim();
     if (!text) return;
+    isDirtyRef.current = true;
     setQuestions((prev) =>
       prev.map((q) =>
         q.id === questionId && !q.options.includes(text)
@@ -79,6 +108,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   };
 
   const updateOptionText = (questionId: string, optIdx: number, nextValue: string) => {
+    isDirtyRef.current = true;
     setQuestions((prev) =>
       prev.map((q) => {
         if (q.id !== questionId) return q;
@@ -90,6 +120,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   };
 
   const removeOption = (questionId: string, optIdx: number) => {
+    isDirtyRef.current = true;
     setQuestions((prev) =>
       prev.map((q) =>
         q.id === questionId
@@ -104,6 +135,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
       setError('Maximum of 25 questions reached.');
       return;
     }
+    isDirtyRef.current = true;
     const id = `q-${Date.now().toString(36)}`;
     setQuestions((prev) => [
       ...prev,
@@ -118,11 +150,14 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   };
 
   const deleteQuestion = (id: string) => {
+    isDirtyRef.current = true;
     setQuestions((prev) => prev.filter((q) => q.id !== id));
   };
 
   const resetToCategoryDefaults = () => {
+    isDirtyRef.current = true;
     setQuestions(createCategoryQuestions(business.category));
+    setError(null);
     setSavedNotice('Loaded category defaults. Click Save Form to publish.');
   };
 
@@ -146,9 +181,15 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
     setIsSaving(true);
     try {
       await updateBusiness(business, { questions: sanitized }, { isAdmin });
+      isDirtyRef.current = false;
+      lastSyncedRef.current = {
+        id: business.id,
+        sig: JSON.stringify(sanitized),
+      };
       setQuestions(sanitized);
       setSavedNotice('Customer feedback form saved.');
-      setTimeout(() => setSavedNotice(null), 3000);
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save questions.');
     } finally {

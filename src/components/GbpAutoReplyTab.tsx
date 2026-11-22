@@ -106,13 +106,18 @@ export function GbpAutoReplyTab({
   }, [business.id, business.gbpSettings]);
 
   useEffect(() => {
-    const unsubConn = subscribeToGbpConnection(business.id, (c) => setConnection(c));
+    const unsubConn = subscribeToGbpConnection(
+      business.id,
+      (c) => setConnection(c),
+      (err) => setConnError(err?.message || 'Unable to load Google Business Profile connection.'),
+    );
     const unsubRev = subscribeToBusinessGbpReviews(
       business.id,
       userUid,
       userEmail,
       isAdmin,
       (list) => setReviews(list),
+      (err) => setQueueError(err?.message || 'Unable to load synced Google reviews.'),
     );
     return () => {
       unsubConn();
@@ -209,27 +214,39 @@ export function GbpAutoReplyTab({
   const handleSaveSelectedLocation = async (locationName: string) => {
     const loc = discoveredLocations.find((l) => l.locationName === locationName);
     if (!loc) return;
+    setConnError(null);
+    setConnNotice(null);
     setSelectedLocName(locationName);
-    await saveGbpConnection({
-      business,
-      connectionStatus: 'connected',
-      connectedEmail: userEmail,
-      accountName: loc.accountName,
-      locationName: loc.locationName,
-      locationTitle: loc.title,
-      placeId: loc.placeId,
-      existing: connection,
-    });
-    setConnNotice(`Active location switched to ${loc.title}`);
+    try {
+      await saveGbpConnection({
+        business,
+        connectionStatus: 'connected',
+        connectedEmail: userEmail,
+        accountName: loc.accountName,
+        locationName: loc.locationName,
+        locationTitle: loc.title,
+        placeId: loc.placeId,
+        existing: connection,
+      });
+      setConnNotice(`Active location switched to ${loc.title}`);
+    } catch (err) {
+      setConnError(err instanceof Error ? err.message : 'Unable to save selected GBP location.');
+    }
   };
 
   const handleDisconnect = async () => {
     setConnError(null);
     setConnNotice(null);
-    setGbpToken('');
-    setDiscoveredLocations([]);
-    await disconnectGbpConnection(business, connection);
-    setConnNotice('Google Business Profile connection disconnected.');
+    try {
+      await disconnectGbpConnection(business, connection);
+      setGbpToken('');
+      setDiscoveredLocations([]);
+      setConnNotice('Google Business Profile connection disconnected.');
+    } catch (err) {
+      setConnError(
+        err instanceof Error ? err.message : 'Unable to disconnect Google Business Profile.',
+      );
+    }
   };
 
   const handleSyncNow = async () => {

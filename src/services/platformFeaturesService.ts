@@ -15,7 +15,7 @@ import {
 import type { User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { apiFetch } from '../utils/apiClient';
+import { apiFetch, formatApiError, parseApiJson } from '../utils/apiClient';
 import { normalizeEmail, sanitizeSlug } from './businessService';
 import type {
   AiUsageLog,
@@ -211,28 +211,49 @@ export async function createQrStand(input: {
     );
   }
 
-  const authRes = await apiFetch('/api/qr-stand-authorize', {
-    method: 'POST',
-    requireAuth: true,
-    body: JSON.stringify({
-      businessId: input.business.id,
-      slotNumber,
-    }),
-  });
-  const authData = (await authRes.json()) as {
-    allowed?: boolean;
-    error?: string;
-    standId?: string;
-  };
-  if (!authRes.ok || !authData.allowed) {
-    throw new Error(authData.error || 'Server rejected QR stand slot allocation.');
+  try {
+    const authRes = await apiFetch('/api/qr-stand-authorize', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        businessId: input.business.id,
+        slotNumber,
+      }),
+    });
+    const parsedAuth = await parseApiJson<{
+      allowed?: boolean;
+      error?: string;
+      standId?: string;
+    }>(authRes);
+
+    if (authRes.status === 400 || authRes.status === 401 || authRes.status === 403) {
+      throw new Error(
+        parsedAuth.data?.error || 'Server rejected QR stand slot allocation.',
+      );
+    }
+    if (parsedAuth.data && parsedAuth.data.allowed === false) {
+      throw new Error(
+        parsedAuth.data.error || 'Server rejected QR stand slot allocation.',
+      );
+    }
+  } catch (err) {
+    // Rejections (400/401/403 or allowed=false) must propagate cleanly; network/404/5xx fall back to Firestore rules enforcement
+    const isNetworkOrGatewayError =
+      err instanceof TypeError || (err instanceof SyntaxError);
+    if (!isNetworkOrGatewayError && err instanceof Error) {
+      throw err;
+    }
   }
 
   const standId = `${input.business.id}_slot_${slotNumber}`;
   const cleanName = clampString(input.name, 120) || `QR Stand #${slotNumber}`;
   const cleanPlacement = clampString(input.placement, 80) || 'Counter';
-  const baseCode = sanitizeSlug(`${cleanPlacement}-${slotNumber}`).slice(0, 48);
-  const standCode = baseCode || `stand-${slotNumber}`;
+  const rawSlug = sanitizeSlug(`${cleanPlacement}-${slotNumber}`).slice(0, 48);
+  const standCode = rawSlug.length >= 2 ? rawSlug : `stand-${slotNumber}`;
+  const rawFg = clampString(input.fgColor || input.business.qrConfig.fgColor, 20);
+  const rawBg = clampString(input.bgColor || input.business.qrConfig.bgColor, 20);
+  const fgColor = rawFg.length >= 4 ? rawFg : '#0F172A';
+  const bgColor = rawBg.length >= 4 ? rawBg : '#FFFFFF';
   const now = serverTimestamp();
 
   const payload = {
@@ -246,8 +267,8 @@ export async function createQrStand(input: {
     name: cleanName,
     placement: cleanPlacement,
     isActive: true,
-    fgColor: clampString(input.fgColor || input.business.qrConfig.fgColor, 20) || '#0F172A',
-    bgColor: clampString(input.bgColor || input.business.qrConfig.bgColor, 20) || '#FFFFFF',
+    fgColor,
+    bgColor,
     includeLogo: input.includeLogo ?? input.business.qrConfig.includeLogo,
     createdAt: now,
     updatedAt: now,
@@ -279,13 +300,15 @@ export async function updateQrStand(
       ? sanitizeSlug(`${nextPlacement}-${stand.slotNumber}`).slice(0, 48) || stand.standCode
       : stand.standCode;
 
+  const rawFg = clampString(updates.fgColor ?? stand.fgColor, 20);
+  const rawBg = clampString(updates.bgColor ?? stand.bgColor, 20);
   const payload: Record<string, unknown> = {
     name: nextName,
     placement: nextPlacement,
-    standCode: nextCode,
+    standCode: nextCode.length >= 2 ? nextCode : `stand-${stand.slotNumber}`,
     isActive: updates.isActive ?? stand.isActive,
-    fgColor: clampString(updates.fgColor ?? stand.fgColor, 20) || '#0F172A',
-    bgColor: clampString(updates.bgColor ?? stand.bgColor, 20) || '#FFFFFF',
+    fgColor: rawFg.length >= 4 ? rawFg : '#0F172A',
+    bgColor: rawBg.length >= 4 ? rawBg : '#FFFFFF',
     includeLogo: updates.includeLogo ?? stand.includeLogo,
     updatedAt: serverTimestamp(),
   };
@@ -591,22 +614,28 @@ export function subscribeToBusinessGbpReviews(
 export async function listGbpLocationsWithToken(gbpAccessToken: string): Promise<
   Array<{ accountName: string; locationName: string; title: string; placeId: string }>
 > {
-  const res = await apiFetch('/api/gbp-sync', {
-    method: 'POST',
-    requireAuth: true,
-    body: JSON.stringify({
-      action: 'list_locations',
-      gbpAccessToken,
-    }),
-  });
-  const data = (await res.json()) as {
-    locations?: Array<{ accountName: string; locationName: string; title: string; placeId: string }>;
-    error?: string;
-  };
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch Google Business Profile locations.');
+  try {
+    const res = await apiFetch('/api/gbp-sync', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        action: 'list_locations',
+        gbpAccessToken,
+      }),
+    });
+    const parsed = await parseApiJson<{
+      locations?: Array<{ accountName: string; locationName: string; title: string; placeId: string }>;
+      error?: string;
+    }>(res);
+    if (!parsed.ok) {
+      throw new Error(
+        parsed.data?.error || `Failed to fetch Google Business Profile locations (${parsed.status}).`,
+      );
+    }
+    return parsed.data?.locations || [];
+  } catch (err) {
+    throw new Error(formatApiError(err, 'Failed to fetch Google Business Profile locations.'));
   }
-  return data.locations || [];
 }
 
 interface AiReplyApiResponse {
@@ -639,23 +668,29 @@ export async function generateAndStoreGbpReviewReply(input: {
   const cleanStar = Math.min(5, Math.max(1, Math.round(Number(input.starRating) || 5)));
   const settings = input.business.gbpSettings;
 
-  const res = await apiFetch('/api/generate-reply', {
-    method: 'POST',
-    requireAuth: true,
-    body: JSON.stringify({
-      businessName: input.business.name,
-      category: input.business.category,
-      reviewerName: input.reviewerName,
-      starRating: cleanStar,
-      reviewComment: input.comment,
-      brandVoice: settings?.brandVoice || '',
-      fiveStarMode: settings?.fiveStarMode || 'auto_publish',
-      midStarMode: settings?.midStarMode || 'approval_required',
-    }),
-  });
-  const data = (await res.json()) as AiReplyApiResponse;
-  if (!res.ok || !data.replyText) {
-    throw new Error(data.error || 'Failed to generate AI reply.');
+  let data: AiReplyApiResponse;
+  try {
+    const res = await apiFetch('/api/generate-reply', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        businessName: input.business.name,
+        category: input.business.category,
+        reviewerName: input.reviewerName,
+        starRating: cleanStar,
+        reviewComment: input.comment,
+        brandVoice: settings?.brandVoice || '',
+        fiveStarMode: settings?.fiveStarMode || 'auto_publish',
+        midStarMode: settings?.midStarMode || 'approval_required',
+      }),
+    });
+    const parsed = await parseApiJson<AiReplyApiResponse>(res);
+    if (!parsed.ok || !parsed.data?.replyText) {
+      throw new Error(parsed.data?.error || `Failed to generate AI reply (${parsed.status}).`);
+    }
+    data = parsed.data;
+  } catch (err) {
+    throw new Error(formatApiError(err, 'Failed to generate AI reply.'));
   }
 
   const telemetry = data.aiTelemetry || {
@@ -696,15 +731,15 @@ export async function generateAndStoreGbpReviewReply(input: {
             replyText: data.replyText,
           }),
         });
-        if (!pubRes.ok) {
-          const errJson = (await pubRes.json()) as { error?: string };
-          errorMessage = errJson.error || 'Google reply publish returned an error.';
+        const parsedPub = await parseApiJson<{ error?: string }>(pubRes);
+        if (!parsedPub.ok) {
+          errorMessage = parsedPub.data?.error || 'Google reply publish returned an error.';
           finalStatus = 'awaiting_approval';
         } else {
           publishedAt = new Date().toISOString();
         }
       } catch (pubErr) {
-        errorMessage = pubErr instanceof Error ? pubErr.message : 'Unable to reach Google Reply API.';
+        errorMessage = formatApiError(pubErr, 'Unable to reach Google Reply API.');
         finalStatus = 'awaiting_approval';
       }
     } else {
@@ -800,31 +835,39 @@ export async function syncGbpReviewsWithToken(input: {
   locationName: string;
   existingReviews: GbpReview[];
 }): Promise<number> {
-  const res = await apiFetch('/api/gbp-sync', {
-    method: 'POST',
-    requireAuth: true,
-    body: JSON.stringify({
-      action: 'fetch_reviews',
-      gbpAccessToken: input.gbpAccessToken,
-      locationName: input.locationName,
-    }),
-  });
-  const data = (await res.json()) as {
-    reviews?: Array<{
-      externalReviewId: string;
-      reviewerName: string;
-      starRating: number;
-      comment: string;
-      reviewDate: string;
-    }>;
-    error?: string;
-  };
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to sync reviews from Google Business Profile.');
+  let fetchedReviews: Array<{
+    externalReviewId: string;
+    reviewerName: string;
+    starRating: number;
+    comment: string;
+    reviewDate: string;
+  }> = [];
+  try {
+    const res = await apiFetch('/api/gbp-sync', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        action: 'fetch_reviews',
+        gbpAccessToken: input.gbpAccessToken,
+        locationName: input.locationName,
+      }),
+    });
+    const parsed = await parseApiJson<{
+      reviews?: typeof fetchedReviews;
+      error?: string;
+    }>(res);
+    if (!parsed.ok) {
+      throw new Error(
+        parsed.data?.error || `Failed to sync reviews from Google Business Profile (${parsed.status}).`,
+      );
+    }
+    fetchedReviews = parsed.data?.reviews || [];
+  } catch (err) {
+    throw new Error(formatApiError(err, 'Failed to sync reviews from Google Business Profile.'));
   }
   const existingIds = new Set(input.existingReviews.map((r) => r.externalReviewId));
   let imported = 0;
-  for (const rev of data.reviews || []) {
+  for (const rev of fetchedReviews) {
     if (existingIds.has(rev.externalReviewId)) continue;
     await generateAndStoreGbpReviewReply({
       business: input.business,
@@ -857,23 +900,29 @@ export async function approveAndPublishGbpReply(input: {
   let errorMessage = '';
 
   if (input.gbpAccessToken && input.locationName) {
-    const res = await apiFetch('/api/gbp-sync', {
-      method: 'POST',
-      requireAuth: true,
-      body: JSON.stringify({
-        action: 'publish_reply',
-        gbpAccessToken: input.gbpAccessToken,
-        locationName: input.locationName,
-        externalReviewId: input.review.externalReviewId,
-        replyText: cleanText,
-      }),
-    });
-    const resJson = (await res.json()) as { published?: boolean; error?: string };
-    if (!res.ok) {
-      errorMessage = resJson.error || 'Failed to publish reply to Google Business Profile.';
+    try {
+      const res = await apiFetch('/api/gbp-sync', {
+        method: 'POST',
+        requireAuth: true,
+        body: JSON.stringify({
+          action: 'publish_reply',
+          gbpAccessToken: input.gbpAccessToken,
+          locationName: input.locationName,
+          externalReviewId: input.review.externalReviewId,
+          replyText: cleanText,
+        }),
+      });
+      const parsed = await parseApiJson<{ published?: boolean; error?: string }>(res);
+      if (!parsed.ok) {
+        errorMessage =
+          parsed.data?.error || `Failed to publish reply to Google Business Profile (${parsed.status}).`;
+        nextStatus = 'failed';
+      } else {
+        nextStatus = 'published';
+      }
+    } catch (err) {
+      errorMessage = formatApiError(err, 'Failed to reach Google Business Profile API.');
       nextStatus = 'failed';
-    } else {
-      nextStatus = 'published';
     }
   }
 

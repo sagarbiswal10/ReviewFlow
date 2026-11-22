@@ -31,63 +31,79 @@ async function readJsonBody(req: NodeReq): Promise<Record<string, unknown>> {
 }
 
 export default async function handler(req: NodeReq, res: ServerResponse) {
-  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-  const host = typeof req.headers.host === 'string' ? req.headers.host : '';
+  try {
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const forwardedHost =
+      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
+    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
+      .filter(Boolean)
+      .join(',');
 
-  if (origin && !isOriginAllowed(origin, host)) {
+    if (origin && !isOriginAllowed(origin, host)) {
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 403;
+        res.end();
+        return;
+      }
+      sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
+      return;
+    }
+
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
     if (req.method === 'OPTIONS') {
-      res.statusCode = 403;
+      res.statusCode = 204;
       res.end();
       return;
     }
-    sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
-    return;
-  }
 
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
-    res.setHeader('Vary', 'Origin');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Method not allowed.' });
+      return;
+    }
 
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
+    const authHeader =
+      typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
+    const authResult = await authenticateBearerHeader(authHeader);
+    if (!authResult.ok) {
+      sendJson(res, authResult.status, { error: authResult.error });
+      return;
+    }
 
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed.' });
-    return;
-  }
+    const forwarded = req.headers['x-forwarded-for'];
+    const clientIp =
+      (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    const rateKey = authResult.user ? `uid:${authResult.user.uid}` : `ip:${clientIp}`;
+    if (!checkRateLimit(rateKey, 40, 5 * 60 * 1000)) {
+      sendJson(res, 429, {
+        error: 'Rate limit exceeded. Please wait a minute before trying again.',
+      });
+      return;
+    }
 
-  const authHeader =
-    typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
-  const authResult = await authenticateBearerHeader(authHeader);
-  if (!authResult.ok) {
-    sendJson(res, authResult.status, { error: authResult.error });
-    return;
-  }
+    let body: Partial<GenerateReplyBody>;
+    try {
+      body = (await readJsonBody(req)) as Partial<GenerateReplyBody>;
+    } catch {
+      sendJson(res, 400, { error: 'Invalid JSON request payload.' });
+      return;
+    }
 
-  const forwarded = req.headers['x-forwarded-for'];
-  const clientIp =
-    (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) ||
-    req.socket?.remoteAddress ||
-    'unknown';
-  const rateKey = authResult.user ? `uid:${authResult.user.uid}` : `ip:${clientIp}`;
-  if (!checkRateLimit(rateKey, 40, 5 * 60 * 1000)) {
-    sendJson(res, 429, {
-      error: 'Rate limit exceeded. Please wait a minute before trying again.',
-    });
-    return;
-  }
-
-  try {
-    const body = (await readJsonBody(req)) as Partial<GenerateReplyBody>;
     const result = await processGenerateReply(body);
     sendJson(res, result.status, result.data);
-  } catch {
-    sendJson(res, 400, { error: 'Invalid JSON request payload.' });
+  } catch (err) {
+    console.error('generate-reply error:', err);
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: 'Internal server error while generating reply.' });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
   }
 }

@@ -31,13 +31,42 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [copied, setCopied] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isDirtyRef = useRef(false);
+  const lastSyncedRef = useRef<{ id: string; sig: string }>({
+    id: business.id,
+    sig: JSON.stringify(business.qrConfig),
+  });
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setFgColor(business.qrConfig.fgColor);
-    setBgColor(business.qrConfig.bgColor);
-    setIncludeLogo(business.qrConfig.includeLogo);
-    setIsActive(business.qrConfig.isActive);
-    setToken(business.qrConfig.token);
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const incomingSig = JSON.stringify(business.qrConfig);
+    if (lastSyncedRef.current.id !== business.id) {
+      isDirtyRef.current = false;
+      lastSyncedRef.current = { id: business.id, sig: incomingSig };
+      setFgColor(business.qrConfig.fgColor);
+      setBgColor(business.qrConfig.bgColor);
+      setIncludeLogo(business.qrConfig.includeLogo);
+      setIsActive(business.qrConfig.isActive);
+      setToken(business.qrConfig.token);
+      setError(null);
+      setStatusMessage(null);
+      return;
+    }
+    if (!isDirtyRef.current && incomingSig !== lastSyncedRef.current.sig) {
+      lastSyncedRef.current = { id: business.id, sig: incomingSig };
+      setFgColor(business.qrConfig.fgColor);
+      setBgColor(business.qrConfig.bgColor);
+      setIncludeLogo(business.qrConfig.includeLogo);
+      setIsActive(business.qrConfig.isActive);
+      setToken(business.qrConfig.token);
+    }
   }, [business.id, business.qrConfig]);
 
   const publicBaseUrl = getPublicAppUrl();
@@ -60,46 +89,64 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
   const persistQrConfig = async (
     nextConfig: Partial<Business['qrConfig']>,
     feedbackText: string,
-  ) => {
+  ): Promise<boolean> => {
     setIsSaving(true);
     setStatusMessage(null);
+    setError(null);
+    const mergedQrConfig = {
+      isActive: nextConfig.isActive ?? isActive,
+      fgColor: nextConfig.fgColor ?? fgColor,
+      bgColor: nextConfig.bgColor ?? bgColor,
+      token: nextConfig.token ?? token,
+      includeLogo: nextConfig.includeLogo ?? includeLogo,
+    };
     try {
       await updateBusiness(
         business,
-        {
-          qrConfig: {
-            isActive: nextConfig.isActive ?? isActive,
-            fgColor: nextConfig.fgColor ?? fgColor,
-            bgColor: nextConfig.bgColor ?? bgColor,
-            token: nextConfig.token ?? token,
-            includeLogo: nextConfig.includeLogo ?? includeLogo,
-          },
-        },
+        { qrConfig: mergedQrConfig },
         { isAdmin },
       );
+      isDirtyRef.current = false;
+      lastSyncedRef.current = {
+        id: business.id,
+        sig: JSON.stringify(mergedQrConfig),
+      };
       setStatusMessage(feedbackText);
-      setTimeout(() => setStatusMessage(null), 3000);
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = setTimeout(() => setStatusMessage(null), 3000);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save QR styling.');
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleToggleActive = async () => {
-    const nextActive = !isActive;
+    const prevActive = isActive;
+    const nextActive = !prevActive;
     setIsActive(nextActive);
-    await persistQrConfig(
+    const ok = await persistQrConfig(
       { isActive: nextActive },
       nextActive ? 'QR code activated for customer scans.' : 'QR code paused.',
     );
+    if (!ok) {
+      setIsActive(prevActive);
+    }
   };
 
   const handleRegenerateToken = async () => {
+    const prevToken = token;
     const nextToken = generateRandomToken();
     setToken(nextToken);
-    await persistQrConfig(
+    const ok = await persistQrConfig(
       { token: nextToken },
       'Generated a fresh QR code revision token.',
     );
+    if (!ok) {
+      setToken(prevToken);
+    }
   };
 
   const handleSaveColors = async () => {
@@ -116,6 +163,7 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
 
   const handleDownloadPdf = async () => {
     setIsExportingPdf(true);
+    setError(null);
     try {
       await downloadQrPdf({
         businessName: business.name,
@@ -129,6 +177,8 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
         logoSrc: business.logoDataUrl,
         slug: business.slug,
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to generate PDF poster.');
     } finally {
       setIsExportingPdf(false);
     }
@@ -239,6 +289,11 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
 
       {/* Right: Customization & Lifecycle Controls */}
       <div className="lg:col-span-7 space-y-6">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
         <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
           <div>
             <h2 className="text-lg font-display font-bold text-slate-900">
@@ -257,14 +312,20 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
               <div className="flex items-center gap-3">
                 <input
                   type="color"
-                  value={fgColor}
-                  onChange={(e) => setFgColor(e.target.value)}
+                  value={/^#[0-9a-fA-F]{6}$/.test(fgColor) ? fgColor : '#0F172A'}
+                  onChange={(e) => {
+                    isDirtyRef.current = true;
+                    setFgColor(e.target.value);
+                  }}
                   className="w-11 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
                 />
                 <input
                   type="text"
                   value={fgColor}
-                  onChange={(e) => setFgColor(e.target.value)}
+                  onChange={(e) => {
+                    isDirtyRef.current = true;
+                    setFgColor(e.target.value);
+                  }}
                   className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
                 />
               </div>
@@ -277,14 +338,20 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
               <div className="flex items-center gap-3">
                 <input
                   type="color"
-                  value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
+                  value={/^#[0-9a-fA-F]{6}$/.test(bgColor) ? bgColor : '#FFFFFF'}
+                  onChange={(e) => {
+                    isDirtyRef.current = true;
+                    setBgColor(e.target.value);
+                  }}
                   className="w-11 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
                 />
                 <input
                   type="text"
                   value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
+                  onChange={(e) => {
+                    isDirtyRef.current = true;
+                    setBgColor(e.target.value);
+                  }}
                   className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
                 />
               </div>
@@ -303,7 +370,10 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
               role="switch"
               aria-checked={includeLogo}
               disabled={!business.logoDataUrl}
-              onClick={() => setIncludeLogo((prev) => !prev)}
+              onClick={() => {
+                isDirtyRef.current = true;
+                setIncludeLogo((prev) => !prev);
+              }}
               className={`w-12 h-7 rounded-full transition-colors p-1 cursor-pointer disabled:opacity-40 ${
                 includeLogo && business.logoDataUrl ? 'bg-teal-700' : 'bg-slate-200'
               }`}

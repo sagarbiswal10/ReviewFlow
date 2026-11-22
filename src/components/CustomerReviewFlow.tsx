@@ -25,7 +25,7 @@ import {
   saveFeedbackSubmission,
   updateReviewDraftLifecycle,
 } from '../services/businessService';
-import { apiFetch } from '../utils/apiClient';
+import { apiFetch, formatApiError } from '../utils/apiClient';
 import { BusinessLogo } from './BusinessLogo';
 
 interface CustomerReviewFlowProps {
@@ -378,7 +378,7 @@ export function CustomerReviewFlow({
         setCurrentDraftId(`preview_dr_${Date.now()}`);
       }
     } catch (err) {
-      setGenerateError(err instanceof Error ? err.message : 'Unable to generate review draft.');
+      setGenerateError(formatApiError(err, 'Unable to generate review draft.'));
     } finally {
       setIsGenerating(false);
     }

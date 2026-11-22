@@ -67,13 +67,20 @@ export const GEMINI_FALLBACK_MODEL =
     : 'gemini-4-hydrogen';
 export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
+const DEFAULT_FIREBASE_PROJECT_ID = 'gen-lang-client-0894437771';
+const DEFAULT_FIREBASE_DATABASE_ID = 'ai-studio-c58774bf-bd18-4afa-b645-7a968ff8b63b';
+
 function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
   const envProjectId = (
     process.env.FIREBASE_PROJECT_ID ||
     process.env.VITE_FIREBASE_PROJECT_ID ||
     ''
   ).trim();
-  const envDbId = (process.env.VITE_FIREBASE_DATABASE_ID || '').trim();
+  const envDbId = (
+    process.env.FIREBASE_DATABASE_ID ||
+    process.env.VITE_FIREBASE_DATABASE_ID ||
+    ''
+  ).trim();
 
   try {
     const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -83,16 +90,19 @@ function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
         firestoreDatabaseId?: string;
       };
       return {
-        projectId: envProjectId || (parsed.projectId || '').trim(),
-        databaseId: envDbId || (parsed.firestoreDatabaseId || '').trim() || '(default)',
+        projectId: envProjectId || (parsed.projectId || '').trim() || DEFAULT_FIREBASE_PROJECT_ID,
+        databaseId:
+          envDbId ||
+          (parsed.firestoreDatabaseId || '').trim() ||
+          DEFAULT_FIREBASE_DATABASE_ID,
       };
     }
   } catch {
     // Ignore missing/invalid local config file
   }
   return {
-    projectId: envProjectId,
-    databaseId: envDbId || '(default)',
+    projectId: envProjectId || DEFAULT_FIREBASE_PROJECT_ID,
+    databaseId: envDbId || DEFAULT_FIREBASE_DATABASE_ID,
   };
 }
 
@@ -100,19 +110,38 @@ const FIREBASE_CONF = resolveFirebaseConfig();
 export const FIREBASE_PROJECT_ID = FIREBASE_CONF.projectId;
 export const FIREBASE_DATABASE_ID = FIREBASE_CONF.databaseId;
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = 8000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 let certCache: { certs: Record<string, string>; expiresAt: number } = {
   certs: {},
   expiresAt: 0,
 };
 
-async function getFirebasePublicCerts(): Promise<Record<string, string>> {
+async function getFirebasePublicCerts(forceRefresh = false): Promise<Record<string, string>> {
   const now = Date.now();
-  if (now < certCache.expiresAt && Object.keys(certCache.certs).length > 0) {
+  if (!forceRefresh && now < certCache.expiresAt && Object.keys(certCache.certs).length > 0) {
     return certCache.certs;
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com',
+    {},
+    8000,
   );
   if (!res.ok) {
     throw new Error(`Failed to fetch Firebase Auth public keys (${res.status})`);
@@ -179,8 +208,12 @@ export async function verifyFirebaseIdToken(
     }
   }
 
-  const certs = await getFirebasePublicCerts();
-  const certPem = certs[header.kid];
+  let certs = await getFirebasePublicCerts();
+  let certPem = certs[header.kid];
+  if (!certPem) {
+    certs = await getFirebasePublicCerts(true);
+    certPem = certs[header.kid];
+  }
   if (!certPem) {
     throw new Error('Unknown token signing key.');
   }
@@ -229,14 +262,19 @@ export async function authenticateBearerHeader(
 }
 
 export function isOriginAllowed(origin: string, hostHeader: string): boolean {
-  const cleanOrigin = origin.replace(/\/+$/, '');
+  const cleanOrigin = origin.trim().replace(/\/+$/, '');
   if (!cleanOrigin) return true;
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);
-  const isSameHost =
-    cleanOrigin === `https://${hostHeader}` || cleanOrigin === `http://${hostHeader}`;
+  const candidateHosts = hostHeader
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+  const isSameHost = candidateHosts.some(
+    (h) => cleanOrigin === `https://${h}` || cleanOrigin === `http://${h}`,
+  );
   return allowedOrigins.length === 0 || isSameHost || allowedOrigins.includes(cleanOrigin);
 }
 
@@ -1119,9 +1157,11 @@ export async function processValidateQrStandSlot(
   if (FIREBASE_PROJECT_ID && callerBearerToken) {
     try {
       const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_PROJECT_ID)}/databases/${encodeURIComponent(FIREBASE_DATABASE_ID)}/documents/businesses/${encodeURIComponent(businessId)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${callerBearerToken}` },
-      });
+      const res = await fetchWithTimeout(
+        url,
+        { headers: { Authorization: `Bearer ${callerBearerToken}` } },
+        6000,
+      );
       if (res.status === 403 || res.status === 401) {
         return {
           status: 403,
@@ -1185,9 +1225,10 @@ export async function processGbpProxy(
 
   try {
     if (action === 'list_locations') {
-      const accountsRes = await fetch(
+      const accountsRes = await fetchWithTimeout(
         'https://mybusinessaccountmanagement.googleapis.com/v1/accounts',
         { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
+        10000,
       );
       const accountsBody = await accountsRes.text();
       if (!accountsRes.ok) {
@@ -1212,9 +1253,11 @@ export async function processGbpProxy(
       for (const acc of accounts.slice(0, 5)) {
         if (!acc.name) continue;
         const locUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/${acc.name}/locations?readMask=name,title,metadata`;
-        const locRes = await fetch(locUrl, {
-          headers: { Authorization: `Bearer ${gbpAccessToken}` },
-        });
+        const locRes = await fetchWithTimeout(
+          locUrl,
+          { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
+          10000,
+        );
         if (!locRes.ok) continue;
         const locJson = (await locRes.json()) as {
           locations?: Array<{
@@ -1242,9 +1285,10 @@ export async function processGbpProxy(
       if (!locationName || !/^accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+$/.test(locationName)) {
         return { status: 400, data: { error: 'Valid Google Business Profile locationName is required.' } };
       }
-      const revRes = await fetch(
+      const revRes = await fetchWithTimeout(
         `https://mybusiness.googleapis.com/v4/${locationName}/reviews?pageSize=25`,
         { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
+        10000,
       );
       const revText = await revRes.text();
       if (!revRes.ok) {
@@ -1298,7 +1342,7 @@ export async function processGbpProxy(
           data: { error: 'Valid locationName, externalReviewId, and replyText are required.' },
         };
       }
-      const pubRes = await fetch(
+      const pubRes = await fetchWithTimeout(
         `https://mybusiness.googleapis.com/v4/${locationName}/reviews/${externalReviewId}/reply`,
         {
           method: 'PUT',
@@ -1308,6 +1352,7 @@ export async function processGbpProxy(
           },
           body: JSON.stringify({ comment: replyText }),
         },
+        10000,
       );
       const pubText = await pubRes.text();
       if (!pubRes.ok) {

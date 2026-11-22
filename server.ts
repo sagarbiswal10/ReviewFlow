@@ -61,19 +61,24 @@ async function requireAuthenticatedUser(
   res: Response,
   next: NextFunction,
 ) {
-  const authHeader = req.headers.authorization || '';
-  const result = await authenticateBearerHeader(authHeader);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
-    return;
+  try {
+    const authHeader = req.headers.authorization || '';
+    const result = await authenticateBearerHeader(authHeader);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    if (result.user) {
+      req.authUser = result.user;
+    }
+    if (result.rawToken) {
+      req.rawBearerToken = result.rawToken;
+    }
+    next();
+  } catch (err) {
+    console.error('Auth middleware error:', err);
+    res.status(500).json({ error: 'Authentication verification failed.' });
   }
-  if (result.user) {
-    req.authUser = result.user;
-  }
-  if (result.rawToken) {
-    req.rawBearerToken = result.rawToken;
-  }
-  next();
 }
 
 async function startServer() {
@@ -83,7 +88,9 @@ async function startServer() {
 
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     const origin = (req.headers.origin || '').replace(/\/+$/, '');
-    const hostHeader = req.headers.host || '';
+    const forwardedHost =
+      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
+    const hostHeader = [forwardedHost, req.headers.host || ''].filter(Boolean).join(',');
 
     if (origin) {
       if (!isOriginAllowed(origin, hostHeader)) {
@@ -119,16 +126,26 @@ async function startServer() {
     requireAuthenticatedUser,
     authenticatedLimiter,
     async (req: Request, res: Response) => {
-      const result = await processGenerateSeoKeywords(
-        req.body as Partial<GenerateSeoKeywordsBody>,
-      );
-      res.status(result.status).json(result.data);
+      try {
+        const result = await processGenerateSeoKeywords(
+          req.body as Partial<GenerateSeoKeywordsBody>,
+        );
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('generate-seo-keywords route error:', err);
+        res.status(500).json({ error: 'Internal server error while generating SEO keywords.' });
+      }
     },
   );
 
   app.post('/api/generate-review', publicReviewLimiter, async (req: Request, res: Response) => {
-    const result = await processGenerateReview(req.body as Partial<GenerateReviewBody>);
-    res.status(result.status).json(result.data);
+    try {
+      const result = await processGenerateReview(req.body as Partial<GenerateReviewBody>);
+      res.status(result.status).json(result.data);
+    } catch (err) {
+      console.error('generate-review route error:', err);
+      res.status(500).json({ error: 'Internal server error while generating review draft.' });
+    }
   });
 
   app.post(
@@ -136,8 +153,13 @@ async function startServer() {
     requireAuthenticatedUser,
     authenticatedLimiter,
     async (req: Request, res: Response) => {
-      const result = await processGenerateReply(req.body as Partial<GenerateReplyBody>);
-      res.status(result.status).json(result.data);
+      try {
+        const result = await processGenerateReply(req.body as Partial<GenerateReplyBody>);
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('generate-reply route error:', err);
+        res.status(500).json({ error: 'Internal server error while generating reply.' });
+      }
     },
   );
 
@@ -146,11 +168,16 @@ async function startServer() {
     requireAuthenticatedUser,
     authenticatedLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      const result = await processValidateQrStandSlot(
-        req.body as Partial<ValidateQrStandSlotBody>,
-        req.rawBearerToken,
-      );
-      res.status(result.status).json(result.data);
+      try {
+        const result = await processValidateQrStandSlot(
+          req.body as Partial<ValidateQrStandSlotBody>,
+          req.rawBearerToken,
+        );
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('qr-stand-authorize route error:', err);
+        res.status(500).json({ error: 'Internal server error while authorizing QR stand.' });
+      }
     },
   );
 
@@ -159,8 +186,13 @@ async function startServer() {
     requireAuthenticatedUser,
     authenticatedLimiter,
     async (req: Request, res: Response) => {
-      const result = await processGbpProxy(req.body as Partial<GbpProxyBody>);
-      res.status(result.status).json(result.data);
+      try {
+        const result = await processGbpProxy(req.body as Partial<GbpProxyBody>);
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('gbp-sync route error:', err);
+        res.status(500).json({ error: 'Internal server error while syncing Google Business Profile.' });
+      }
     },
   );
 

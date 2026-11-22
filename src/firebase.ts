@@ -111,8 +111,9 @@ export function handleFirestoreError(
   operationType: OperationType,
   path: string | null,
 ): never {
+  const rawMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: rawMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -129,7 +130,22 @@ export function handleFirestoreError(
     path,
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('permission') || lower.includes('insufficient')) {
+    throw new Error(
+      'Permission denied: your account does not have permission for this action.',
+    );
+  }
+  if (lower.includes('not-found') || lower.includes('no document to update')) {
+    throw new Error('The target record could not be found. Please refresh and try again.');
+  }
+  if (lower.includes('unavailable') || lower.includes('offline') || lower.includes('network')) {
+    throw new Error(
+      'Database connection unavailable. Please check your internet connection and try again.',
+    );
+  }
+  throw new Error(rawMessage || 'Database operation failed.');
 }
 
 async function testConnection() {

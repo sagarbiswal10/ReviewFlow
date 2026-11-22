@@ -16,8 +16,8 @@ import {
   writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { apiFetch } from '../utils/apiClient';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { apiFetch, parseApiJson } from '../utils/apiClient';
 import {
   DEFAULT_ENABLED_FEATURES,
   DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
@@ -136,28 +136,34 @@ function sanitizeAccessLevel(level?: unknown): ClientAccessLevel {
   return 'full';
 }
 
-function sanitizeBranding(branding: BusinessBranding): BusinessBranding {
+function sanitizeColorHex(val: unknown, fallback: string): string {
+  const clean = clampString(val, 20);
+  return clean.length >= 4 ? clean : fallback;
+}
+
+function sanitizeBranding(branding?: Partial<BusinessBranding>): BusinessBranding {
   return {
-    primaryColor: clampString(branding.primaryColor, 20) || '#0F766E',
-    secondaryColor: clampString(branding.secondaryColor, 20) || '#0F172A',
-    welcomeMessage: clampString(branding.welcomeMessage, 240),
-    thankYouMessage: clampString(branding.thankYouMessage, 240),
+    primaryColor: sanitizeColorHex(branding?.primaryColor, '#0F766E'),
+    secondaryColor: sanitizeColorHex(branding?.secondaryColor, '#0F172A'),
+    welcomeMessage: clampString(branding?.welcomeMessage, 240),
+    thankYouMessage: clampString(branding?.thankYouMessage, 240),
     defaultReviewStyle:
-      branding.defaultReviewStyle === 'short' ||
-      branding.defaultReviewStyle === 'detailed' ||
-      branding.defaultReviewStyle === 'professional'
+      branding?.defaultReviewStyle === 'short' ||
+      branding?.defaultReviewStyle === 'detailed' ||
+      branding?.defaultReviewStyle === 'professional'
         ? branding.defaultReviewStyle
         : 'short',
   };
 }
 
-function sanitizeQrConfig(qrConfig: QrConfig): QrConfig {
+function sanitizeQrConfig(qrConfig?: Partial<QrConfig>, fallbackToken = 'v1token'): QrConfig {
+  const rawToken = clampString(qrConfig?.token, 64);
   return {
-    isActive: Boolean(qrConfig.isActive),
-    fgColor: clampString(qrConfig.fgColor, 20) || '#0F172A',
-    bgColor: clampString(qrConfig.bgColor, 20) || '#FFFFFF',
-    token: clampString(qrConfig.token, 64) || generateRandomToken(),
-    includeLogo: Boolean(qrConfig.includeLogo),
+    isActive: qrConfig?.isActive ?? true,
+    fgColor: sanitizeColorHex(qrConfig?.fgColor, '#0F172A'),
+    bgColor: sanitizeColorHex(qrConfig?.bgColor, '#FFFFFF'),
+    token: rawToken.length >= 4 ? rawToken : fallbackToken,
+    includeLogo: Boolean(qrConfig?.includeLogo),
   };
 }
 
@@ -212,8 +218,8 @@ export async function fetchAutoSeoKeywords(input: {
     if (!res.ok) {
       return DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
     }
-    const data = (await res.json()) as { keywords?: unknown };
-    const cleaned = sanitizeSeoKeywords(data.keywords);
+    const parsed = await parseApiJson<{ keywords?: unknown }>(res);
+    const cleaned = sanitizeSeoKeywords(parsed.data?.keywords);
     return cleaned.length > 0
       ? cleaned
       : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
@@ -245,20 +251,8 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     website: clampString(data.website, 300),
     googleReviewUrl: data.googleReviewUrl || '',
     logoDataUrl: data.logoDataUrl || '',
-    branding: data.branding || {
-      primaryColor: '#0F766E',
-      secondaryColor: '#0F172A',
-      welcomeMessage: '',
-      thankYouMessage: '',
-      defaultReviewStyle: 'short',
-    },
-    qrConfig: data.qrConfig || {
-      isActive: true,
-      fgColor: '#0F172A',
-      bgColor: '#FFFFFF',
-      token: 'v1',
-      includeLogo: false,
-    },
+    branding: sanitizeBranding(data.branding),
+    qrConfig: sanitizeQrConfig(data.qrConfig, 'v1token'),
     questions: Array.isArray(data.questions) ? data.questions : [],
     seoKeywords:
       hydratedKeywords.length > 0
@@ -535,22 +529,27 @@ export async function claimBusinessClientUid(
   const cleanUid = clampString(clientUid, 128);
   if (!cleanUid || business.clientUid === cleanUid) return { ok: true };
   const now = serverTimestamp();
-  const batch = writeBatch(db);
-  batch.update(doc(db, 'businesses', business.id), {
-    clientUid: cleanUid,
-    updatedAt: now,
-  });
-  batch.update(doc(db, 'publicProfiles', business.slug), {
-    clientUid: cleanUid,
-    updatedAt: now,
-  });
+
   try {
-    await batch.commit();
-    return { ok: true };
+    await updateDoc(doc(db, 'businesses', business.id), {
+      clientUid: cleanUid,
+      updatedAt: now,
+    });
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
     return { ok: false, error: raw };
   }
+
+  try {
+    await updateDoc(doc(db, 'publicProfiles', business.slug), {
+      clientUid: cleanUid,
+      updatedAt: now,
+    });
+  } catch {
+    // Non-blocking if publicProfile doc is missing or paused
+  }
+
+  return { ok: true };
 }
 
 export function subscribeToBusinessEvents(
@@ -818,6 +817,33 @@ export async function createBusiness(
   }
 }
 
+function needsBrandingRepair(b?: BusinessBranding): boolean {
+  if (!b) return true;
+  return (
+    !b.primaryColor ||
+    b.primaryColor.length < 4 ||
+    !b.secondaryColor ||
+    b.secondaryColor.length < 4 ||
+    (b.defaultReviewStyle !== 'short' &&
+      b.defaultReviewStyle !== 'detailed' &&
+      b.defaultReviewStyle !== 'professional')
+  );
+}
+
+function needsQrConfigRepair(q?: QrConfig): boolean {
+  if (!q) return true;
+  return (
+    typeof q.isActive !== 'boolean' ||
+    !q.fgColor ||
+    q.fgColor.length < 4 ||
+    !q.bgColor ||
+    q.bgColor.length < 4 ||
+    !q.token ||
+    q.token.length < 4 ||
+    typeof q.includeLogo !== 'boolean'
+  );
+}
+
 export async function updateBusiness(
   current: Business,
   updates: Partial<{
@@ -846,23 +872,45 @@ export async function updateBusiness(
 ): Promise<string> {
   const isAdmin = Boolean(options.isAdmin);
   const access = isAdmin ? 'full' : current.clientAccessLevel;
+  const currentUid = auth.currentUser?.uid || '';
+  const isOwnerOrAdmin = isAdmin || (Boolean(currentUid) && current.ownerId === currentUid);
   const now = serverTimestamp();
   const batch = writeBatch(db);
 
+  // Check whether publicProfiles/{current.slug} exists without letting a paused-profile read block us
+  let publicProfileState: 'exists' | 'missing' | 'unknown' = 'unknown';
+  try {
+    const publicSnap = await getDoc(doc(db, 'publicProfiles', current.slug));
+    publicProfileState = publicSnap.exists() ? 'exists' : 'missing';
+  } catch {
+    // Permission error on paused public profile for non-owner client means doc exists
+    publicProfileState = 'exists';
+  }
+
   // Scoped update for 'qr_and_questions' tier clients
   if (!isAdmin && access === 'qr_and_questions') {
-    const nextQrConfig = sanitizeQrConfig(updates.qrConfig ?? current.qrConfig);
-    const nextQuestions = sanitizeQuestions(updates.questions ?? current.questions);
-    batch.update(doc(db, 'businesses', current.id), {
-      qrConfig: nextQrConfig,
-      questions: nextQuestions,
-      updatedAt: now,
-    });
-    batch.update(doc(db, 'publicProfiles', current.slug), {
-      qrConfig: nextQrConfig,
-      questions: nextQuestions,
-      updatedAt: now,
-    });
+    const businessScopedUpdates: Record<string, unknown> = { updatedAt: now };
+    const publicScopedUpdates: Record<string, unknown> = { updatedAt: now };
+
+    if (updates.qrConfig !== undefined || needsQrConfigRepair(current.qrConfig)) {
+      const nextQrConfig = sanitizeQrConfig(
+        updates.qrConfig ?? current.qrConfig,
+        generateRandomToken(),
+      );
+      businessScopedUpdates.qrConfig = nextQrConfig;
+      publicScopedUpdates.qrConfig = nextQrConfig;
+    }
+    if (updates.questions !== undefined) {
+      const nextQuestions = sanitizeQuestions(updates.questions);
+      businessScopedUpdates.questions = nextQuestions;
+      publicScopedUpdates.questions = nextQuestions;
+    }
+
+    batch.update(doc(db, 'businesses', current.id), businessScopedUpdates);
+    if (publicProfileState !== 'missing') {
+      batch.update(doc(db, 'publicProfiles', current.slug), publicScopedUpdates);
+    }
+
     try {
       await batch.commit();
       return current.slug;
@@ -871,22 +919,36 @@ export async function updateBusiness(
     }
   }
 
-  const nextSlug = updates.slug ? sanitizeSlug(updates.slug) : current.slug;
+  const nextSlug = updates.slug !== undefined ? sanitizeSlug(updates.slug) : current.slug;
   const slugChanged = nextSlug !== current.slug;
 
   if (slugChanged) {
+    if (!isOwnerOrAdmin) {
+      throw new Error(
+        'Only the business owner or platform administrator can rename the public URL slug.',
+      );
+    }
     const check = await checkSlugAvailability(nextSlug, current.id);
     if (!check.available) {
       throw new Error(`The URL slug "${nextSlug}" is already taken by another business.`);
     }
   }
 
-  const nextName = clampString(updates.name ?? current.name, 120) || current.name;
+  const nextName =
+    updates.name !== undefined
+      ? clampString(updates.name, 120) || current.name
+      : current.name;
   const nextCategory = updates.category ?? current.category;
-  const nextGoogleUrl = clampString(updates.googleReviewUrl ?? current.googleReviewUrl, 500);
-  const nextLogo = clampString(updates.logoDataUrl ?? current.logoDataUrl, 350000);
+  const nextGoogleUrl =
+    updates.googleReviewUrl !== undefined
+      ? clampString(updates.googleReviewUrl, 500)
+      : current.googleReviewUrl;
+  const nextLogo =
+    updates.logoDataUrl !== undefined
+      ? clampString(updates.logoDataUrl, 350000)
+      : current.logoDataUrl;
   const nextBranding = sanitizeBranding(updates.branding ?? current.branding);
-  const nextQrConfig = sanitizeQrConfig(updates.qrConfig ?? current.qrConfig);
+  const nextQrConfig = sanitizeQrConfig(updates.qrConfig ?? current.qrConfig, generateRandomToken());
   const nextQuestions = sanitizeQuestions(updates.questions ?? current.questions);
   const nextSeoKeywords = sanitizeSeoKeywords(
     updates.seoKeywords ?? current.seoKeywords ?? DEFAULT_SEO_KEYWORDS_BY_CATEGORY[nextCategory],
@@ -902,27 +964,59 @@ export async function updateBusiness(
     ? sanitizeEnabledFeatures(updates.enabledFeatures ?? current.enabledFeatures)
     : current.enabledFeatures;
 
-  const businessUpdates: Record<string, unknown> = {
-    slug: nextSlug,
-    name: nextName,
-    category: nextCategory,
-    address: clampString(updates.address ?? current.address, 240),
-    phone: clampString(updates.phone ?? current.phone, 40),
-    contactEmail: clampString(updates.contactEmail ?? current.contactEmail, 120),
-    googleReviewUrl: nextGoogleUrl,
-    logoDataUrl: nextLogo,
-    branding: nextBranding,
-    qrConfig: nextQrConfig,
-    questions: nextQuestions,
-    seoKeywords: nextSeoKeywords,
-    updatedAt: now,
-  };
+  // Build minimal diff for businesses/{id} while self-healing any invalid nested subobjects
+  const businessUpdates: Record<string, unknown> = { updatedAt: now };
+  const publicUpdates: Record<string, unknown> = { updatedAt: now };
 
-  if (updates.ownerName !== undefined) {
-    businessUpdates.ownerName = clampString(updates.ownerName, 120);
+  if (slugChanged) {
+    businessUpdates.slug = nextSlug;
+  }
+  if (updates.name !== undefined) {
+    businessUpdates.name = nextName;
+    publicUpdates.name = nextName;
+  }
+  if (updates.category !== undefined) {
+    businessUpdates.category = nextCategory;
+    publicUpdates.category = nextCategory;
+  }
+  if (updates.address !== undefined) {
+    businessUpdates.address = clampString(updates.address, 240);
+  }
+  if (updates.phone !== undefined) {
+    businessUpdates.phone = clampString(updates.phone, 40);
+  }
+  if (updates.contactEmail !== undefined) {
+    businessUpdates.contactEmail = clampString(updates.contactEmail, 120);
   }
   if (updates.website !== undefined) {
     businessUpdates.website = clampString(updates.website, 300);
+  }
+  if (updates.googleReviewUrl !== undefined) {
+    businessUpdates.googleReviewUrl = nextGoogleUrl;
+    publicUpdates.googleReviewUrl = nextGoogleUrl;
+  }
+  if (updates.logoDataUrl !== undefined) {
+    businessUpdates.logoDataUrl = nextLogo;
+    publicUpdates.logoDataUrl = nextLogo;
+  }
+  if (updates.branding !== undefined || needsBrandingRepair(current.branding)) {
+    businessUpdates.branding = nextBranding;
+    publicUpdates.branding = nextBranding;
+  }
+  if (updates.qrConfig !== undefined || needsQrConfigRepair(current.qrConfig)) {
+    businessUpdates.qrConfig = nextQrConfig;
+    publicUpdates.qrConfig = nextQrConfig;
+  }
+  if (updates.questions !== undefined) {
+    businessUpdates.questions = nextQuestions;
+    publicUpdates.questions = nextQuestions;
+  }
+  if (updates.seoKeywords !== undefined) {
+    businessUpdates.seoKeywords = nextSeoKeywords;
+    publicUpdates.seoKeywords = nextSeoKeywords;
+  }
+  if (updates.ownerName !== undefined) {
+    businessUpdates.ownerName = clampString(updates.ownerName, 120);
   }
   if (updates.gbpSettings !== undefined) {
     businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings);
@@ -936,22 +1030,32 @@ export async function updateBusiness(
 
   const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
-    businessUpdates.clientEmail = nextClientEmail;
-    businessUpdates.clientAccessLevel = nextAccessLevel;
-    businessUpdates.enabledFeatures = nextFeatures;
+    if (updates.clientEmail !== undefined) {
+      businessUpdates.clientEmail = nextClientEmail;
+    }
+    if (updates.clientAccessLevel !== undefined) {
+      businessUpdates.clientAccessLevel = nextAccessLevel;
+    }
+    if (updates.enabledFeatures !== undefined) {
+      businessUpdates.enabledFeatures = nextFeatures;
+      publicUpdates.enabledFeatures = nextFeatures;
+    }
     if (updates.qrStandLimit !== undefined) {
       const parsedLimit = Math.round(Number(updates.qrStandLimit));
       businessUpdates.qrStandLimit = Math.min(100, Math.max(1, parsedLimit || 4));
     }
     if (clientEmailChanged) {
       businessUpdates.clientUid = '';
+      publicUpdates.clientUid = '';
     }
   }
 
   batch.update(doc(db, 'businesses', current.id), businessUpdates);
 
   if (slugChanged) {
-    batch.delete(doc(db, 'publicProfiles', current.slug));
+    if (publicProfileState !== 'missing') {
+      batch.delete(doc(db, 'publicProfiles', current.slug));
+    }
     batch.set(doc(db, 'publicProfiles', nextSlug), {
       businessId: current.id,
       ownerId: current.ownerId,
@@ -969,33 +1073,36 @@ export async function updateBusiness(
       createdAt: current.createdAt ?? now,
       updatedAt: now,
     });
-  } else {
-    const publicUpdates: Record<string, unknown> = {
-      name: nextName,
-      category: nextCategory,
-      googleReviewUrl: nextGoogleUrl,
-      logoDataUrl: nextLogo,
-      branding: nextBranding,
-      qrConfig: nextQrConfig,
-      questions: nextQuestions,
-      seoKeywords: nextSeoKeywords,
-      updatedAt: now,
-    };
-    if (isAdmin) {
-      publicUpdates.enabledFeatures = nextFeatures;
-      if (clientEmailChanged) {
-        publicUpdates.clientUid = '';
-      }
+  } else if (publicProfileState === 'missing') {
+    if (isOwnerOrAdmin) {
+      batch.set(doc(db, 'publicProfiles', current.slug), {
+        businessId: current.id,
+        ownerId: current.ownerId,
+        clientUid: clientEmailChanged ? '' : current.clientUid || '',
+        slug: current.slug,
+        name: nextName,
+        category: nextCategory,
+        googleReviewUrl: nextGoogleUrl,
+        logoDataUrl: nextLogo,
+        enabledFeatures: nextFeatures,
+        branding: nextBranding,
+        qrConfig: nextQrConfig,
+        questions: nextQuestions,
+        seoKeywords: nextSeoKeywords,
+        createdAt: current.createdAt ?? now,
+        updatedAt: now,
+      });
     }
+  } else if (Object.keys(publicUpdates).length > 1) {
     batch.update(doc(db, 'publicProfiles', current.slug), publicUpdates);
   }
 
-  if (slugChanged || (isAdmin && nextClientEmail !== current.clientEmail)) {
+  if (slugChanged || clientEmailChanged) {
     const statsUpdates: Record<string, unknown> = {
       slug: nextSlug,
       updatedAt: now,
     };
-    if (isAdmin) {
+    if (isAdmin && clientEmailChanged) {
       statsUpdates.clientEmail = nextClientEmail;
     }
     batch.update(doc(db, 'businessStats', current.id), statsUpdates);
@@ -1043,20 +1150,8 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       googleReviewUrl: raw.googleReviewUrl || '',
       logoDataUrl: raw.logoDataUrl || '',
       enabledFeatures: sanitizeEnabledFeatures(raw.enabledFeatures),
-      branding: raw.branding || {
-        primaryColor: '#0F766E',
-        secondaryColor: '#0F172A',
-        welcomeMessage: '',
-        thankYouMessage: '',
-        defaultReviewStyle: 'short',
-      },
-      qrConfig: raw.qrConfig || {
-        isActive: false,
-        fgColor: '#0F172A',
-        bgColor: '#FFFFFF',
-        token: 'v1',
-        includeLogo: false,
-      },
+      branding: sanitizeBranding(raw.branding),
+      qrConfig: sanitizeQrConfig(raw.qrConfig, 'v1token'),
       questions: Array.isArray(raw.questions) ? raw.questions : [],
       seoKeywords: (() => {
         const kw = sanitizeSeoKeywords(raw.seoKeywords);

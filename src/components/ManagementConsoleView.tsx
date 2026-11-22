@@ -182,11 +182,26 @@ export function ManagementConsoleView({
   const [adminError, setAdminError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubUids = subscribeToAdmins((items) => setAdmins(items));
-    const unsubEmails = subscribeToAdminEmails((items) => setAdminEmails(items));
-    const unsubStandReqs = subscribeToAllQrStandRequests((items) => setStandRequests(items));
-    const unsubAiLogs = subscribeToAllAiUsage((items) => setGlobalAiLogs(items));
-    const unsubWeekly = subscribeToAllWeeklyReports((items) => setGlobalReports(items));
+    const unsubUids = subscribeToAdmins(
+      (items) => setAdmins(items),
+      (err) => setAdminError(err?.message || 'Unable to load UID-based team admins.'),
+    );
+    const unsubEmails = subscribeToAdminEmails(
+      (items) => setAdminEmails(items),
+      (err) => setAdminError(err?.message || 'Unable to load admin email grants.'),
+    );
+    const unsubStandReqs = subscribeToAllQrStandRequests(
+      (items) => setStandRequests(items),
+      (err) => setRequestBanner(err?.message || 'Unable to load QR stand requests.'),
+    );
+    const unsubAiLogs = subscribeToAllAiUsage(
+      (items) => setGlobalAiLogs(items),
+      (err) => console.error('AI usage subscription error:', err),
+    );
+    const unsubWeekly = subscribeToAllWeeklyReports(
+      (items) => setGlobalReports(items),
+      (err) => setBatchReportNotice(err?.message || 'Unable to load weekly reports.'),
+    );
     return () => {
       unsubUids();
       unsubEmails();
@@ -420,6 +435,10 @@ export function ManagementConsoleView({
         `Compiled ${generated} Weekly Business Report(s) for ${win.weekStart} – ${win.weekEnd}.`,
       );
       setTimeout(() => setBatchReportNotice(null), 5000);
+    } catch (err) {
+      setBatchReportNotice(
+        err instanceof Error ? err.message : 'Unable to compile weekly reports.',
+      );
     } finally {
       setIsBatchGeneratingReports(false);
     }

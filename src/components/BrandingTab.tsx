@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
@@ -11,6 +11,7 @@ import {
   DEMO_BISTRO_LOGO,
   DEMO_SALON_LOGO,
 } from '../data/categoryPresets';
+import { auth } from '../firebase';
 import {
   deleteBusiness,
   fetchAutoSeoKeywords,
@@ -55,8 +56,24 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isDirtyRef = useRef(false);
+  const lastBusinessIdRef = useRef(business.id);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canEditSlug = isAdmin || auth.currentUser?.uid === business.ownerId;
 
   useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isBusinessChanged = lastBusinessIdRef.current !== business.id;
+    if (!isBusinessChanged && isDirtyRef.current) {
+      return;
+    }
+    lastBusinessIdRef.current = business.id;
+    isDirtyRef.current = false;
     setName(business.name);
     setCategory(business.category);
     setSlug(business.slug);
@@ -75,10 +92,12 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         ? business.seoKeywords
         : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[business.category] ?? [],
     );
-    setNewKeyword('');
-    setConfirmDelete(false);
-    setError(null);
-    setSavedNotice(null);
+    if (isBusinessChanged) {
+      setNewKeyword('');
+      setConfirmDelete(false);
+      setError(null);
+      setSavedNotice(null);
+    }
   }, [business]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,6 +105,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
     if (!file) return;
     try {
       const compressed = await compressLogoFile(file);
+      isDirtyRef.current = true;
       setLogoDataUrl(compressed);
       setError(null);
     } catch (err) {
@@ -110,7 +130,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         {
           name: name.trim(),
           category,
-          slug: sanitizeSlug(slug || name),
+          ...(canEditSlug ? { slug: sanitizeSlug(slug || name) } : {}),
           address: address.trim(),
           phone: phone.trim(),
           contactEmail: contactEmail.trim(),
@@ -127,9 +147,11 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         },
         { isAdmin },
       );
+      isDirtyRef.current = false;
       setSlug(nextSlug);
       setSavedNotice('Branding, SEO keywords & profile settings saved.');
-      setTimeout(() => setSavedNotice(null), 3000);
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes.');
     } finally {
@@ -147,7 +169,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         category,
         address: address.trim(),
       });
+      isDirtyRef.current = true;
       setSeoKeywords(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to generate SEO keywords.');
     } finally {
       setIsGeneratingKeywords(false);
     }
@@ -156,6 +181,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
   const handleAddKeyword = () => {
     const clean = newKeyword.trim().slice(0, 60);
     if (!clean) return;
+    isDirtyRef.current = true;
     if (!seoKeywords.some((k) => k.toLowerCase() === clean.toLowerCase())) {
       setSeoKeywords((prev) => [...prev, clean].slice(0, 15));
     }
@@ -229,14 +255,20 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               </label>
               <button
                 type="button"
-                onClick={() => setLogoDataUrl(DEMO_SALON_LOGO)}
+                onClick={() => {
+                  isDirtyRef.current = true;
+                  setLogoDataUrl(DEMO_SALON_LOGO);
+                }}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
                 Use Studio Emblem
               </button>
               <button
                 type="button"
-                onClick={() => setLogoDataUrl(DEMO_BISTRO_LOGO)}
+                onClick={() => {
+                  isDirtyRef.current = true;
+                  setLogoDataUrl(DEMO_BISTRO_LOGO);
+                }}
                 className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
                 Use Bistro Emblem
@@ -244,7 +276,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               {logoDataUrl && (
                 <button
                   type="button"
-                  onClick={() => setLogoDataUrl('')}
+                  onClick={() => {
+                    isDirtyRef.current = true;
+                    setLogoDataUrl('');
+                  }}
                   className="px-3 py-2 rounded-lg text-xs font-medium text-slate-500 hover:text-red-600 cursor-pointer"
                 >
                   Remove
@@ -266,7 +301,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               type="text"
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setName(e.target.value);
+              }}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
             />
           </div>
@@ -277,7 +315,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             </label>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value as BusinessCategory)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setCategory(e.target.value as BusinessCategory);
+              }}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
             >
               {BUSINESS_CATEGORIES.map((cat) => (
@@ -299,12 +340,19 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               <input
                 type="text"
                 value={slug}
-                onChange={(e) =>
-                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
-                }
-                className="flex-1 h-full px-2.5 text-sm font-mono bg-white focus:outline-none"
+                disabled={!canEditSlug}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+                }}
+                className="flex-1 h-full px-2.5 text-sm font-mono bg-white focus:outline-none disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
               />
             </div>
+            {!canEditSlug && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Public URL slugs can only be renamed by Business Management or the original owner.
+              </p>
+            )}
           </div>
 
           <div>
@@ -314,7 +362,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             <input
               type="url"
               value={googleReviewUrl}
-              onChange={(e) => setGoogleReviewUrl(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setGoogleReviewUrl(e.target.value);
+              }}
               placeholder="https://g.page/r/YOUR_PLACE_ID/review"
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
             />
@@ -327,7 +378,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             <input
               type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setPhone(e.target.value);
+              }}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
             />
           </div>
@@ -339,7 +393,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             <input
               type="email"
               value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setContactEmail(e.target.value);
+              }}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
             />
           </div>
@@ -352,7 +409,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
           <input
             type="text"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              isDirtyRef.current = true;
+              setAddress(e.target.value);
+            }}
             className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
           />
         </div>
@@ -393,7 +453,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               <span>{kw}</span>
               <button
                 type="button"
-                onClick={() => setSeoKeywords((prev) => prev.filter((item) => item !== kw))}
+                onClick={() => {
+                  isDirtyRef.current = true;
+                  setSeoKeywords((prev) => prev.filter((item) => item !== kw));
+                }}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
                 aria-label={`Remove ${kw}`}
               >
@@ -447,14 +510,20 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             <div className="flex items-center gap-2.5">
               <input
                 type="color"
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
+                value={/^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : '#0F766E'}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setPrimaryColor(e.target.value);
+                }}
                 className="w-10 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
               />
               <input
                 type="text"
                 value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setPrimaryColor(e.target.value);
+                }}
                 className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
               />
             </div>
@@ -467,14 +536,20 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             <div className="flex items-center gap-2.5">
               <input
                 type="color"
-                value={secondaryColor}
-                onChange={(e) => setSecondaryColor(e.target.value)}
+                value={/^#[0-9a-fA-F]{6}$/.test(secondaryColor) ? secondaryColor : '#0F172A'}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setSecondaryColor(e.target.value);
+                }}
                 className="w-10 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
               />
               <input
                 type="text"
                 value={secondaryColor}
-                onChange={(e) => setSecondaryColor(e.target.value)}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setSecondaryColor(e.target.value);
+                }}
                 className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
               />
             </div>
@@ -486,7 +561,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             </label>
             <select
               value={defaultReviewStyle}
-              onChange={(e) => setDefaultReviewStyle(e.target.value as ReviewStyle)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setDefaultReviewStyle(e.target.value as ReviewStyle);
+              }}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
             >
               <option value="short">Short &amp; Simple</option>
@@ -505,7 +583,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               rows={3}
               maxLength={240}
               value={welcomeMessage}
-              onChange={(e) => setWelcomeMessage(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setWelcomeMessage(e.target.value);
+              }}
               className="w-full rounded-lg border border-slate-200 p-3 text-sm"
             />
           </div>
@@ -518,7 +599,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
               rows={3}
               maxLength={240}
               value={thankYouMessage}
-              onChange={(e) => setThankYouMessage(e.target.value)}
+              onChange={(e) => {
+                isDirtyRef.current = true;
+                setThankYouMessage(e.target.value);
+              }}
               className="w-full rounded-lg border border-slate-200 p-3 text-sm"
             />
           </div>

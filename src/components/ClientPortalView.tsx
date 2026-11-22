@@ -189,9 +189,11 @@ export function ClientPortalView({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfExportError, setPdfExportError] = useState<string | null>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const claimedAttemptRef = useRef<Set<string>>(new Set());
+  const claimingInFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!switcherOpen) return;
@@ -218,14 +220,26 @@ export function ClientPortalView({
     if (
       normalizedEmail &&
       activeBusiness.clientEmail === normalizedEmail &&
-      !claimedAttemptRef.current.has(attemptKey)
+      !claimedAttemptRef.current.has(attemptKey) &&
+      !claimingInFlightRef.current.has(attemptKey)
     ) {
-      claimedAttemptRef.current.add(attemptKey);
-      claimBusinessClientUid(activeBusiness, user.uid).then((res) => {
-        if (!res.ok && res.error) {
-          setEventsAccessError(res.error);
-        }
-      });
+      claimingInFlightRef.current.add(attemptKey);
+      claimBusinessClientUid(activeBusiness, user.uid)
+        .then((res) => {
+          if (res.ok) {
+            claimedAttemptRef.current.add(attemptKey);
+          } else if (res.error) {
+            setEventsAccessError(res.error);
+          }
+        })
+        .catch((err) => {
+          setEventsAccessError(
+            err instanceof Error ? err.message : 'Unable to link client account.',
+          );
+        })
+        .finally(() => {
+          claimingInFlightRef.current.delete(attemptKey);
+        });
     }
   }, [
     activeBusiness?.id,
@@ -250,9 +264,17 @@ export function ClientPortalView({
       return;
     }
     setEventsAccessError(null);
-    const unsubStats = subscribeToBusinessStats(activeBusiness.id, (next) => {
-      setStats(next);
-    });
+    setPdfExportError(null);
+    const unsubStats = subscribeToBusinessStats(
+      activeBusiness.id,
+      (next) => {
+        setStats(next);
+      },
+      (err) => {
+        setStats(null);
+        setEventsAccessError((prev) => prev || err?.message || 'Unable to load analytics stats.');
+      },
+    );
     const unsubEvents = subscribeToBusinessEvents(
       activeBusiness.id,
       activeBusiness.ownerId,
@@ -289,7 +311,7 @@ export function ClientPortalView({
   }, [activeBusiness?.id, activeBusiness?.ownerId, activeBusiness?.clientUid, user.uid, isAdmin]);
 
   useEffect(() => {
-    if (!activeBusiness) return;
+    if (!activeBusiness || isAdmin) return;
     const allowedReadOnly: PortalTab[] = [
       'qr_features',
       'qr_stands',
@@ -308,7 +330,7 @@ export function ClientPortalView({
     ) {
       setActiveTab('qr_features');
     }
-  }, [activeBusiness?.id, activeBusiness?.clientAccessLevel, activeTab]);
+  }, [activeBusiness?.id, activeBusiness?.clientAccessLevel, activeTab, isAdmin]);
 
   const publicBaseUrl = getPublicAppUrl();
   const reviewUrl = activeBusiness
@@ -343,8 +365,9 @@ export function ClientPortalView({
   ]);
 
   const accessLevel = activeBusiness?.clientAccessLevel ?? 'read_only';
-  const canEditQrOrQuestions = accessLevel === 'qr_and_questions' || accessLevel === 'full';
-  const canEditBranding = accessLevel === 'full';
+  const canEditQrOrQuestions =
+    isAdmin || accessLevel === 'qr_and_questions' || accessLevel === 'full';
+  const canEditBranding = isAdmin || accessLevel === 'full';
 
   const navItems: { id: PortalTab; label: string; icon: typeof QrCode; visible: boolean }[] = [
     { id: 'qr_features', label: 'Overview & QR', icon: LayoutDashboard, visible: true },
@@ -401,6 +424,7 @@ export function ClientPortalView({
   const handleDownloadPdf = async () => {
     if (!activeBusiness) return;
     setIsExportingPdf(true);
+    setPdfExportError(null);
     try {
       await downloadQrPdf({
         businessName: activeBusiness.name,
@@ -414,6 +438,10 @@ export function ClientPortalView({
         logoSrc: activeBusiness.logoDataUrl,
         slug: activeBusiness.slug,
       });
+    } catch (err) {
+      setPdfExportError(
+        err instanceof Error ? err.message : 'Unable to generate PDF poster. Please try again.',
+      );
     } finally {
       setIsExportingPdf(false);
     }
@@ -1036,6 +1064,12 @@ export function ClientPortalView({
                     )}
                   </div>
                 </div>
+
+                {pdfExportError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-medium">
+                    {pdfExportError}
+                  </div>
+                )}
 
                 {/* Report Period Selector + 4 KPI Telemetry Scorecards */}
                 {activeBusiness.enabledFeatures.analyticsView && (
@@ -1889,7 +1923,7 @@ export function ClientPortalView({
               )}
 
             {activeTab === 'qr_editor' && canEditQrOrQuestions && (
-              <QrStudioTab business={activeBusiness} />
+              <QrStudioTab business={activeBusiness} isAdmin={isAdmin} />
             )}
 
             {activeTab === 'questions' &&
@@ -1897,6 +1931,7 @@ export function ClientPortalView({
               activeBusiness.enabledFeatures.customQuestions && (
                 <QuestionBuilderTab
                   business={activeBusiness}
+                  isAdmin={isAdmin}
                   onOpenPreview={() => setActiveTab('preview')}
                 />
               )}
@@ -1904,6 +1939,7 @@ export function ClientPortalView({
             {activeTab === 'branding' && canEditBranding && (
               <BrandingTab
                 business={activeBusiness}
+                isAdmin={isAdmin}
                 onDeleted={() => setActiveTab('qr_features')}
               />
             )}

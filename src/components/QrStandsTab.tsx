@@ -56,10 +56,12 @@ function StandQrCanvas({
   onCanvasReady,
 }: StandCardCanvasProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  const onCanvasReadyRef = useRef(onCanvasReady);
+  onCanvasReadyRef.current = onCanvasReady;
 
   useEffect(() => {
     const el = ref.current;
-    onCanvasReady(el);
+    onCanvasReadyRef.current(el);
     if (!el) return;
     renderQrToCanvas({
       canvas: el,
@@ -70,7 +72,7 @@ function StandQrCanvas({
       includeLogo,
       logoSrc,
     });
-  }, [url, fgColor, bgColor, includeLogo, logoSrc, onCanvasReady]);
+  }, [url, fgColor, bgColor, includeLogo, logoSrc]);
 
   return <canvas ref={ref} className="w-36 h-36 block" />;
 }
@@ -109,6 +111,7 @@ export function QrStandsTab({
       userEmail,
       isAdmin,
       (list) => setStands(list),
+      (err) => setStandError(err?.message || 'Unable to load QR stands.'),
     );
     const unsubReqs = subscribeToBusinessQrStandRequests(
       business.id,
@@ -116,6 +119,7 @@ export function QrStandsTab({
       userEmail,
       isAdmin,
       (list) => setRequests(list),
+      (err) => setReqError(err?.message || 'Unable to load stand expansion requests.'),
     );
     return () => {
       unsubStands();
@@ -272,6 +276,7 @@ export function QrStandsTab({
 
   const handleDownloadStandPdf = async (stand: QrStand) => {
     setExportingPdfId(stand.id);
+    setStandError(null);
     try {
       await downloadQrPdf({
         businessName: business.name,
@@ -286,6 +291,10 @@ export function QrStandsTab({
         slug: business.slug,
         standLabel: `${stand.name} (${stand.placement})`,
       });
+    } catch (err) {
+      setStandError(
+        err instanceof Error ? err.message : 'Unable to generate PDF poster for this stand.',
+      );
     } finally {
       setExportingPdfId(null);
     }

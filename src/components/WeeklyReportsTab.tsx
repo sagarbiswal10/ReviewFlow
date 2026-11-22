@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Check,
@@ -63,14 +63,37 @@ export function WeeklyReportsTab({
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isRecipientsDirtyRef = useRef(false);
+  const lastRecipientsSigRef = useRef<string>(
+    JSON.stringify({
+      id: business.id,
+      val: (business.weeklyReportConfig?.recipients || [business.clientEmail])
+        .filter(Boolean)
+        .join(', '),
+    }),
+  );
 
   useEffect(() => {
-    setRecipientInput(
-      (business.weeklyReportConfig?.recipients || [business.clientEmail]).filter(Boolean).join(', '),
-    );
+    const nextVal = (business.weeklyReportConfig?.recipients || [business.clientEmail])
+      .filter(Boolean)
+      .join(', ');
+    const prev = JSON.parse(lastRecipientsSigRef.current) as { id: string; val: string };
+    if (prev.id !== business.id) {
+      isRecipientsDirtyRef.current = false;
+      lastRecipientsSigRef.current = JSON.stringify({ id: business.id, val: nextVal });
+      setRecipientInput(nextVal);
+      return;
+    }
+    if (!isRecipientsDirtyRef.current && prev.val !== nextVal) {
+      lastRecipientsSigRef.current = JSON.stringify({ id: business.id, val: nextVal });
+      setRecipientInput(nextVal);
+    }
   }, [business.id, business.clientEmail, business.weeklyReportConfig?.recipients]);
 
   useEffect(() => {
+    const handleSubError = (err: Error) => {
+      setErrorMessage((prev) => prev || err?.message || 'Unable to load weekly report data.');
+    };
     const u1 = subscribeToBusinessWeeklyReports(
       business.id,
       userUid,
@@ -78,14 +101,36 @@ export function WeeklyReportsTab({
       isAdmin,
       (items) => {
         setReports(items);
-        if (items.length > 0 && !items.some((r) => r.id === selectedReportId)) {
-          setSelectedReportId(items[0].id);
-        }
+        setSelectedReportId((prev) =>
+          prev && items.some((r) => r.id === prev) ? prev : items[0]?.id || '',
+        );
       },
+      handleSubError,
     );
-    const u2 = subscribeToBusinessQrStands(business.id, userUid, userEmail, isAdmin, setQrStands);
-    const u3 = subscribeToBusinessGbpReviews(business.id, userUid, userEmail, isAdmin, setGbpReviews);
-    const u4 = subscribeToBusinessAiUsage(business.id, userUid, userEmail, isAdmin, setAiLogs);
+    const u2 = subscribeToBusinessQrStands(
+      business.id,
+      userUid,
+      userEmail,
+      isAdmin,
+      setQrStands,
+      handleSubError,
+    );
+    const u3 = subscribeToBusinessGbpReviews(
+      business.id,
+      userUid,
+      userEmail,
+      isAdmin,
+      setGbpReviews,
+      handleSubError,
+    );
+    const u4 = subscribeToBusinessAiUsage(
+      business.id,
+      userUid,
+      userEmail,
+      isAdmin,
+      setAiLogs,
+      handleSubError,
+    );
     return () => {
       u1();
       u2();
@@ -161,6 +206,11 @@ export function WeeklyReportsTab({
         );
       }
       await markWeeklyReportDispatched(activeReport, parsed);
+      isRecipientsDirtyRef.current = false;
+      lastRecipientsSigRef.current = JSON.stringify({
+        id: business.id,
+        val: parsed.join(', '),
+      });
       setStatusMessage(`Weekly report archived & dispatched to: ${parsed.join(', ')}`);
       setTimeout(() => setStatusMessage(null), 4500);
     } catch (err) {
@@ -324,7 +374,24 @@ export function WeeklyReportsTab({
                 </button>
                 <button
                   type="button"
-                  onClick={() => downloadWeeklyReportPdf(activeReport)}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    try {
+                      Promise.resolve(downloadWeeklyReportPdf(activeReport)).catch((err) =>
+                        setErrorMessage(
+                          err instanceof Error
+                            ? err.message
+                            : 'Unable to download weekly PDF report.',
+                        ),
+                      );
+                    } catch (err) {
+                      setErrorMessage(
+                        err instanceof Error
+                          ? err.message
+                          : 'Unable to download weekly PDF report.',
+                      );
+                    }
+                  }}
                   className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -504,7 +571,10 @@ export function WeeklyReportsTab({
               <input
                 type="text"
                 value={recipientInput}
-                onChange={(e) => setRecipientInput(e.target.value)}
+                onChange={(e) => {
+                  isRecipientsDirtyRef.current = true;
+                  setRecipientInput(e.target.value);
+                }}
                 placeholder="owner@business.com, manager@business.com"
                 className="flex-1 h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900"
               />

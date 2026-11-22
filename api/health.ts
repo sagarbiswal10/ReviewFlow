@@ -10,31 +10,44 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
 }
 
 export default async function handler(req: NodeReq, res: ServerResponse) {
-  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-  const host = typeof req.headers.host === 'string' ? req.headers.host : '';
+  try {
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const forwardedHost =
+      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
+    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
+      .filter(Boolean)
+      .join(',');
 
-  if (origin && !isOriginAllowed(origin, host)) {
+    if (origin && !isOriginAllowed(origin, host)) {
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 403;
+        res.end();
+        return;
+      }
+      sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
+      return;
+    }
+
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
     if (req.method === 'OPTIONS') {
-      res.statusCode = 403;
+      res.statusCode = 204;
       res.end();
       return;
     }
-    sendJson(res, 403, { error: 'Origin not allowed by CORS policy.' });
-    return;
-  }
 
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin.replace(/\/+$/, ''));
-    res.setHeader('Vary', 'Origin');
+    sendJson(res, 200, getHealthPayload());
+  } catch (err) {
+    console.error('health check error:', err);
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: 'Health check failed.' });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
-
-  sendJson(res, 200, getHealthPayload());
 }

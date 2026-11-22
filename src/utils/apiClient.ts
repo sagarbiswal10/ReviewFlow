@@ -41,3 +41,35 @@ export async function apiFetch(path: string, options: ApiFetchOptions = {}): Pro
     headers,
   });
 }
+
+export async function parseApiJson<T = Record<string, unknown>>(
+  res: Response,
+): Promise<{ ok: boolean; status: number; data: T | null; rawText: string }> {
+  let rawText = '';
+  try {
+    rawText = await res.text();
+  } catch {
+    return { ok: res.ok, status: res.status, data: null, rawText: '' };
+  }
+
+  if (!rawText.trim()) {
+    return { ok: res.ok, status: res.status, data: null, rawText: '' };
+  }
+
+  try {
+    const parsed = JSON.parse(rawText) as T;
+    return { ok: res.ok, status: res.status, data: parsed, rawText };
+  } catch {
+    return { ok: res.ok, status: res.status, data: null, rawText };
+  }
+}
+
+export function formatApiError(err: unknown, fallback: string): string {
+  if (err instanceof TypeError && /fetch/i.test(err.message)) {
+    return 'Unable to reach the server. Please check your connection and try again.';
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return fallback;
+}
