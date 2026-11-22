@@ -5,6 +5,8 @@ import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
+export type ReviewLanguage = 'en' | 'hi' | 'mr';
+
 export interface QuestionResponseInput {
   question: string;
   answers: string[];
@@ -17,6 +19,7 @@ export interface GenerateReviewBody {
   responses: QuestionResponseInput[];
   additionalComments?: string;
   style: ReviewStyle;
+  language?: ReviewLanguage;
   variationSeed?: number;
 }
 
@@ -24,6 +27,30 @@ export interface GenerateSeoKeywordsBody {
   businessName: string;
   category: string;
   address?: string;
+}
+
+export interface GenerateReplyBody {
+  businessName: string;
+  category: string;
+  reviewerName: string;
+  starRating: number;
+  reviewComment: string;
+  brandVoice?: string;
+  fiveStarMode?: 'auto_publish' | 'approval_required';
+  midStarMode?: 'auto_publish' | 'approval_required';
+}
+
+export interface ValidateQrStandSlotBody {
+  businessId: string;
+  slotNumber: number;
+}
+
+export interface GbpProxyBody {
+  action: 'list_locations' | 'fetch_reviews' | 'publish_reply';
+  gbpAccessToken: string;
+  locationName?: string;
+  externalReviewId?: string;
+  replyText?: string;
 }
 
 function cleanSecretEnv(value: string | undefined): string {
@@ -40,27 +67,38 @@ export const GEMINI_FALLBACK_MODEL =
     : 'gemini-4-hydrogen';
 export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
-function resolveFirebaseProjectId(): string {
-  const fromEnv = (
+function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
+  const envProjectId = (
     process.env.FIREBASE_PROJECT_ID ||
     process.env.VITE_FIREBASE_PROJECT_ID ||
     ''
   ).trim();
-  if (fromEnv) return fromEnv;
+  const envDbId = (process.env.VITE_FIREBASE_DATABASE_ID || '').trim();
 
   try {
     const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(configPath)) {
-      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { projectId?: string };
-      return (parsed.projectId || '').trim();
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+        projectId?: string;
+        firestoreDatabaseId?: string;
+      };
+      return {
+        projectId: envProjectId || (parsed.projectId || '').trim(),
+        databaseId: envDbId || (parsed.firestoreDatabaseId || '').trim() || '(default)',
+      };
     }
   } catch {
     // Ignore missing/invalid local config file
   }
-  return '';
+  return {
+    projectId: envProjectId,
+    databaseId: envDbId || '(default)',
+  };
 }
 
-export const FIREBASE_PROJECT_ID = resolveFirebaseProjectId();
+const FIREBASE_CONF = resolveFirebaseConfig();
+export const FIREBASE_PROJECT_ID = FIREBASE_CONF.projectId;
+export const FIREBASE_DATABASE_ID = FIREBASE_CONF.databaseId;
 
 let certCache: { certs: Record<string, string>; expiresAt: number } = {
   certs: {},
@@ -166,7 +204,7 @@ export async function verifyFirebaseIdToken(
 
 export async function authenticateBearerHeader(
   authHeader: string,
-): Promise<{ ok: true; user?: { uid: string; email: string } } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; user?: { uid: string; email: string }; rawToken?: string } | { ok: false; status: number; error: string }> {
   if (!API_AUTH_REQUIRED) {
     return { ok: true };
   }
@@ -183,7 +221,7 @@ export async function authenticateBearerHeader(
   }
   try {
     const user = await verifyFirebaseIdToken(token);
-    return { ok: true, user };
+    return { ok: true, user, rawToken: token };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unauthorized';
     return { ok: false, status: 401, error: `Invalid or expired session token: ${msg}` };
@@ -247,6 +285,19 @@ function sanitizeApiErrorDetail(message: string): string {
     .slice(0, 450);
 }
 
+function calculateEstimatedCostUsd(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const lower = modelId.toLowerCase();
+  const isLite = lower.includes('flash-lite') || lower.includes('lite');
+  const inputPerMillion = isLite ? 0.075 : 0.15;
+  const outputPerMillion = isLite ? 0.3 : 0.6;
+  const cost = (inputTokens * inputPerMillion + outputTokens * outputPerMillion) / 1_000_000;
+  return Number(cost.toFixed(6));
+}
+
 function createGenAIClient(useVertexAi: boolean) {
   const apiKey = getGeminiApiKey();
   const disableHeader =
@@ -277,11 +328,19 @@ function getVertexEndpointModes(): boolean[] {
   return [false];
 }
 
+interface GeminiGenerationResult {
+  text: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 async function generateGeminiContentWithFallback(
   contents: string,
   config: Record<string, unknown>,
   maxTransientAttempts = 1,
-): Promise<string> {
+): Promise<GeminiGenerationResult> {
   const modelAttempts = Array.from(
     new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
   );
@@ -307,7 +366,22 @@ async function generateGeminiContentWithFallback(
             config: modelConfig,
           });
           const text = (response.text ?? '').trim();
-          if (text) return text;
+          const usage = response.usageMetadata;
+          const inputTokens = Math.max(0, Number(usage?.promptTokenCount || 0));
+          const outputTokens = Math.max(0, Number(usage?.candidatesTokenCount || 0));
+          const totalTokens = Math.max(
+            inputTokens + outputTokens,
+            Number(usage?.totalTokenCount || 0),
+          );
+          if (text) {
+            return {
+              text,
+              modelId: modelName,
+              inputTokens,
+              outputTokens,
+              totalTokens,
+            };
+          }
           break;
         } catch (err) {
           lastErr = err;
@@ -316,7 +390,6 @@ async function generateGeminiContentWithFallback(
             msg.includes('API_KEY_INVALID') ||
             msg.toLowerCase().includes('api key not valid');
           if (isApiKeyInvalid && hasNextMode) {
-            // Standard Gemini rejected an AQ. key -> try Vertex AI Express mode next
             break;
           }
           const isNotFound = msg.includes('404') || msg.includes('NOT_FOUND');
@@ -344,10 +417,19 @@ async function generateGeminiContentWithFallback(
   }
 
   if (lastErr) throw lastErr;
-  return '';
+  return {
+    text: '',
+    modelId: GEMINI_MODEL,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  };
 }
 
-async function callOpenAIJson(systemInstruction: string, prompt: string): Promise<string> {
+async function callOpenAIJson(
+  systemInstruction: string,
+  prompt: string,
+): Promise<GeminiGenerationResult> {
   const apiKey = cleanSecretEnv(process.env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY is not configured on the server.');
@@ -380,8 +462,21 @@ async function callOpenAIJson(systemInstruction: string, prompt: string): Promis
 
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
-  return (data.choices?.[0]?.message?.content || '').trim();
+  const inputTokens = Math.max(0, Number(data.usage?.prompt_tokens || 0));
+  const outputTokens = Math.max(0, Number(data.usage?.completion_tokens || 0));
+  const totalTokens = Math.max(
+    inputTokens + outputTokens,
+    Number(data.usage?.total_tokens || 0),
+  );
+  return {
+    text: (data.choices?.[0]?.message?.content || '').trim(),
+    modelId: model,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+  };
 }
 
 const CATEGORY_SEO_KEYWORDS: Record<string, string[]> = {
@@ -527,15 +622,15 @@ export async function processGenerateSeoKeywords(
       'Generate 8 to 10 high-intent Google Maps search keywords tailored to this specific business name, category, and optional location.',
       'Return valid JSON matching {"keywords": ["..."]}.',
       'Rules:',
-      '1. Infer specialties directly from the business name + category (e.g. "Royal Keratin Salon" -> "hair salon", "keratin treatment", "haircut", "hair styling"; "IronPeak CrossFit Gym" -> "gym", "crossfit gym", "strength training", "personal training", "fitness center").',
-      '2. Include the primary category search term (e.g. "hair salon", "gym", "restaurant", "spa") and top natural service phrases customers search on Google Maps.',
-      '3. If a city or neighborhood appears in the address, include 1-2 natural local search phrases combining the category + area (e.g. "hair salon in Austin").',
+      '1. Infer specialties directly from the business name + category.',
+      '2. Include the primary category search term and top natural service phrases customers search on Google Maps.',
+      '3. If a city or neighborhood appears in the address, include 1-2 natural local search phrases combining the category + area.',
       '4. Keep each keyword concise (1 to 4 words, max 45 characters), lowercase or clean natural phrase, no hashtags, no spammy stuffing.',
     ].join('\n');
 
-    let responseText = '';
+    let genResult: GeminiGenerationResult;
     if (AI_PROVIDER === 'openai') {
-      responseText = await callOpenAIJson(systemInstruction, prompt);
+      genResult = await callOpenAIJson(systemInstruction, prompt);
     } else {
       const geminiKey = getGeminiApiKey();
       if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
@@ -545,7 +640,7 @@ export async function processGenerateSeoKeywords(
         };
       }
 
-      responseText = await generateGeminiContentWithFallback(
+      genResult = await generateGeminiContentWithFallback(
         prompt,
         {
           systemInstruction,
@@ -567,7 +662,7 @@ export async function processGenerateSeoKeywords(
       );
     }
 
-    if (!responseText) {
+    if (!genResult.text) {
       return {
         status: 502,
         data: { error: 'Unable to generate SEO keywords right now.' },
@@ -576,7 +671,7 @@ export async function processGenerateSeoKeywords(
 
     let keywords: string[] = [];
     try {
-      const parsed = JSON.parse(responseText) as { keywords?: unknown };
+      const parsed = JSON.parse(genResult.text) as { keywords?: unknown };
       if (Array.isArray(parsed.keywords)) {
         const seen = new Set<string>();
         for (const item of parsed.keywords) {
@@ -593,7 +688,25 @@ export async function processGenerateSeoKeywords(
       keywords = baseTerms;
     }
 
-    return { status: 200, data: { keywords: keywords.slice(0, 12) } };
+    return {
+      status: 200,
+      data: {
+        keywords: keywords.slice(0, 12),
+        aiTelemetry: {
+          provider: AI_PROVIDER,
+          modelId: genResult.modelId,
+          inputTokens: genResult.inputTokens,
+          outputTokens: genResult.outputTokens,
+          totalTokens: genResult.totalTokens,
+          estimatedCostUsd: calculateEstimatedCostUsd(
+            genResult.modelId,
+            genResult.inputTokens,
+            genResult.outputTokens,
+          ),
+          status: 'success',
+        },
+      },
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const detail = sanitizeApiErrorDetail(message);
@@ -623,20 +736,19 @@ export async function processGenerateReview(
   try {
     const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : '';
     const category = typeof body.category === 'string' ? body.category.trim() : '';
-    const customSeoKeywords = Array.isArray(body.seoKeywords)
-      ? body.seoKeywords
-          .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
-          .map((k) => k.trim().slice(0, 60))
-          .slice(0, 15)
-      : [];
     const additionalComments =
       typeof body.additionalComments === 'string' ? body.additionalComments.trim() : '';
     const style: ReviewStyle =
       body.style === 'short' || body.style === 'detailed' || body.style === 'professional'
         ? body.style
         : 'short';
+    const language: ReviewLanguage =
+      body.language === 'hi' || body.language === 'mr' ? body.language : 'en';
     const responses = Array.isArray(body.responses) ? body.responses : [];
-    const variationSeed = typeof body.variationSeed === 'number' ? body.variationSeed : 1;
+    const variationSeed =
+      typeof body.variationSeed === 'number' && Number.isFinite(body.variationSeed)
+        ? Math.max(1, Math.round(body.variationSeed))
+        : 1;
 
     if (!businessName) {
       return { status: 400, data: { error: 'Business name is required.' } };
@@ -663,39 +775,73 @@ export async function processGenerateReview(
       };
     }
 
-    const categoryTerms = getCategoryKeywords(category);
-    const mergedSeoKeywords = Array.from(
-      new Set([...customSeoKeywords, ...categoryTerms]),
-    ).slice(0, 10);
-
     const styleGuidance: Record<ReviewStyle, string> = {
-      short: '2-3 sentences (~28-48 words), crisp and natural.',
-      detailed: '4-5 sentences (~60-95 words), conversational story weaving services, experience, and comments.',
-      professional: '3-4 sentences (~45-70 words), articulate and courteous.',
+      short: 'Keep it concise and natural (around 2-3 everyday sentences).',
+      detailed: 'Write a relaxed 3-5 sentence review covering only the points the customer actually shared.',
+      professional: 'Keep the tone polite, clear, and conversational (2-4 sentences).',
+    };
+
+    const variationAngles = [
+      'Start directly with the main thing the customer noticed first, then wrap up naturally.',
+      'Open with a brief everyday summary of the visit, then share the specific points mentioned.',
+      'Use a relaxed mix of one shorter sentence and one slightly fuller sentence.',
+      'Lead with what stood out most (good or mixed) in plain conversational phrasing.',
+      'Begin naturally with why or how the visit felt overall, followed by the exact details given.',
+      'Keep sentence transitions simple and understated, as if texting a friend a quick honest opinion.',
+    ];
+    const selectedAngle = variationAngles[(variationSeed - 1) % variationAngles.length];
+
+    const languageRules: Record<ReviewLanguage, string> = {
+      en: [
+        'Target Language: English.',
+        'Write entirely in natural, everyday conversational English.',
+        'Good natural example: "The food was really good, and the staff were friendly. The only thing was that the service took a little longer than expected. Overall, I had a nice experience."',
+        'Bad AI-sounding style to AVOID: "I had an absolutely amazing experience at this wonderful restaurant. The food was exceptional, and the staff provided outstanding hospitality."',
+      ].join('\n'),
+      hi: [
+        'Target Language: Hindi (हिंदी, Devanagari script ONLY).',
+        'Write the ENTIRE review in natural, everyday spoken Hindi using Devanagari script (हिंदी).',
+        'Use conversational, commonly spoken Hindi — NOT stiff, bookish, or overly formal Sanskritized translations.',
+        'Do NOT mix English sentences or Roman script unless the customer explicitly requested Hinglish or mixed output.',
+        'Good natural Hindi example: "यहाँ का खाना काफी अच्छा था और स्टाफ भी बहुत अच्छा था। बस सर्विस में थोड़ा समय लगा। बाकी मेरा अनुभव अच्छा रहा।"',
+      ].join('\n'),
+      mr: [
+        'Target Language: Marathi (मराठी, Devanagari script ONLY).',
+        'Write the ENTIRE review in natural, everyday spoken Marathi using Devanagari script (मराठी).',
+        'Use conversational, commonly spoken Marathi — NOT literal word-for-word or stiff formal translations.',
+        'Do NOT mix English sentences or Roman script unless the customer explicitly requested mixed output.',
+        'Good natural Marathi example: "इथलं जेवण खूप छान होतं आणि स्टाफसुद्धा खूप मदत करणारा होता. फक्त सर्व्हिसला थोडा वेळ लागला. बाकी अनुभव चांगला होता."',
+      ].join('\n'),
     };
 
     const prompt = [
-      `Business: ${businessName}`,
-      category ? `Category: ${category}` : '',
-      `Style (${style}): ${styleGuidance[style]}`,
-      `SEO Keywords: ${mergedSeoKeywords.join(', ')}`,
-      `Variation: ${variationSeed}`,
-      'Selections:',
-      formattedResponses || '(None)',
-      additionalComments ? `Comments: "${additionalComments}"` : '',
+      `Business Context: ${businessName}${category ? ` (${category})` : ''}`,
+      `Requested Language: ${language === 'hi' ? 'Hindi (हिंदी)' : language === 'mr' ? 'Marathi (मराठी)' : 'English'}`,
+      `Length/Flow Preference: ${styleGuidance[style]}`,
+      `Draft Variation #${variationSeed}: ${selectedAngle}`,
+      'Customer Feedback (use ONLY this information):',
+      formattedResponses || '(No multiple-choice selections)',
+      additionalComments ? `Customer Written Note: "${additionalComments}"` : '',
     ]
       .filter(Boolean)
       .join('\n');
 
     const systemInstruction = [
-      'Write 1 authentic first-person ("I"/"We") Google review from customer selections, optimized naturally for local search.',
-      'Return JSON: {"review":"...","keywordsUsed":["..."]}.',
-      'Rules: Include business name, category term, and selected services naturally; never invent details; match exact sentiment (keep honest if Average/Poor); no clichés ("exceeded all expectations"), quotes, bullets, or emojis; list 2-5 exact keywords used in keywordsUsed.',
+      'You help a real customer put their own feedback into a natural, personal, everyday Google review.',
+      'Return valid JSON matching {"review":"...","keywordsUsed":["..."]}.',
+      languageRules[language],
+      'Strict Authenticity Rules:',
+      '1. Use ONLY the customer\'s actual answers, selected options, and written note. NEVER invent services, dishes, staff names, prices, claims, or details the customer never mentioned.',
+      '2. Preserve the customer\'s exact meaning and sentiment. If they gave mixed, average, or critical feedback (like slow service or an issue), state it plainly and honestly — do NOT hide negatives or turn mild praise into hype.',
+      '3. NEVER use generic AI phrases, marketing fluff, or excessive adjectives (ban words like "amazing experience", "exceptional", "outstanding hospitality", "exceeded all expectations", "hidden gem", "top-notch", "must-visit", "wonderful", "seamless").',
+      '4. Vary sentence length and structure naturally so different drafts do not sound templated or identical.',
+      '5. Do not force business names or marketing keywords if they make the review sound unnatural or scripted. No quotation marks around the review, no bullet points, no hashtags, no emojis.',
+      '6. In keywordsUsed, list only 0-3 short exact phrases directly drawn from what the customer actually mentioned (empty array [] is fine).',
     ].join('\n');
 
-    let rawText = '';
+    let genResult: GeminiGenerationResult;
     if (AI_PROVIDER === 'openai') {
-      rawText = await callOpenAIJson(systemInstruction, prompt);
+      genResult = await callOpenAIJson(systemInstruction, prompt);
     } else {
       const geminiKey = getGeminiApiKey();
       if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
@@ -705,7 +851,7 @@ export async function processGenerateReview(
         };
       }
 
-      rawText = await generateGeminiContentWithFallback(
+      genResult = await generateGeminiContentWithFallback(
         prompt,
         {
           systemInstruction,
@@ -729,9 +875,9 @@ export async function processGenerateReview(
     let reviewText = '';
     let keywordsUsed: string[] = [];
 
-    if (rawText) {
+    if (genResult.text) {
       try {
-        const parsed = JSON.parse(rawText) as {
+        const parsed = JSON.parse(genResult.text) as {
           review?: string;
           short?: string;
           detailed?: string;
@@ -749,7 +895,7 @@ export async function processGenerateReview(
             .slice(0, 6);
         }
       } catch {
-        reviewText = rawText.replace(/^["']|["']$/g, '').trim();
+        reviewText = genResult.text.replace(/^["']|["']$/g, '').trim();
       }
     }
 
@@ -764,8 +910,22 @@ export async function processGenerateReview(
       status: 200,
       data: {
         review: reviewText,
+        language,
         drafts: { [style]: reviewText },
         keywordsUsed,
+        aiTelemetry: {
+          provider: AI_PROVIDER,
+          modelId: genResult.modelId,
+          inputTokens: genResult.inputTokens,
+          outputTokens: genResult.outputTokens,
+          totalTokens: genResult.totalTokens,
+          estimatedCostUsd: calculateEstimatedCostUsd(
+            genResult.modelId,
+            genResult.inputTokens,
+            genResult.outputTokens,
+          ),
+          status: 'success',
+        },
       },
     };
   } catch (err: unknown) {
@@ -803,5 +963,367 @@ export async function processGenerateReview(
       status: 500,
       data: { error: `Failed to generate review draft: ${(detail || message).slice(0, 180)}` },
     };
+  }
+}
+
+export async function processGenerateReply(
+  body: Partial<GenerateReplyBody>,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  try {
+    const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : '';
+    const category = typeof body.category === 'string' ? body.category.trim() : '';
+    const reviewerName = typeof body.reviewerName === 'string' ? body.reviewerName.trim() : 'Customer';
+    const starRating = Number(body.starRating);
+    const reviewComment = typeof body.reviewComment === 'string' ? body.reviewComment.trim() : '';
+    const brandVoice = typeof body.brandVoice === 'string' ? body.brandVoice.trim() : '';
+    const fiveStarMode =
+      body.fiveStarMode === 'approval_required' ? 'approval_required' : 'auto_publish';
+    const midStarMode =
+      body.midStarMode === 'auto_publish' ? 'auto_publish' : 'approval_required';
+
+    if (!businessName) {
+      return { status: 400, data: { error: 'Business name is required.' } };
+    }
+    if (!Number.isInteger(starRating) || starRating < 1 || starRating > 5) {
+      return { status: 400, data: { error: 'Star rating must be an integer between 1 and 5.' } };
+    }
+
+    const recommendedStatus =
+      starRating <= 2
+        ? 'awaiting_approval'
+        : starRating === 5
+          ? fiveStarMode === 'auto_publish'
+            ? 'auto_published'
+            : 'awaiting_approval'
+          : midStarMode === 'auto_publish'
+            ? 'auto_published'
+            : 'awaiting_approval';
+
+    const prompt = [
+      `Business Name: ${businessName}`,
+      category ? `Category: ${category}` : '',
+      `Customer Name: ${reviewerName}`,
+      `Star Rating: ${starRating} out of 5`,
+      `Customer Review: "${reviewComment || '(No written comment, rating only)'}"`,
+      brandVoice ? `Brand Voice Guidance: ${brandVoice}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const systemInstruction = [
+      'You are writing a thoughtful, authentic Google Business Profile owner response on behalf of the business.',
+      'Return valid JSON matching {"reply": "..."}.',
+      'Rules:',
+      '1. Address the reviewer naturally by name if appropriate.',
+      '2. Reference specifics mentioned in their review without making up facts.',
+      '3. For 5-star reviews: warm gratitude, invite them back.',
+      '4. For 3-4 star reviews: thank them, acknowledge feedback constructively, commit to improvement.',
+      '5. For 1-2 star reviews: remain calm, empathetic, non-defensive, apologize for any shortfall, and invite them to contact management directly to make things right.',
+      '6. Keep concise (2-4 sentences, 35-75 words), human tone, no emojis or hashtags.',
+    ].join('\n');
+
+    let genResult: GeminiGenerationResult;
+    if (AI_PROVIDER === 'openai') {
+      genResult = await callOpenAIJson(systemInstruction, prompt);
+    } else {
+      const geminiKey = getGeminiApiKey();
+      if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
+        return {
+          status: 400,
+          data: { error: 'GEMINI_API_KEY is not configured on the server.' },
+        };
+      }
+
+      genResult = await generateGeminiContentWithFallback(
+        prompt,
+        {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              reply: { type: Type.STRING },
+            },
+            required: ['reply'],
+          },
+        },
+        2,
+      );
+    }
+
+    let replyText = '';
+    if (genResult.text) {
+      try {
+        const parsed = JSON.parse(genResult.text) as { reply?: unknown };
+        if (typeof parsed.reply === 'string') {
+          replyText = parsed.reply.trim();
+        }
+      } catch {
+        replyText = genResult.text.replace(/^["']|["']$/g, '').trim();
+      }
+    }
+
+    if (!replyText) {
+      return {
+        status: 502,
+        data: { error: 'AI provider did not return a reply.' },
+      };
+    }
+
+    return {
+      status: 200,
+      data: {
+        replyText,
+        recommendedStatus,
+        aiTelemetry: {
+          provider: AI_PROVIDER,
+          modelId: genResult.modelId,
+          inputTokens: genResult.inputTokens,
+          outputTokens: genResult.outputTokens,
+          totalTokens: genResult.totalTokens,
+          estimatedCostUsd: calculateEstimatedCostUsd(
+            genResult.modelId,
+            genResult.inputTokens,
+            genResult.outputTokens,
+          ),
+          status: 'success',
+        },
+      },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeApiErrorDetail(message);
+    console.error('GBP reply generation error:', detail || message);
+    return {
+      status: 500,
+      data: { error: `Failed to generate AI reply: ${(detail || message).slice(0, 180)}` },
+    };
+  }
+}
+
+export async function processValidateQrStandSlot(
+  body: Partial<ValidateQrStandSlotBody>,
+  callerBearerToken?: string,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const businessId = typeof body.businessId === 'string' ? body.businessId.trim() : '';
+  const slotNumber = Number(body.slotNumber);
+
+  if (!businessId || !/^[a-zA-Z0-9_-]{1,128}$/.test(businessId)) {
+    return { status: 400, data: { error: 'Valid businessId is required.' } };
+  }
+  if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 100) {
+    return { status: 400, data: { error: 'slotNumber must be an integer between 1 and 100.' } };
+  }
+
+  let effectiveLimit = 4;
+  if (FIREBASE_PROJECT_ID && callerBearerToken) {
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_PROJECT_ID)}/databases/${encodeURIComponent(FIREBASE_DATABASE_ID)}/documents/businesses/${encodeURIComponent(businessId)}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${callerBearerToken}` },
+      });
+      if (res.status === 403 || res.status === 401) {
+        return {
+          status: 403,
+          data: { error: 'Not authorized to manage QR stands for this business.' },
+        };
+      }
+      if (res.status === 404) {
+        return {
+          status: 404,
+          data: { error: 'Business record not found.' },
+        };
+      }
+      if (res.ok) {
+        const docJson = (await res.json()) as {
+          fields?: { qrStandLimit?: { integerValue?: string } };
+        };
+        const rawLimit = Number(docJson.fields?.qrStandLimit?.integerValue || '4');
+        if (Number.isInteger(rawLimit) && rawLimit >= 1) {
+          effectiveLimit = rawLimit;
+        }
+      }
+    } catch {
+      // Fallback to default limit if Firestore REST lookup is unreachable; Firestore Rules also enforce qrStandLimit atomically
+    }
+  }
+
+  if (slotNumber > effectiveLimit) {
+    return {
+      status: 403,
+      data: {
+        error: `QR stand limit reached (${effectiveLimit} stands max). Submit an Additional QR Stand Request for admin approval.`,
+        limit: effectiveLimit,
+        allowed: false,
+      },
+    };
+  }
+
+  return {
+    status: 200,
+    data: {
+      allowed: true,
+      slotNumber,
+      limit: effectiveLimit,
+      standId: `${businessId}_slot_${slotNumber}`,
+    },
+  };
+}
+
+export async function processGbpProxy(
+  body: Partial<GbpProxyBody>,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const action = body.action;
+  const gbpAccessToken = typeof body.gbpAccessToken === 'string' ? body.gbpAccessToken.trim() : '';
+
+  if (!gbpAccessToken) {
+    return {
+      status: 400,
+      data: { error: 'Google Business Profile OAuth access token is required.' },
+    };
+  }
+
+  try {
+    if (action === 'list_locations') {
+      const accountsRes = await fetch(
+        'https://mybusinessaccountmanagement.googleapis.com/v1/accounts',
+        { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
+      );
+      const accountsBody = await accountsRes.text();
+      if (!accountsRes.ok) {
+        return {
+          status: accountsRes.status,
+          data: {
+            error: `Google Business Profile API (${accountsRes.status}): ${sanitizeApiErrorDetail(accountsBody)}`,
+          },
+        };
+      }
+      const accountsJson = JSON.parse(accountsBody) as {
+        accounts?: Array<{ name?: string; accountName?: string }>;
+      };
+      const accounts = accountsJson.accounts || [];
+      const locations: Array<{
+        accountName: string;
+        locationName: string;
+        title: string;
+        placeId: string;
+      }> = [];
+
+      for (const acc of accounts.slice(0, 5)) {
+        if (!acc.name) continue;
+        const locUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/${acc.name}/locations?readMask=name,title,metadata`;
+        const locRes = await fetch(locUrl, {
+          headers: { Authorization: `Bearer ${gbpAccessToken}` },
+        });
+        if (!locRes.ok) continue;
+        const locJson = (await locRes.json()) as {
+          locations?: Array<{
+            name?: string;
+            title?: string;
+            metadata?: { placeId?: string };
+          }>;
+        };
+        for (const loc of locJson.locations || []) {
+          if (!loc.name) continue;
+          locations.push({
+            accountName: acc.name,
+            locationName: loc.name.startsWith('accounts/') ? loc.name : `${acc.name}/${loc.name}`,
+            title: loc.title || loc.name,
+            placeId: loc.metadata?.placeId || '',
+          });
+        }
+      }
+
+      return { status: 200, data: { accounts, locations } };
+    }
+
+    if (action === 'fetch_reviews') {
+      const locationName = typeof body.locationName === 'string' ? body.locationName.trim() : '';
+      if (!locationName || !/^accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+$/.test(locationName)) {
+        return { status: 400, data: { error: 'Valid Google Business Profile locationName is required.' } };
+      }
+      const revRes = await fetch(
+        `https://mybusiness.googleapis.com/v4/${locationName}/reviews?pageSize=25`,
+        { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
+      );
+      const revText = await revRes.text();
+      if (!revRes.ok) {
+        return {
+          status: revRes.status,
+          data: {
+            error: `Google Reviews API (${revRes.status}): ${sanitizeApiErrorDetail(revText)}`,
+          },
+        };
+      }
+      const revJson = JSON.parse(revText) as {
+        reviews?: Array<{
+          reviewId?: string;
+          reviewer?: { displayName?: string };
+          starRating?: string;
+          comment?: string;
+          createTime?: string;
+        }>;
+      };
+      const starMap: Record<string, number> = {
+        ONE: 1,
+        TWO: 2,
+        THREE: 3,
+        FOUR: 4,
+        FIVE: 5,
+      };
+      const reviews = (revJson.reviews || []).map((r) => ({
+        externalReviewId: r.reviewId || `gbp-${Date.now()}`,
+        reviewerName: r.reviewer?.displayName || 'Google Reviewer',
+        starRating: starMap[r.starRating || 'FIVE'] || 5,
+        comment: r.comment || '',
+        reviewDate: r.createTime || new Date().toISOString(),
+      }));
+      return { status: 200, data: { reviews } };
+    }
+
+    if (action === 'publish_reply') {
+      const locationName = typeof body.locationName === 'string' ? body.locationName.trim() : '';
+      const externalReviewId =
+        typeof body.externalReviewId === 'string' ? body.externalReviewId.trim() : '';
+      const replyText = typeof body.replyText === 'string' ? body.replyText.trim() : '';
+      if (
+        !locationName ||
+        !/^accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+$/.test(locationName) ||
+        !externalReviewId ||
+        !/^[a-zA-Z0-9_-]+$/.test(externalReviewId) ||
+        !replyText
+      ) {
+        return {
+          status: 400,
+          data: { error: 'Valid locationName, externalReviewId, and replyText are required.' },
+        };
+      }
+      const pubRes = await fetch(
+        `https://mybusiness.googleapis.com/v4/${locationName}/reviews/${externalReviewId}/reply`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${gbpAccessToken}`,
+          },
+          body: JSON.stringify({ comment: replyText }),
+        },
+      );
+      const pubText = await pubRes.text();
+      if (!pubRes.ok) {
+        return {
+          status: pubRes.status,
+          data: {
+            error: `Google Reply API (${pubRes.status}): ${sanitizeApiErrorDetail(pubText)}`,
+          },
+        };
+      }
+      return { status: 200, data: { published: true } };
+    }
+
+    return { status: 400, data: { error: 'Unsupported GBP action.' } };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 500, data: { error: sanitizeApiErrorDetail(msg) } };
   }
 }

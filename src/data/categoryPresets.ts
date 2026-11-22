@@ -416,6 +416,9 @@ export const DEFAULT_ENABLED_FEATURES = {
   customQuestions: true,
   pdfPosterExport: true,
   analyticsView: true,
+  inStoreQrStands: true,
+  gbpAutoReply: true,
+  weeklyReports: true,
 };
 
 export const BUILTIN_DEMO_PROFILE: PublicProfile = {

@@ -235,9 +235,9 @@ export function OnboardingModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-50 text-slate-900 overflow-y-auto">
+    <div className="fixed inset-0 z-50 spatial-canvas text-slate-900 overflow-y-auto">
       {/* Sticky Workspace Header */}
-      <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200 px-4 sm:px-8">
+      <header className="sticky top-0 z-30 h-16 liquid-glass-nav border-b border-white/75 px-4 sm:px-8">
         <div className="max-w-6xl mx-auto h-full flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {canClose && (
@@ -310,7 +310,7 @@ export function OnboardingModal({
           <form
             id="onboarding-business-form"
             onSubmit={handleSubmit}
-            className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 divide-y divide-slate-200"
+            className="lg:col-span-7 liquid-glass rounded-2xl divide-y divide-slate-200/70"
           >
             {/* Section 1: Business Identity */}
             <section className="p-6 sm:p-8 space-y-6">
@@ -686,7 +686,7 @@ export function OnboardingModal({
           {/* Right Column: Sticky Live Preview & Provisioning Summary */}
           <aside className="lg:col-span-5 lg:sticky lg:top-24 space-y-6">
             {/* Live Customer Form Preview Card */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="liquid-glass spatial-card-3d rounded-2xl overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-slate-900">
                   Live Customer Review Preview
@@ -772,7 +772,7 @@ export function OnboardingModal({
             </div>
 
             {/* Included Capabilities Summary */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+            <div className="liquid-glass spatial-card-3d rounded-2xl p-6 space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-display text-base font-bold text-slate-900">
                   Ready Immediately on Save

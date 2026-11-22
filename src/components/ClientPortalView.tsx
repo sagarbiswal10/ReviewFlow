@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Bot,
   Calendar,
   Check,
   CheckCircle2,
@@ -13,8 +14,10 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FileBarChart2,
   FileText,
   Home,
+  Layers,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -28,10 +31,11 @@ import {
   Store,
   TrendingUp,
 } from 'lucide-react';
-import type { Business, BusinessStats, PublicProfile, ReviewEvent, ReviewEventType } from '../types';
+import type { Business, BusinessStats, PublicProfile, ReviewDraft, ReviewEvent, ReviewEventType } from '../types';
 import {
   claimBusinessClientUid,
   subscribeToBusinessEvents,
+  subscribeToBusinessReviewDrafts,
   subscribeToBusinessStats,
 } from '../services/businessService';
 import { getPublicAppUrl } from '../utils/apiClient';
@@ -41,8 +45,19 @@ import { QrStudioTab } from './QrStudioTab';
 import { QuestionBuilderTab } from './QuestionBuilderTab';
 import { BrandingTab } from './BrandingTab';
 import { CustomerReviewFlow } from './CustomerReviewFlow';
+import { QrStandsTab } from './QrStandsTab';
+import { GbpAutoReplyTab } from './GbpAutoReplyTab';
+import { WeeklyReportsTab } from './WeeklyReportsTab';
 
-type PortalTab = 'qr_features' | 'qr_editor' | 'questions' | 'branding' | 'preview';
+type PortalTab =
+  | 'qr_features'
+  | 'qr_stands'
+  | 'gbp_reply'
+  | 'weekly_reports'
+  | 'qr_editor'
+  | 'questions'
+  | 'branding'
+  | 'preview';
 type EventFilter = 'all' | ReviewEventType;
 type ReportPeriod = 'daily' | '7d' | '1m' | 'date' | 'all';
 
@@ -165,6 +180,7 @@ export function ClientPortalView({
   const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
   const [stats, setStats] = useState<BusinessStats | null>(null);
   const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [reviewDrafts, setReviewDrafts] = useState<ReviewDraft[]>([]);
   const [eventsAccessError, setEventsAccessError] = useState<string | null>(null);
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('7d');
   const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateStr(new Date()));
@@ -229,6 +245,7 @@ export function ClientPortalView({
     if (!activeBusiness) {
       setStats(null);
       setEvents([]);
+      setReviewDrafts([]);
       setEventsAccessError(null);
       return;
     }
@@ -251,19 +268,38 @@ export function ClientPortalView({
       },
       activeBusiness.clientUid,
     );
+    const unsubDrafts = subscribeToBusinessReviewDrafts(
+      activeBusiness.id,
+      activeBusiness.ownerId,
+      user.uid,
+      isAdmin,
+      (nextDrafts) => {
+        setReviewDrafts(nextDrafts);
+      },
+      () => {
+        setReviewDrafts([]);
+      },
+      activeBusiness.clientUid,
+    );
     return () => {
       unsubStats();
       unsubEvents();
+      unsubDrafts();
     };
   }, [activeBusiness?.id, activeBusiness?.ownerId, activeBusiness?.clientUid, user.uid, isAdmin]);
 
-  // Reset tab if permission level restricts current tab
   useEffect(() => {
     if (!activeBusiness) return;
+    const allowedReadOnly: PortalTab[] = [
+      'qr_features',
+      'qr_stands',
+      'gbp_reply',
+      'weekly_reports',
+      'preview',
+    ];
     if (
       activeBusiness.clientAccessLevel === 'read_only' &&
-      activeTab !== 'qr_features' &&
-      activeTab !== 'preview'
+      !allowedReadOnly.includes(activeTab)
     ) {
       setActiveTab('qr_features');
     } else if (
@@ -312,6 +348,24 @@ export function ClientPortalView({
 
   const navItems: { id: PortalTab; label: string; icon: typeof QrCode; visible: boolean }[] = [
     { id: 'qr_features', label: 'Overview & QR', icon: LayoutDashboard, visible: true },
+    {
+      id: 'qr_stands',
+      label: 'QR Stands',
+      icon: Layers,
+      visible: activeBusiness?.enabledFeatures.inStoreQrStands !== false,
+    },
+    {
+      id: 'gbp_reply',
+      label: 'GBP Auto Reply',
+      icon: Bot,
+      visible: activeBusiness?.enabledFeatures.gbpAutoReply !== false,
+    },
+    {
+      id: 'weekly_reports',
+      label: 'Weekly Reports',
+      icon: FileBarChart2,
+      visible: activeBusiness?.enabledFeatures.weeklyReports !== false,
+    },
     {
       id: 'qr_editor',
       label: 'QR Studio',
@@ -637,9 +691,9 @@ export function ClientPortalView({
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
+    <div className="min-h-screen spatial-canvas text-slate-900 flex flex-col antialiased relative">
       {/* Two-Tier Executive Portal Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
+      <header className="sticky top-0 z-40 liquid-glass-nav border-b border-white/75">
         {/* Top Utility Row */}
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 sm:gap-5 min-w-0">
@@ -821,7 +875,7 @@ export function ClientPortalView({
 
         {/* Horizontal Tab Navigation Bar */}
         {activeBusiness && (
-          <div className="border-t border-slate-100 bg-white">
+          <div className="border-t border-white/60 bg-white/45 backdrop-blur-md">
             <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 overflow-x-auto">
               <nav className="flex items-center gap-1 min-w-max">
                 {navItems
@@ -854,7 +908,7 @@ export function ClientPortalView({
       {/* Main Content Container */}
       <main className="flex-1 w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-7 sm:py-8">
         {!activeBusiness ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-5 max-w-xl mx-auto mt-8 shadow-sm">
+          <div className="liquid-glass spatial-card-3d rounded-2xl p-10 text-center space-y-5 max-w-xl mx-auto mt-8">
             <QrCode className="w-10 h-10 text-slate-400 mx-auto" />
             <div className="space-y-2">
               <h1 className="font-display text-2xl font-bold text-slate-900">
@@ -903,7 +957,7 @@ export function ClientPortalView({
             {activeTab === 'qr_features' && (
               <div className="flex flex-col space-y-6 pb-8">
                 {/* Executive Business Header Bar */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                   <div className="flex items-start sm:items-center gap-4 min-w-0">
                     <BusinessLogo
                       src={activeBusiness.logoDataUrl}
@@ -986,7 +1040,7 @@ export function ClientPortalView({
                 {/* Report Period Selector + 4 KPI Telemetry Scorecards */}
                 {activeBusiness.enabledFeatures.analyticsView && (
                   <div className="space-y-4">
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:px-5 sm:py-3.5 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="liquid-glass rounded-2xl p-3.5 sm:px-5 sm:py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="p-2 rounded-lg bg-[#f0fdfa] text-[#005c55] shrink-0">
                           <Calendar className="w-4 h-4" />
@@ -1053,7 +1107,7 @@ export function ClientPortalView({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       {/* Card 1: QR Scans */}
-                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col justify-between">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1101,7 +1155,7 @@ export function ClientPortalView({
                       </div>
 
                       {/* Card 2: AI Drafts Generated */}
-                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col justify-between">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1151,7 +1205,7 @@ export function ClientPortalView({
                       </div>
 
                       {/* Card 3: Review Style Breakdown */}
-                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col justify-between">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1201,7 +1255,7 @@ export function ClientPortalView({
                       </div>
 
                       {/* Card 4: Google Redirects */}
-                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                      <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col justify-between">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1255,7 +1309,7 @@ export function ClientPortalView({
                   <div className="lg:col-span-7 flex flex-col space-y-6">
                     {/* Period Activity Velocity Chart */}
                     {activeBusiness.enabledFeatures.analyticsView && (
-                      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col">
+                      <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4">
                           <div>
                             <h2 className="font-display text-lg font-bold text-slate-900">
@@ -1356,7 +1410,7 @@ export function ClientPortalView({
                     )}
 
                     {/* Top Customer Highlights OR Active Form Questions & Keywords */}
-                    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-4">
+                    <div className="p-5 sm:p-6 rounded-2xl liquid-glass spatial-card-3d space-y-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <h2 className="font-display text-lg font-bold text-slate-900">
@@ -1469,7 +1523,7 @@ export function ClientPortalView({
                   {/* Right Minor Column (5 cols): QR Stand & Destination */}
                   <div className="lg:col-span-5 flex flex-col space-y-6">
                     {/* Your Business QR Stand Card */}
-                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col items-center text-center">
+                    <div className="p-6 rounded-2xl liquid-glass spatial-card-3d flex flex-col items-center text-center">
                       <div className="w-full flex items-center justify-between text-xs mb-4">
                         <span className="font-bold text-slate-900 inline-flex items-center gap-1.5">
                           <QrCode className="w-4 h-4 text-[#005c55]" />
@@ -1555,7 +1609,7 @@ export function ClientPortalView({
                     </div>
 
                     {/* Connected Google Review Destination & SEO Keywords */}
-                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-4">
+                    <div className="p-6 rounded-2xl liquid-glass spatial-card-3d space-y-4">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="font-display text-base font-bold text-slate-900">
                           Google Review Destination
@@ -1645,6 +1699,32 @@ export function ClientPortalView({
                     )}
                   </div>
 
+                  {reviewDrafts.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-white/80 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="font-semibold text-slate-800">Draft Statuses:</span>
+                        <span className="text-slate-600 tabular-nums">
+                          Generated: <strong className="text-slate-900">{reviewDrafts.filter((d) => d.status === 'Generated').length}</strong>
+                        </span>
+                        <span className="text-slate-600 tabular-nums">
+                          Edited: <strong className="text-slate-900">{reviewDrafts.filter((d) => d.status === 'Edited').length}</strong>
+                        </span>
+                        <span className="text-slate-600 tabular-nums">
+                          Copied: <strong className="text-emerald-700">{reviewDrafts.filter((d) => d.status === 'Copied').length}</strong>
+                        </span>
+                        <span className="text-slate-600 tabular-nums">
+                          Deleted: <strong className="text-slate-500">{reviewDrafts.filter((d) => d.status === 'Deleted').length}</strong>
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2.5 text-slate-600 tabular-nums">
+                        <span className="font-semibold text-slate-800">Languages:</span>
+                        <span>English ({reviewDrafts.filter((d) => d.language === 'en').length})</span>
+                        <span lang="hi">हिंदी ({reviewDrafts.filter((d) => d.language === 'hi').length})</span>
+                        <span lang="mr">मराठी ({reviewDrafts.filter((d) => d.language === 'mr').length})</span>
+                      </div>
+                    </div>
+                  )}
+
                   {eventsAccessError ? (
                     <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start gap-3 shadow-sm">
                       <Shield className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
@@ -1661,7 +1741,7 @@ export function ClientPortalView({
                       </div>
                     </div>
                   ) : !canReadEventHistory ? (
-                    <div className="p-6 rounded-2xl bg-white border border-slate-200/80 text-sm text-slate-600 flex items-center gap-3 shadow-sm">
+                    <div className="p-6 rounded-2xl liquid-glass text-sm text-slate-600 flex items-center gap-3">
                       <Store className="w-5 h-5 text-[#005c55] shrink-0" />
                       <span>
                         Linking detailed Customer Review Flow Activity for your client account.
@@ -1669,7 +1749,7 @@ export function ClientPortalView({
                       </span>
                     </div>
                   ) : visibleEvents.length === 0 ? (
-                    <div className="p-8 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2 shadow-sm">
+                    <div className="p-8 rounded-2xl liquid-glass text-center space-y-2">
                       <Clock className="w-7 h-7 text-slate-400 mx-auto" />
                       <p className="text-sm font-semibold text-slate-900">
                         No matching customer activity in {reportWindowMeta.shortLabel}
@@ -1686,7 +1766,7 @@ export function ClientPortalView({
                         {visibleEvents.map((ev) => (
                           <div
                             key={ev.id}
-                            className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3"
+                            className="p-5 rounded-2xl liquid-glass spatial-card-3d flex flex-col justify-between space-y-3"
                           >
                             <div className="space-y-2.5">
                               <div className="flex items-center justify-between gap-2">
@@ -1694,8 +1774,10 @@ export function ClientPortalView({
                                   {ev.eventType === 'copy_redirect'
                                     ? 'Copied & Opened Google'
                                     : ev.eventType === 'generate'
-                                    ? 'Generated AI Draft'
-                                    : 'QR Code Scanned'}
+                                      ? 'Generated AI Draft'
+                                      : ev.eventType === 'form_start'
+                                        ? 'Started Feedback Form'
+                                        : 'QR Code Scanned'}
                                 </span>
                                 <span className="text-xs text-slate-400 tabular-nums">
                                   {formatRelativeTime(ev.createdAt)}
@@ -1704,17 +1786,30 @@ export function ClientPortalView({
 
                               <p className="text-[11px] font-medium text-slate-500">
                                 {formatEventDateTime(ev.createdAt)}
+                                {(ev.standName || ev.standCode) && (
+                                  <span className="ml-2 font-mono text-[#005c55]">
+                                    · Stand: {ev.standName || ev.standCode}
+                                  </span>
+                                )}
                               </p>
 
                               <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
-                                {ev.reviewStyle && (
-                                  <span className="capitalize font-semibold text-slate-800">
-                                    Tone: {ev.reviewStyle}
+                                {ev.language && (
+                                  <span lang={ev.language} className="font-semibold text-slate-800">
+                                    Language: {ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'English'}
                                   </span>
+                                )}
+                                {ev.reviewStyle && (
+                                  <>
+                                    {ev.language && <span aria-hidden="true">·</span>}
+                                    <span className="capitalize font-semibold text-slate-800">
+                                      Tone: {ev.reviewStyle}
+                                    </span>
+                                  </>
                                 )}
                                 {ev.sentiment && (
                                   <>
-                                    <span aria-hidden="true">·</span>
+                                    {(ev.language || ev.reviewStyle) && <span aria-hidden="true">·</span>}
                                     <span>Sentiment: {ev.sentiment}</span>
                                   </>
                                 )}
@@ -1758,6 +1853,41 @@ export function ClientPortalView({
               </div>
             )}
 
+            {activeTab === 'qr_stands' &&
+              activeBusiness.enabledFeatures.inStoreQrStands !== false && (
+                <QrStandsTab
+                  business={activeBusiness}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin={isAdmin}
+                  events={events}
+                  canEdit={canEditQrOrQuestions}
+                />
+              )}
+
+            {activeTab === 'gbp_reply' &&
+              activeBusiness.enabledFeatures.gbpAutoReply !== false && (
+                <GbpAutoReplyTab
+                  business={activeBusiness}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin={isAdmin}
+                  canEdit={canEditBranding || isAdmin}
+                />
+              )}
+
+            {activeTab === 'weekly_reports' &&
+              activeBusiness.enabledFeatures.weeklyReports !== false && (
+                <WeeklyReportsTab
+                  business={activeBusiness}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin={isAdmin}
+                  events={events}
+                  canEdit={canEditBranding || isAdmin}
+                />
+              )}
+
             {activeTab === 'qr_editor' && canEditQrOrQuestions && (
               <QrStudioTab business={activeBusiness} />
             )}
@@ -1788,7 +1918,7 @@ export function ClientPortalView({
       </main>
 
       {/* Quiet Workspace Footer */}
-      <footer className="w-full bg-white border-t border-slate-200/80 py-4 mt-auto">
+      <footer className="w-full liquid-glass-nav border-t border-white/75 py-4 mt-auto">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <span>ReviewFlow Client Portal · Multi-Business Google Review Workflow</span>
           <div className="flex items-center gap-4">

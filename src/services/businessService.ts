@@ -25,6 +25,7 @@ import {
 import type {
   AdminEmail,
   AdminUser,
+  AiOperationType,
   Business,
   BusinessBranding,
   BusinessCategory,
@@ -32,10 +33,17 @@ import type {
   ClientAccessLevel,
   EnabledFeatures,
   FeedbackQuestion,
+  FeedbackSubmissionResponse,
+  GbpReplySettings,
   PublicProfile,
   QrConfig,
+  ReviewDraft,
+  ReviewDraftStatus,
   ReviewEvent,
   ReviewEventType,
+  ReviewLanguage,
+  ReviewStyle,
+  WeeklyReportConfig,
 } from '../types';
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = (
@@ -81,6 +89,43 @@ function sanitizeEnabledFeatures(features?: Partial<EnabledFeatures>): EnabledFe
     customQuestions: features?.customQuestions ?? DEFAULT_ENABLED_FEATURES.customQuestions,
     pdfPosterExport: features?.pdfPosterExport ?? DEFAULT_ENABLED_FEATURES.pdfPosterExport,
     analyticsView: features?.analyticsView ?? DEFAULT_ENABLED_FEATURES.analyticsView,
+    inStoreQrStands: features?.inStoreQrStands ?? DEFAULT_ENABLED_FEATURES.inStoreQrStands,
+    gbpAutoReply: features?.gbpAutoReply ?? DEFAULT_ENABLED_FEATURES.gbpAutoReply,
+    weeklyReports: features?.weeklyReports ?? DEFAULT_ENABLED_FEATURES.weeklyReports,
+  };
+}
+
+export function sanitizeGbpSettings(settings?: Partial<GbpReplySettings>): GbpReplySettings {
+  return {
+    fiveStarMode:
+      settings?.fiveStarMode === 'approval_required' ? 'approval_required' : 'auto_publish',
+    midStarMode:
+      settings?.midStarMode === 'auto_publish' ? 'auto_publish' : 'approval_required',
+    lowStarMode: 'manual_approval_only',
+    brandVoice: clampString(settings?.brandVoice ?? '', 400),
+    autoSyncEnabled: settings?.autoSyncEnabled ?? true,
+  };
+}
+
+export function sanitizeWeeklyReportConfig(
+  config?: Partial<WeeklyReportConfig>,
+  fallbackEmail = '',
+): WeeklyReportConfig {
+  const recipients = Array.isArray(config?.recipients)
+    ? config.recipients
+        .map((r) => normalizeEmail(String(r || '')))
+        .filter((r) => Boolean(r) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r))
+        .slice(0, 10)
+    : fallbackEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fallbackEmail)
+      ? [fallbackEmail]
+      : [];
+  return {
+    enabled: config?.enabled ?? true,
+    recipients,
+    autoMondayEnabled: config?.autoMondayEnabled ?? true,
+    ...(config?.lastGeneratedWeekKey
+      ? { lastGeneratedWeekKey: clampString(config.lastGeneratedWeekKey, 24) }
+      : {}),
   };
 }
 
@@ -181,11 +226,13 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
   const data = raw as Partial<Business>;
   const category = (data.category as BusinessCategory) || 'Other Businesses';
   const hydratedKeywords = sanitizeSeoKeywords(data.seoKeywords);
+  const normalizedClientEmail = normalizeEmail(data.clientEmail || '');
+  const rawLimit = Number(data.qrStandLimit);
   return {
     id,
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
-    clientEmail: normalizeEmail(data.clientEmail || ''),
+    clientEmail: normalizedClientEmail,
     clientUid: clampString(data.clientUid, 128),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
     enabledFeatures: sanitizeEnabledFeatures(data.enabledFeatures),
@@ -217,6 +264,9 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
       hydratedKeywords.length > 0
         ? hydratedKeywords
         : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[category] ?? [],
+    qrStandLimit: Number.isInteger(rawLimit) && rawLimit >= 1 ? rawLimit : 4,
+    gbpSettings: sanitizeGbpSettings(data.gbpSettings),
+    weeklyReportConfig: sanitizeWeeklyReportConfig(data.weeklyReportConfig, normalizedClientEmail),
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -716,6 +766,9 @@ export async function createBusiness(
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
     seoKeywords: cleanSeoKeywords,
+    qrStandLimit: 4,
+    gbpSettings: sanitizeGbpSettings(),
+    weeklyReportConfig: sanitizeWeeklyReportConfig(undefined, cleanClientEmail),
     createdAt: now,
     updatedAt: now,
   };
@@ -743,6 +796,7 @@ export async function createBusiness(
     clientEmail: cleanClientEmail,
     slug: finalSlug,
     scans: 0,
+    formsStarted: 0,
     generated: 0,
     redirects: 0,
     styleShort: 0,
@@ -784,6 +838,9 @@ export async function updateBusiness(
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
     seoKeywords: string[];
+    qrStandLimit: number;
+    gbpSettings: GbpReplySettings;
+    weeklyReportConfig: WeeklyReportConfig;
   }>,
   options: { isAdmin?: boolean } = {},
 ): Promise<string> {
@@ -867,12 +924,25 @@ export async function updateBusiness(
   if (updates.website !== undefined) {
     businessUpdates.website = clampString(updates.website, 300);
   }
+  if (updates.gbpSettings !== undefined) {
+    businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings);
+  }
+  if (updates.weeklyReportConfig !== undefined) {
+    businessUpdates.weeklyReportConfig = sanitizeWeeklyReportConfig(
+      updates.weeklyReportConfig,
+      nextClientEmail,
+    );
+  }
 
   const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
     businessUpdates.clientEmail = nextClientEmail;
     businessUpdates.clientAccessLevel = nextAccessLevel;
     businessUpdates.enabledFeatures = nextFeatures;
+    if (updates.qrStandLimit !== undefined) {
+      const parsedLimit = Math.round(Number(updates.qrStandLimit));
+      businessUpdates.qrStandLimit = Math.min(100, Math.max(1, parsedLimit || 4));
+    }
     if (clientEmailChanged) {
       businessUpdates.clientUid = '';
     }
@@ -1015,7 +1085,12 @@ export async function recordReviewEvent(
   details: {
     reviewStyle?: string;
     sentiment?: string;
+    language?: ReviewLanguage;
     selectedHighlights?: string[];
+    standId?: string;
+    standCode?: string;
+    standName?: string;
+    sessionId?: string;
   } = {},
 ): Promise<void> {
   if (!profile.qrConfig?.isActive || profile.ownerId === 'demo') {
@@ -1023,6 +1098,15 @@ export async function recordReviewEvent(
   }
 
   const eventRef = doc(collection(db, 'reviewEvents'));
+  const standId = clampString(details.standId ?? '', 128);
+  const standCode = clampString(details.standCode ?? '', 64);
+  const standName = clampString(details.standName ?? '', 120);
+  const sessionId = clampString(details.sessionId ?? '', 128);
+  const language: ReviewLanguage | undefined =
+    details.language === 'hi' || details.language === 'mr' || details.language === 'en'
+      ? details.language
+      : undefined;
+
   const payload = {
     businessId: profile.businessId,
     ownerId: profile.ownerId,
@@ -1031,10 +1115,15 @@ export async function recordReviewEvent(
     eventType,
     reviewStyle: clampString(details.reviewStyle ?? '', 40),
     sentiment: clampString(details.sentiment ?? '', 40),
+    ...(language ? { language } : {}),
     selectedHighlights: (details.selectedHighlights ?? [])
       .map((s) => clampString(s, 60))
       .filter(Boolean)
       .slice(0, 15),
+    ...(standId ? { standId } : {}),
+    ...(standCode ? { standCode } : {}),
+    ...(standName ? { standName } : {}),
+    ...(sessionId ? { sessionId } : {}),
     createdAt: serverTimestamp(),
   };
 
@@ -1049,6 +1138,8 @@ export async function recordReviewEvent(
   };
   if (eventType === 'scan') {
     statsUpdate.scans = increment(1);
+  } else if (eventType === 'form_start') {
+    statsUpdate.formsStarted = increment(1);
   } else if (eventType === 'generate') {
     statsUpdate.generated = increment(1);
     if (details.reviewStyle === 'short') statsUpdate.styleShort = increment(1);
@@ -1062,5 +1153,238 @@ export async function recordReviewEvent(
     await updateDoc(doc(db, 'businessStats', profile.businessId), statsUpdate);
   } catch {
     // Non-blocking if businessStats doc is absent for legacy record
+  }
+}
+
+function generateSecureClientId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
+  return `${prefix}_${Date.now().toString(36)}_${generateRandomToken(12)}`;
+}
+
+export async function saveFeedbackSubmission(input: {
+  profile: PublicProfile;
+  responses: FeedbackSubmissionResponse[];
+  additionalComments: string;
+  sentiment: string;
+  selectedHighlights: string[];
+  standId?: string;
+  standCode?: string;
+  standName?: string;
+  sessionId: string;
+}): Promise<string> {
+  const submissionId = generateSecureClientId('fb');
+  if (!input.profile.qrConfig?.isActive || input.profile.ownerId === 'demo') {
+    return submissionId;
+  }
+
+  const cleanResponses = input.responses
+    .filter((item) => item && item.question && Array.isArray(item.answers) && item.answers.length > 0)
+    .slice(0, 25)
+    .map((item) => ({
+      question: clampString(item.question, 180),
+      answers: item.answers.map((a) => clampString(a, 120)).filter(Boolean).slice(0, 20),
+    }));
+
+  const standId = clampString(input.standId ?? '', 128);
+  const standCode = clampString(input.standCode ?? '', 64);
+  const standName = clampString(input.standName ?? '', 120);
+  const sessionId = clampString(input.sessionId, 128) || generateSecureClientId('sess');
+
+  const payload = {
+    submissionId,
+    businessId: input.profile.businessId,
+    ownerId: input.profile.ownerId,
+    ...(input.profile.clientUid ? { clientUid: input.profile.clientUid } : {}),
+    slug: input.profile.slug,
+    responses: cleanResponses,
+    additionalComments: clampString(input.additionalComments, 2000),
+    sentiment: clampString(input.sentiment, 40),
+    selectedHighlights: input.selectedHighlights
+      .map((s) => clampString(s, 60))
+      .filter(Boolean)
+      .slice(0, 15),
+    ...(standId ? { standId } : {}),
+    ...(standCode ? { standCode } : {}),
+    ...(standName ? { standName } : {}),
+    sessionId,
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'feedbackSubmissions', submissionId), payload);
+  } catch {
+    // Non-blocking persistence
+  }
+  return submissionId;
+}
+
+export async function createReviewDraftRecord(input: {
+  profile: PublicProfile;
+  feedbackSubmissionId: string;
+  reviewText: string;
+  language: ReviewLanguage;
+  reviewStyle: ReviewStyle;
+  variationSeed: number;
+  sessionId: string;
+}): Promise<string> {
+  const draftId = generateSecureClientId('dr');
+  if (!input.profile.qrConfig?.isActive || input.profile.ownerId === 'demo') {
+    return draftId;
+  }
+
+  const cleanText = clampString(input.reviewText, 4000);
+  if (!cleanText || !input.feedbackSubmissionId) {
+    return draftId;
+  }
+
+  const now = serverTimestamp();
+  const payload = {
+    draftId,
+    businessId: input.profile.businessId,
+    ownerId: input.profile.ownerId,
+    ...(input.profile.clientUid ? { clientUid: input.profile.clientUid } : {}),
+    slug: input.profile.slug,
+    feedbackSubmissionId: clampString(input.feedbackSubmissionId, 128),
+    reviewText: cleanText,
+    language: input.language,
+    reviewStyle: input.reviewStyle,
+    variationSeed: Math.min(1000, Math.max(1, Math.round(input.variationSeed || 1))),
+    sessionId: clampString(input.sessionId, 128) || generateSecureClientId('sess'),
+    status: 'Generated' as ReviewDraftStatus,
+    generatedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await setDoc(doc(db, 'reviewDrafts', draftId), payload);
+  } catch {
+    // Non-blocking persistence
+  }
+  return draftId;
+}
+
+export async function updateReviewDraftLifecycle(input: {
+  profile: PublicProfile;
+  draftId: string;
+  status: 'Edited' | 'Copied' | 'Deleted';
+  reviewText?: string;
+}): Promise<void> {
+  if (
+    !input.draftId ||
+    !input.profile.qrConfig?.isActive ||
+    input.profile.ownerId === 'demo'
+  ) {
+    return;
+  }
+
+  const now = serverTimestamp();
+  const updates: Record<string, unknown> = {
+    status: input.status,
+    updatedAt: now,
+  };
+
+  if (input.status === 'Edited') {
+    const cleanText = clampString(input.reviewText ?? '', 4000);
+    if (!cleanText) return;
+    updates.reviewText = cleanText;
+  } else if (input.status === 'Copied') {
+    const cleanText = clampString(input.reviewText ?? '', 4000);
+    if (cleanText) {
+      updates.reviewText = cleanText;
+    }
+    updates.copiedAt = now;
+  } else if (input.status === 'Deleted') {
+    updates.deletedAt = now;
+  }
+
+  try {
+    await updateDoc(doc(db, 'reviewDrafts', input.draftId), updates);
+  } catch {
+    // Non-blocking lifecycle update
+  }
+}
+
+export function subscribeToBusinessReviewDrafts(
+  businessId: string,
+  ownerId: string,
+  viewerUid: string,
+  isAdmin: boolean,
+  onData: (drafts: ReviewDraft[]) => void,
+  onError?: (err: Error) => void,
+  clientUid?: string,
+): Unsubscribe {
+  const isOwner = ownerId === viewerUid;
+  const isLinkedClient = Boolean(clientUid && clientUid === viewerUid);
+
+  if (!isAdmin && !isOwner && !isLinkedClient) {
+    onData([]);
+    return () => {};
+  }
+
+  const path = 'reviewDrafts';
+  const q = isAdmin
+    ? query(collection(db, path), where('businessId', '==', businessId), limit(500))
+    : isOwner
+      ? query(collection(db, path), where('ownerId', '==', viewerUid), limit(500))
+      : query(collection(db, path), where('clientUid', '==', viewerUid), limit(500));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: ReviewDraft[] = snapshot.docs
+        .map((docSnap) => ({
+          ...(docSnap.data() as Omit<ReviewDraft, 'id'>),
+          id: docSnap.id,
+        }))
+        .filter((item) => item.businessId === businessId)
+        .sort((a, b) => getEventTimeMs(b.createdAt) - getEventTimeMs(a.createdAt));
+      onData(items);
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
+export async function logAiUsage(input: {
+  businessId: string;
+  ownerId: string;
+  clientEmail?: string;
+  provider?: string;
+  operationType?: AiOperationType;
+  modelName: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd?: number;
+  status: 'success' | 'failed';
+  errorCode?: string;
+}): Promise<void> {
+  if (!input.businessId || !input.ownerId || input.ownerId === 'demo') return;
+  const logRef = doc(collection(db, 'aiUsageLogs'));
+  const cleanEmail = normalizeEmail(input.clientEmail || '');
+  const payload = {
+    requestId: logRef.id,
+    businessId: clampString(input.businessId, 128),
+    ownerId: clampString(input.ownerId, 128),
+    ...(cleanEmail ? { clientEmail: cleanEmail } : {}),
+    provider: clampString(input.provider || 'gemini', 40),
+    operationType: input.operationType || 'review_draft',
+    modelName: clampString(input.modelName || 'gemini-3.1-flash-lite', 80),
+    inputTokens: Math.max(0, Math.round(Number(input.inputTokens || 0))),
+    outputTokens: Math.max(0, Math.round(Number(input.outputTokens || 0))),
+    totalTokens: Math.max(0, Math.round(Number(input.totalTokens || 0))),
+    estimatedCostUsd: Math.max(0, Number(input.estimatedCostUsd || 0)),
+    status: input.status === 'failed' ? 'failed' : 'success',
+    errorCode: clampString(input.errorCode || '', 64),
+    createdAt: serverTimestamp(),
+  };
+  try {
+    await setDoc(logRef, payload);
+  } catch {
+    // Non-blocking telemetry log
   }
 }

@@ -80,7 +80,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
   return (
     <div className="space-y-8">
       {/* Top Quick Share Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
@@ -133,28 +133,28 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
 
       {/* 4-Column Tabular KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500">Total QR Scans</p>
           <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
             {stats.scans}
           </p>
           <p className="mt-1 text-xs text-slate-500">Live customer form visits</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500">AI Drafts Generated</p>
           <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
             {stats.generated}
           </p>
           <p className="mt-1 text-xs text-slate-500">Personalized review drafts</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500">Google Redirects</p>
           <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
             {stats.redirects}
           </p>
           <p className="mt-1 text-xs text-slate-500">Copied &amp; opened Google</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500">Scan-to-Google Rate</p>
           <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
             {stats.conversion}%
@@ -165,7 +165,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
 
       {/* Breakdown & Recent Activity */}
       {businessEvents.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-10 text-center space-y-4">
           <QrCode className="w-10 h-10 text-slate-400 mx-auto" />
           <div className="max-w-md mx-auto space-y-1.5">
             <h3 className="text-base font-semibold text-slate-900">No QR scans recorded yet</h3>
@@ -192,7 +192,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 p-6 space-y-6">
+          <div className="lg:col-span-4 liquid-glass spatial-card-3d rounded-2xl p-6 space-y-6">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Preferred Review Styles</h3>
               <div className="mt-4 space-y-3">
@@ -240,7 +240,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
             )}
           </div>
 
-          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="lg:col-span-8 liquid-glass spatial-card-3d rounded-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Recent Customer Activity</h3>
               <span className="text-xs text-slate-500 tabular-nums">
@@ -272,6 +272,11 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
                         </td>
                         <td className="py-3 px-4 text-slate-600 capitalize whitespace-nowrap">
                           {ev.reviewStyle || '—'}
+                          {ev.language && (
+                            <span lang={ev.language} className="ml-1.5 text-[11px] text-[#005c55] font-semibold">
+                              ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'EN'})
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-slate-600 max-w-xs truncate">
                           {ev.selectedHighlights?.length

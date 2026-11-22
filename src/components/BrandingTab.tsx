@@ -176,7 +176,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-6">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">
@@ -359,7 +359,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
       </div>
 
       {/* Google Search Ranking SEO Keywords */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">
@@ -429,7 +429,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
       </div>
 
       {/* Customer Experience Branding */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-6">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
         <div>
           <h2 className="font-display text-lg font-bold text-slate-900">
             Customer Form Branding &amp; Messaging
@@ -526,7 +526,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
       </div>
 
       {/* Delete Business */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-900">Remove Business Profile</p>
           <p className="text-xs text-slate-500 mt-0.5">

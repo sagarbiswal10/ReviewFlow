@@ -87,11 +87,17 @@ service cloud.firestore {
     function isValidEnabledFeatures(f) {
       return f is map &&
         f.keys().hasAll(['aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView']) &&
-        f.keys().hasOnly(['aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView']) &&
+        f.keys().hasOnly([
+          'aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView',
+          'inStoreQrStands', 'gbpAutoReply', 'weeklyReports'
+        ]) &&
         f.aiReviewDrafts is bool &&
         f.customQuestions is bool &&
         f.pdfPosterExport is bool &&
-        f.analyticsView is bool;
+        f.analyticsView is bool &&
+        (!('inStoreQrStands' in f) || f.inStoreQrStands is bool) &&
+        (!('gbpAutoReply' in f) || f.gbpAutoReply is bool) &&
+        (!('weeklyReports' in f) || f.weeklyReports is bool);
     }
 
     function isValidBranding(b) {
@@ -116,6 +122,28 @@ service cloud.firestore {
         q.includeLogo is bool;
     }
 
+    function isValidGbpSettings(g) {
+      return g is map &&
+        g.keys().hasAll(['fiveStarMode', 'midStarMode', 'lowStarMode', 'brandVoice', 'autoSyncEnabled']) &&
+        g.keys().hasOnly(['fiveStarMode', 'midStarMode', 'lowStarMode', 'brandVoice', 'autoSyncEnabled']) &&
+        g.fiveStarMode in ['auto_publish', 'approval_required'] &&
+        g.midStarMode in ['auto_publish', 'approval_required'] &&
+        g.lowStarMode == 'manual_approval_only' &&
+        g.brandVoice is string && g.brandVoice.size() <= 400 &&
+        g.autoSyncEnabled is bool;
+    }
+
+    function isValidWeeklyReportConfig(w) {
+      return w is map &&
+        w.keys().hasAll(['enabled', 'recipients', 'autoMondayEnabled']) &&
+        w.keys().hasOnly(['enabled', 'recipients', 'autoMondayEnabled', 'lastGeneratedWeekKey']) &&
+        w.enabled is bool &&
+        w.recipients is list && w.recipients.size() <= 10 &&
+        (w.recipients.size() == 0 || (w.recipients[0] is string && w.recipients[0].size() <= 120)) &&
+        w.autoMondayEnabled is bool &&
+        (!('lastGeneratedWeekKey' in w) || (w.lastGeneratedWeekKey is string && w.lastGeneratedWeekKey.size() <= 24));
+    }
+
     function isValidQuestions(questions) {
       return questions is list &&
         questions.size() <= 25 &&
@@ -126,6 +154,20 @@ service cloud.firestore {
       return keywords is list &&
         keywords.size() <= 15 &&
         (keywords.size() == 0 || (keywords[0] is string && keywords[0].size() <= 60));
+    }
+
+    function isAssignedClient(data) {
+      return isVerifiedUser() && (
+        data.ownerId == request.auth.uid ||
+        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail.lower() == userEmailLower())
+      );
+    }
+
+    function getBusinessStandLimit(bizId) {
+      return (
+        'qrStandLimit' in get(/databases/$(database)/documents/businesses/$(bizId)).data &&
+        get(/databases/$(database)/documents/businesses/$(bizId)).data.qrStandLimit is int
+      ) ? get(/databases/$(database)/documents/businesses/$(bizId)).data.qrStandLimit : 4;
     }
 
     function isValidBusiness(data) {
@@ -139,8 +181,8 @@ service cloud.firestore {
           'ownerId', 'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
           'slug', 'name', 'category', 'address', 'phone',
           'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
-          'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
-          'createdAt', 'updatedAt'
+          'qrConfig', 'questions', 'seoKeywords', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+          'lifecycleStatus', 'tenantFirebase', 'createdAt', 'updatedAt'
         ]) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 120)) &&
@@ -161,6 +203,9 @@ service cloud.firestore {
         isValidQrConfig(data.qrConfig) &&
         isValidQuestions(data.questions) &&
         (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('qrStandLimit' in data) || (data.qrStandLimit is int && data.qrStandLimit >= 1 && data.qrStandLimit <= 100)) &&
+        (!('gbpSettings' in data) || isValidGbpSettings(data.gbpSettings)) &&
+        (!('weeklyReportConfig' in data) || isValidWeeklyReportConfig(data.weeklyReportConfig)) &&
         (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
         (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
         data.createdAt is timestamp &&
@@ -206,7 +251,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'businessId', 'ownerId', 'clientEmail', 'slug',
-          'scans', 'generated', 'redirects',
+          'scans', 'formsStarted', 'generated', 'redirects',
           'styleShort', 'styleDetailed', 'styleProfessional', 'updatedAt'
         ]) &&
         isValidId(data.businessId) &&
@@ -214,6 +259,7 @@ service cloud.firestore {
         data.clientEmail is string && data.clientEmail.size() <= 120 &&
         isValidSlug(data.slug) &&
         data.scans is int && data.scans >= 0 &&
+        (!('formsStarted' in data) || (data.formsStarted is int && data.formsStarted >= 0)) &&
         data.generated is int && data.generated >= 0 &&
         data.redirects is int && data.redirects >= 0 &&
         data.styleShort is int && data.styleShort >= 0 &&
@@ -229,18 +275,231 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'businessId', 'ownerId', 'clientUid', 'slug', 'eventType',
-          'reviewStyle', 'sentiment', 'selectedHighlights', 'createdAt'
+          'reviewStyle', 'sentiment', 'language', 'selectedHighlights',
+          'standId', 'standCode', 'standName', 'sessionId', 'createdAt'
         ]) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
-        data.eventType in ['scan', 'generate', 'copy_redirect'] &&
+        data.eventType in ['scan', 'form_start', 'generate', 'copy_redirect'] &&
         data.reviewStyle is string && data.reviewStyle.size() <= 40 &&
+        data.sentiment is string && data.sentiment.size() <= 40 &&
+        (!('language' in data) || data.language in ['en', 'hi', 'mr']) &&
+        data.selectedHighlights is list && data.selectedHighlights.size() <= 15 &&
+        (data.selectedHighlights.size() == 0 || data.selectedHighlights[0] is string) &&
+        (!('standId' in data) || (data.standId is string && data.standId.size() <= 128)) &&
+        (!('standCode' in data) || (data.standCode is string && data.standCode.size() <= 64)) &&
+        (!('standName' in data) || (data.standName is string && data.standName.size() <= 120)) &&
+        (!('sessionId' in data) || (data.sessionId is string && data.sessionId.size() <= 128)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidFeedbackSubmission(data) {
+      return data.keys().hasAll([
+          'submissionId', 'businessId', 'ownerId', 'slug',
+          'responses', 'additionalComments', 'sentiment', 'selectedHighlights',
+          'sessionId', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'submissionId', 'businessId', 'ownerId', 'clientUid', 'slug',
+          'responses', 'additionalComments', 'sentiment', 'selectedHighlights',
+          'standId', 'standCode', 'standName', 'sessionId', 'createdAt'
+        ]) &&
+        isValidId(data.submissionId) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        isValidSlug(data.slug) &&
+        data.responses is list && data.responses.size() <= 25 &&
+        (data.responses.size() == 0 || data.responses[0] is map) &&
+        data.additionalComments is string && data.additionalComments.size() <= 2000 &&
         data.sentiment is string && data.sentiment.size() <= 40 &&
         data.selectedHighlights is list && data.selectedHighlights.size() <= 15 &&
         (data.selectedHighlights.size() == 0 || data.selectedHighlights[0] is string) &&
+        (!('standId' in data) || (data.standId is string && data.standId.size() <= 128)) &&
+        (!('standCode' in data) || (data.standCode is string && data.standCode.size() <= 64)) &&
+        (!('standName' in data) || (data.standName is string && data.standName.size() <= 120)) &&
+        data.sessionId is string && data.sessionId.size() >= 1 && data.sessionId.size() <= 128 &&
         data.createdAt is timestamp;
+    }
+
+    function isValidReviewDraft(data) {
+      return data.keys().hasAll([
+          'draftId', 'businessId', 'ownerId', 'slug', 'feedbackSubmissionId',
+          'reviewText', 'language', 'reviewStyle', 'variationSeed',
+          'sessionId', 'status', 'generatedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'draftId', 'businessId', 'ownerId', 'clientUid', 'slug', 'feedbackSubmissionId',
+          'reviewText', 'language', 'reviewStyle', 'variationSeed',
+          'sessionId', 'status', 'generatedAt', 'copiedAt', 'deletedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.draftId) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        isValidSlug(data.slug) &&
+        isValidId(data.feedbackSubmissionId) &&
+        data.reviewText is string && data.reviewText.size() >= 1 && data.reviewText.size() <= 4000 &&
+        data.language in ['en', 'hi', 'mr'] &&
+        data.reviewStyle in ['short', 'detailed', 'professional'] &&
+        data.variationSeed is int && data.variationSeed >= 1 && data.variationSeed <= 1000 &&
+        data.sessionId is string && data.sessionId.size() >= 1 && data.sessionId.size() <= 128 &&
+        data.status in ['Generated', 'Edited', 'Copied', 'Deleted'] &&
+        data.generatedAt is timestamp &&
+        (!('copiedAt' in data) || data.copiedAt is timestamp) &&
+        (!('deletedAt' in data) || data.deletedAt is timestamp) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidQrStand(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'clientEmail', 'slug', 'slotNumber',
+          'standCode', 'name', 'placement', 'isActive', 'fgColor', 'bgColor', 'includeLogo',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'clientUid', 'clientEmail', 'slug', 'slotNumber',
+          'standCode', 'name', 'placement', 'isActive', 'fgColor', 'bgColor', 'includeLogo',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        isValidSlug(data.slug) &&
+        data.slotNumber is int && data.slotNumber >= 1 && data.slotNumber <= 100 &&
+        isValidSlug(data.standCode) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.placement is string && data.placement.size() >= 1 && data.placement.size() <= 80 &&
+        data.isActive is bool &&
+        data.fgColor is string && data.fgColor.size() >= 4 && data.fgColor.size() <= 20 &&
+        data.bgColor is string && data.bgColor.size() >= 4 && data.bgColor.size() <= 20 &&
+        data.includeLogo is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidQrStandRequest(data) {
+      return data.keys().hasAll([
+          'businessId', 'businessName', 'ownerId', 'clientEmail',
+          'requestedAdditionalStands', 'currentLimit', 'reason', 'status',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'businessName', 'ownerId', 'clientUid', 'clientEmail',
+          'requestedAdditionalStands', 'currentLimit', 'reason', 'status',
+          'reviewedByUid', 'reviewedByEmail', 'adminNote', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 120 &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.requestedAdditionalStands is int && data.requestedAdditionalStands >= 1 && data.requestedAdditionalStands <= 50 &&
+        data.currentLimit is int && data.currentLimit >= 1 && data.currentLimit <= 100 &&
+        data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 400 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('reviewedByUid' in data) || (data.reviewedByUid is string && data.reviewedByUid.size() <= 128)) &&
+        (!('reviewedByEmail' in data) || (data.reviewedByEmail is string && data.reviewedByEmail.size() <= 120)) &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 400)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGbpConnection(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'clientEmail', 'connectionStatus',
+          'connectedEmail', 'accountName', 'locationName', 'locationTitle', 'placeId',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'clientEmail', 'connectionStatus',
+          'connectedEmail', 'accountName', 'locationName', 'locationTitle', 'placeId',
+          'lastSyncedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.connectionStatus in ['disconnected', 'connected', 'pending_api_approval'] &&
+        data.connectedEmail is string && data.connectedEmail.size() <= 120 &&
+        data.accountName is string && data.accountName.size() <= 160 &&
+        data.locationName is string && data.locationName.size() <= 200 &&
+        data.locationTitle is string && data.locationTitle.size() <= 160 &&
+        data.placeId is string && data.placeId.size() <= 120 &&
+        (!('lastSyncedAt' in data) || data.lastSyncedAt is timestamp) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGbpReview(data) {
+      return data.keys().hasAll([
+          'businessId', 'ownerId', 'clientEmail', 'externalReviewId', 'reviewerName',
+          'starRating', 'comment', 'reviewDate', 'source', 'aiReplyText', 'replyStatus',
+          'aiProvider', 'aiModelId', 'inputTokens', 'outputTokens', 'totalTokens',
+          'estimatedCostUsd', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'ownerId', 'clientEmail', 'externalReviewId', 'reviewerName',
+          'starRating', 'comment', 'reviewDate', 'source', 'aiReplyText', 'replyStatus',
+          'aiProvider', 'aiModelId', 'inputTokens', 'outputTokens', 'totalTokens',
+          'estimatedCostUsd', 'errorMessage', 'publishedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.externalReviewId is string && data.externalReviewId.size() >= 1 && data.externalReviewId.size() <= 160 &&
+        data.reviewerName is string && data.reviewerName.size() >= 1 && data.reviewerName.size() <= 120 &&
+        data.starRating is int && data.starRating >= 1 && data.starRating <= 5 &&
+        data.comment is string && data.comment.size() <= 4000 &&
+        data.reviewDate is string && data.reviewDate.size() <= 64 &&
+        data.source in ['google_gbp_api', 'pubsub_webhook', 'manual_sync'] &&
+        data.aiReplyText is string && data.aiReplyText.size() <= 4000 &&
+        data.replyStatus in [
+          'pending_generation', 'awaiting_approval', 'auto_published',
+          'manually_approved', 'published', 'failed', 'ignored'
+        ] &&
+        (data.starRating > 2 || data.replyStatus != 'auto_published') &&
+        data.aiProvider is string && data.aiProvider.size() <= 40 &&
+        data.aiModelId is string && data.aiModelId.size() <= 80 &&
+        data.inputTokens is int && data.inputTokens >= 0 &&
+        data.outputTokens is int && data.outputTokens >= 0 &&
+        data.totalTokens is int && data.totalTokens >= 0 &&
+        data.estimatedCostUsd is number && data.estimatedCostUsd >= 0 &&
+        (!('errorMessage' in data) || (data.errorMessage is string && data.errorMessage.size() <= 400)) &&
+        (!('publishedAt' in data) || (data.publishedAt is string && data.publishedAt.size() <= 64)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWeeklyReport(data) {
+      return data.keys().hasAll([
+          'businessId', 'businessName', 'ownerId', 'clientEmail', 'weekStart', 'weekEnd',
+          'reviewGenMetrics', 'autoReplyMetrics', 'aiUsageMetrics',
+          'dispatchedToEmails', 'generatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'businessId', 'businessName', 'ownerId', 'clientEmail', 'weekStart', 'weekEnd',
+          'reviewGenMetrics', 'autoReplyMetrics', 'aiUsageMetrics',
+          'dispatchedToEmails', 'dispatchedAt', 'generatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.businessId) &&
+        data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 120 &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.clientEmail is string && data.clientEmail.size() <= 120 &&
+        data.weekStart is string && data.weekStart.size() >= 8 && data.weekStart.size() <= 20 &&
+        data.weekEnd is string && data.weekEnd.size() >= 8 && data.weekEnd.size() <= 20 &&
+        data.reviewGenMetrics is map &&
+        data.autoReplyMetrics is map &&
+        data.aiUsageMetrics is map &&
+        data.dispatchedToEmails is list && data.dispatchedToEmails.size() <= 15 &&
+        (data.dispatchedToEmails.size() == 0 || (data.dispatchedToEmails[0] is string && data.dispatchedToEmails[0].size() <= 120)) &&
+        (!('dispatchedAt' in data) || (data.dispatchedAt is string && data.dispatchedAt.size() <= 64)) &&
+        data.generatedBy is string && data.generatedBy.size() >= 1 && data.generatedBy.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
     }
 
     function isValidBusinessIntegration(data) {
@@ -276,16 +535,21 @@ service cloud.firestore {
           'inputTokens', 'outputTokens', 'totalTokens', 'status', 'errorCode', 'createdAt'
         ]) &&
         data.keys().hasOnly([
-          'requestId', 'businessId', 'ownerId', 'modelName',
-          'inputTokens', 'outputTokens', 'totalTokens', 'status', 'errorCode', 'createdAt'
+          'requestId', 'businessId', 'ownerId', 'clientEmail', 'provider', 'operationType',
+          'modelName', 'inputTokens', 'outputTokens', 'totalTokens', 'estimatedCostUsd',
+          'status', 'errorCode', 'createdAt'
         ]) &&
         isValidId(data.requestId) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientEmail' in data) || (data.clientEmail is string && data.clientEmail.size() <= 120)) &&
+        (!('provider' in data) || (data.provider is string && data.provider.size() <= 40)) &&
+        (!('operationType' in data) || data.operationType in ['review_draft', 'gbp_auto_reply', 'seo_keywords']) &&
         data.modelName is string && data.modelName.size() <= 80 &&
         data.inputTokens is int && data.inputTokens >= 0 &&
         data.outputTokens is int && data.outputTokens >= 0 &&
         data.totalTokens is int && data.totalTokens >= 0 &&
+        (!('estimatedCostUsd' in data) || (data.estimatedCostUsd is number && data.estimatedCostUsd >= 0)) &&
         data.status in ['success', 'failed'] &&
         data.errorCode is string && data.errorCode.size() <= 64 &&
         data.createdAt is timestamp;
@@ -298,13 +562,6 @@ service cloud.firestore {
         data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
         data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128 &&
         data.createdAt is timestamp;
-    }
-
-    function isAssignedClient(data) {
-      return isVerifiedUser() && (
-        data.ownerId == request.auth.uid ||
-        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail.lower() == userEmailLower())
-      );
     }
 
     function isValidAdminEmailDoc(data) {
@@ -356,6 +613,7 @@ service cloud.firestore {
         incoming().ownerId == request.auth.uid &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
+        (!('qrStandLimit' in incoming()) || incoming().qrStandLimit == 4 || isAdmin()) &&
         (
           isAdmin() ||
           (incoming().clientEmail == userEmailLower() && incoming().clientAccessLevel == 'full')
@@ -367,27 +625,30 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time &&
         (
-          // Action 1: Platform Management full administration
+          // Action 1: Platform Management full administration (includes qrStandLimit approval)
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
               'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'seoKeywords', 'slug', 'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+              'questions', 'seoKeywords', 'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+              'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
-          // Action 2: Assigned Client with 'full' tier
+          // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit or permissions)
           (
             isAssignedClient(existing()) &&
             existing().clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
+            (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'seoKeywords', 'slug', 'lifecycleStatus', 'tenantFirebase', 'updatedAt'
+              'questions', 'seoKeywords', 'slug', 'gbpSettings', 'weeklyReportConfig',
+              'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
           // Action 3: Assigned Client with 'qr_and_questions' tier
@@ -534,12 +795,18 @@ service cloud.firestore {
             incoming().styleDetailed >= existing().styleDetailed && incoming().styleDetailed <= existing().styleDetailed + 1 &&
             incoming().styleProfessional >= existing().styleProfessional && incoming().styleProfessional <= existing().styleProfessional + 1 &&
             (
-              (incoming().scans == existing().scans + 1 && incoming().generated == existing().generated && incoming().redirects == existing().redirects) ||
-              (incoming().generated == existing().generated + 1 && incoming().scans == existing().scans && incoming().redirects == existing().redirects) ||
-              (incoming().redirects == existing().redirects + 1 && incoming().scans == existing().scans && incoming().generated == existing().generated)
+              (incoming().scans == existing().scans + 1 && incoming().generated == existing().generated && incoming().redirects == existing().redirects && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
+              (incoming().generated == existing().generated + 1 && incoming().scans == existing().scans && incoming().redirects == existing().redirects && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
+              (incoming().redirects == existing().redirects + 1 && incoming().scans == existing().scans && incoming().generated == existing().generated && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
+              (
+                ((!('formsStarted' in existing()) && incoming().formsStarted == 1) || ('formsStarted' in existing() && incoming().formsStarted == existing().formsStarted + 1)) &&
+                incoming().scans == existing().scans &&
+                incoming().generated == existing().generated &&
+                incoming().redirects == existing().redirects
+              )
             ) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'scans', 'generated', 'redirects',
+              'scans', 'formsStarted', 'generated', 'redirects',
               'styleShort', 'styleDetailed', 'styleProfessional', 'updatedAt'
             ])
           )
@@ -579,7 +846,271 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // 6. Central Non-Secret Business Infrastructure Summaries
+    // 6. In-Store QR Stand Management (Deterministic slots enforce business qrStandLimit)
+    match /qrStands/{standId} {
+      allow get: if isVerifiedUser() && isValidId(standId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing()))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(standId) &&
+        isValidQrStand(incoming()) &&
+        standId == (incoming().businessId + '_slot_' + string(incoming().slotNumber)) &&
+        exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        incoming().slotNumber <= getBusinessStandLimit(incoming().businessId) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data) &&
+            get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.clientAccessLevel in ['qr_and_questions', 'full']
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(standId) &&
+        isValidQrStand(incoming()) &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().slotNumber == existing().slotNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'clientUid', 'clientEmail', 'slug', 'standCode', 'name', 'placement',
+              'isActive', 'fgColor', 'bgColor', 'includeLogo', 'updatedAt'
+            ])
+          ) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
+            get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel in ['qr_and_questions', 'full'] &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'standCode', 'name', 'placement', 'isActive', 'fgColor', 'bgColor', 'includeLogo', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(standId) && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
+          get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel in ['qr_and_questions', 'full']
+        )
+      );
+    }
+
+    // 7. Additional QR Stand Requests (Client creates pending; Admin approves/rejects)
+    match /qrStandRequests/{requestId} {
+      allow get: if isVerifiedUser() && isValidId(requestId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing()))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(requestId) &&
+        isValidQrStandRequest(incoming()) &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data)
+        );
+      allow update: if isAdmin() &&
+        isValidId(requestId) &&
+        isValidQrStandRequest(incoming()) &&
+        existing().status == 'pending' &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().status in ['approved', 'rejected'] &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'reviewedByUid', 'reviewedByEmail', 'adminNote', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(requestId);
+    }
+
+    // 8. Google Business Profile OAuth Connection Metadata (No secret tokens stored)
+    match /gbpConnections/{businessId} {
+      allow get: if isVerifiedUser() && isValidId(businessId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing())) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data)
+        )
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidGbpConnection(incoming()) &&
+        incoming().businessId == businessId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          (
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data) &&
+            get(/databases/$(database)/documents/businesses/$(businessId)).data.clientAccessLevel == 'full'
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(businessId) &&
+        isValidGbpConnection(incoming()) &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+            isAssignedClient(existing()) &&
+            get(/databases/$(database)/documents/businesses/$(businessId)).data.clientAccessLevel == 'full' &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'connectionStatus', 'connectedEmail', 'accountName', 'locationName',
+              'locationTitle', 'placeId', 'lastSyncedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(businessId);
+    }
+
+    // 9. Google Business Profile Reviews & AI Auto-Reply Workflow
+    match /gbpReviews/{reviewId} {
+      allow get: if isVerifiedUser() && isValidId(reviewId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing()))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(reviewId) &&
+        isValidGbpReview(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          (
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data) &&
+            get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.clientAccessLevel == 'full'
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(reviewId) &&
+        isValidGbpReview(incoming()) &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().externalReviewId == existing().externalReviewId &&
+        incoming().starRating == existing().starRating &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'aiReplyText', 'replyStatus', 'aiProvider', 'aiModelId',
+              'inputTokens', 'outputTokens', 'totalTokens', 'estimatedCostUsd',
+              'errorMessage', 'publishedAt', 'updatedAt'
+            ])
+          ) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(existing()) &&
+            get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'full' &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'aiReplyText', 'replyStatus', 'aiProvider', 'aiModelId',
+              'inputTokens', 'outputTokens', 'totalTokens', 'estimatedCostUsd',
+              'errorMessage', 'publishedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(reviewId);
+    }
+
+    // 10. Weekly Business Reports (Monday-Sunday snapshots)
+    match /weeklyReports/{reportId} {
+      allow get: if isVerifiedUser() && isValidId(reportId) && (
+        isAdmin() ||
+        (resource != null && isAssignedClient(existing()))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(reportId) &&
+        isValidWeeklyReport(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data)
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(reportId) &&
+        isValidWeeklyReport(incoming()) &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().weekStart == existing().weekStart &&
+        incoming().weekEnd == existing().weekEnd &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'businessName', 'clientEmail', 'reviewGenMetrics', 'autoReplyMetrics', 'aiUsageMetrics',
+              'dispatchedToEmails', 'dispatchedAt', 'generatedBy', 'updatedAt'
+            ])
+          ) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(existing()) &&
+            incoming().clientEmail == existing().clientEmail &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'businessName', 'reviewGenMetrics', 'autoReplyMetrics', 'aiUsageMetrics',
+              'dispatchedToEmails', 'dispatchedAt', 'generatedBy', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(reportId);
+    }
+
+    // 11. Central Non-Secret Business Infrastructure Summaries
     match /businessIntegrations/{businessId} {
       allow get: if isVerifiedUser() && isValidId(businessId) && (
         isAdmin() ||
@@ -610,14 +1141,148 @@ service cloud.firestore {
       allow delete: if isVerifiedUser() && isValidId(businessId) && isAdmin();
     }
 
-    // 7. Immutable AI Token Usage Logs Summary
+    // 12. Immutable AI Token Usage Logs Summary
     match /aiUsageLogs/{logId} {
-      allow get: if isVerifiedUser() && isValidId(logId) && (isAdmin() || (resource != null && existing().ownerId == request.auth.uid));
-      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
+      allow get: if isVerifiedUser() && isValidId(logId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerId == request.auth.uid ||
+          (existing().clientEmail is string && existing().clientEmail.size() > 0 && existing().clientEmail.lower() == userEmailLower())
+        ))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+      );
       allow create: if isValidId(logId) &&
         isValidAiUsageLog(incoming()) &&
-        incoming().createdAt == request.time;
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId;
       allow update, delete: if false;
+    }
+
+    // 13. Immutable Customer Feedback Submissions (preserved even if draft is deleted)
+    match /feedbackSubmissions/{submissionId} {
+      allow get: if isVerifiedUser() && isValidId(submissionId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerId == request.auth.uid ||
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+        ))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+      );
+      allow create: if isValidId(submissionId) &&
+        isValidFeedbackSubmission(incoming()) &&
+        incoming().submissionId == submissionId &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+        (
+          !('clientUid' in incoming()) ||
+          incoming().clientUid == '' ||
+          (
+            'clientUid' in get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data &&
+            incoming().clientUid == get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.clientUid
+          )
+        );
+      allow update, delete: if false;
+    }
+
+    // 14. Multilingual Customer Review Drafts (Generated -> Edited -> Copied -> Deleted)
+    match /reviewDrafts/{draftId} {
+      allow get: if isVerifiedUser() && isValidId(draftId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerId == request.auth.uid ||
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+        ))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+      );
+      allow create: if isValidId(draftId) &&
+        isValidReviewDraft(incoming()) &&
+        incoming().draftId == draftId &&
+        incoming().status == 'Generated' &&
+        incoming().createdAt == request.time &&
+        incoming().generatedAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
+        get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+        exists(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)) &&
+        get(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)).data.businessId == incoming().businessId &&
+        (
+          !('clientUid' in incoming()) ||
+          incoming().clientUid == '' ||
+          (
+            'clientUid' in get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data &&
+            incoming().clientUid == get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.clientUid
+          )
+        );
+      allow update: if isValidId(draftId) &&
+        isValidReviewDraft(incoming()) &&
+        incoming().draftId == existing().draftId &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().slug == existing().slug &&
+        incoming().feedbackSubmissionId == existing().feedbackSubmissionId &&
+        incoming().language == existing().language &&
+        incoming().reviewStyle == existing().reviewStyle &&
+        incoming().variationSeed == existing().variationSeed &&
+        incoming().sessionId == existing().sessionId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().generatedAt == existing().generatedAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'reviewText', 'status', 'copiedAt', 'deletedAt', 'updatedAt'
+            ])
+          ) ||
+          (
+            existing().status != 'Deleted' &&
+            exists(/databases/$(database)/documents/publicProfiles/$(existing().slug)) &&
+            get(/databases/$(database)/documents/publicProfiles/$(existing().slug)).data.qrConfig.isActive == true &&
+            (
+              (
+                incoming().status == 'Edited' &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'reviewText', 'status', 'updatedAt'
+                ])
+              ) ||
+              (
+                incoming().status == 'Copied' &&
+                'copiedAt' in incoming() &&
+                incoming().copiedAt == request.time &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'reviewText', 'status', 'copiedAt', 'updatedAt'
+                ])
+              ) ||
+              (
+                incoming().status == 'Deleted' &&
+                'deletedAt' in incoming() &&
+                incoming().deletedAt == request.time &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'deletedAt', 'updatedAt'
+                ])
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin() && isValidId(draftId);
     }
   }
 }

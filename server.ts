@@ -8,10 +8,16 @@ import {
   checkRateLimit,
   getHealthPayload,
   isOriginAllowed,
+  processGbpProxy,
+  processGenerateReply,
   processGenerateReview,
   processGenerateSeoKeywords,
+  processValidateQrStandSlot,
+  type GbpProxyBody,
+  type GenerateReplyBody,
   type GenerateReviewBody,
   type GenerateSeoKeywordsBody,
+  type ValidateQrStandSlotBody,
 } from './api/_lib/apiCore.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +31,7 @@ interface AuthenticatedRequest extends Request {
     uid: string;
     email: string;
   };
+  rawBearerToken?: string;
 }
 
 function getClientIp(req: Request): string {
@@ -63,6 +70,9 @@ async function requireAuthenticatedUser(
   if (result.user) {
     req.authUser = result.user;
   }
+  if (result.rawToken) {
+    req.rawBearerToken = result.rawToken;
+  }
   next();
 }
 
@@ -98,7 +108,7 @@ async function startServer() {
   });
 
   const publicReviewLimiter = createRateLimiter(30, 5 * 60 * 1000);
-  const seoKeywordLimiter = createRateLimiter(30, 5 * 60 * 1000);
+  const authenticatedLimiter = createRateLimiter(40, 5 * 60 * 1000);
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json(getHealthPayload());
@@ -107,7 +117,7 @@ async function startServer() {
   app.post(
     '/api/generate-seo-keywords',
     requireAuthenticatedUser,
-    seoKeywordLimiter,
+    authenticatedLimiter,
     async (req: Request, res: Response) => {
       const result = await processGenerateSeoKeywords(
         req.body as Partial<GenerateSeoKeywordsBody>,
@@ -120,6 +130,39 @@ async function startServer() {
     const result = await processGenerateReview(req.body as Partial<GenerateReviewBody>);
     res.status(result.status).json(result.data);
   });
+
+  app.post(
+    '/api/generate-reply',
+    requireAuthenticatedUser,
+    authenticatedLimiter,
+    async (req: Request, res: Response) => {
+      const result = await processGenerateReply(req.body as Partial<GenerateReplyBody>);
+      res.status(result.status).json(result.data);
+    },
+  );
+
+  app.post(
+    '/api/qr-stand-authorize',
+    requireAuthenticatedUser,
+    authenticatedLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const result = await processValidateQrStandSlot(
+        req.body as Partial<ValidateQrStandSlotBody>,
+        req.rawBearerToken,
+      );
+      res.status(result.status).json(result.data);
+    },
+  );
+
+  app.post(
+    '/api/gbp-sync',
+    requireAuthenticatedUser,
+    authenticatedLimiter,
+    async (req: Request, res: Response) => {
+      const result = await processGbpProxy(req.body as Partial<GbpProxyBody>);
+      res.status(result.status).json(result.data);
+    },
+  );
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');

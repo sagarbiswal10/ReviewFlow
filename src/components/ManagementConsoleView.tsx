@@ -3,10 +3,15 @@ import type { User } from 'firebase/auth';
 import {
   Activity,
   ArrowLeft,
+  Bot,
   Building2,
   Check,
   CheckCircle2,
+  Coins,
+  Download,
   Eye,
+  FileBarChart2,
+  Layers,
   Loader2,
   LogOut,
   Mail,
@@ -18,6 +23,7 @@ import {
   Search,
   Shield,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   UserCheck,
   UserPlus,
@@ -26,12 +32,15 @@ import {
 import type {
   AdminEmail,
   AdminUser,
+  AiUsageLog,
   Business,
   BusinessStats,
   ClientAccessLevel,
   EnabledFeatures,
   PublicProfile,
+  QrStandRequest,
   ReviewEvent,
+  WeeklyReport,
 } from '../types';
 import {
   BOOTSTRAPPED_ADMIN_EMAIL,
@@ -44,17 +53,40 @@ import {
   subscribeToAdmins,
   updateBusiness,
 } from '../services/businessService';
+import {
+  generateAndSaveWeeklyReport,
+  getMondaySundayWindow,
+  isMondayToday,
+  reviewQrStandRequest,
+  subscribeToAllAiUsage,
+  subscribeToAllQrStandRequests,
+  subscribeToAllWeeklyReports,
+} from '../services/platformFeaturesService';
+import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 import { BusinessLogo } from './BusinessLogo';
 import { OverviewTab } from './OverviewTab';
 import { QrStudioTab } from './QrStudioTab';
 import { QuestionBuilderTab } from './QuestionBuilderTab';
 import { BrandingTab } from './BrandingTab';
 import { CustomerReviewFlow } from './CustomerReviewFlow';
+import { QrStandsTab } from './QrStandsTab';
+import { GbpAutoReplyTab } from './GbpAutoReplyTab';
+import { WeeklyReportsTab } from './WeeklyReportsTab';
 
-type AdminSection = 'directory' | 'clients' | 'activity' | 'team';
+type AdminSection =
+  | 'directory'
+  | 'stand_requests'
+  | 'ai_usage'
+  | 'weekly_reports'
+  | 'clients'
+  | 'activity'
+  | 'team';
 type BusinessDetailTab =
   | 'access'
   | 'overview'
+  | 'stands'
+  | 'gbp_reply'
+  | 'weekly'
   | 'qr'
   | 'questions'
   | 'branding'
@@ -107,15 +139,29 @@ export function ManagementConsoleView({
   );
   const [clientEmailInput, setClientEmailInput] = useState('');
   const [accessLevelInput, setAccessLevelInput] = useState<ClientAccessLevel>('full');
+  const [qrStandLimitInput, setQrStandLimitInput] = useState<number>(4);
   const [featuresInput, setFeaturesInput] = useState<EnabledFeatures>({
     aiReviewDrafts: true,
     customQuestions: true,
     pdfPosterExport: true,
     analyticsView: true,
+    inStoreQrStands: true,
+    gbpAutoReply: true,
+    weeklyReports: true,
   });
   const [isSavingGovernance, setIsSavingGovernance] = useState(false);
   const [governanceNotice, setGovernanceNotice] = useState<string | null>(null);
   const [governanceError, setGovernanceError] = useState<string | null>(null);
+
+  const [standRequests, setStandRequests] = useState<QrStandRequest[]>([]);
+  const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  const [requestNoteMap, setRequestNoteMap] = useState<Record<string, string>>({});
+  const [requestBanner, setRequestBanner] = useState<string | null>(null);
+
+  const [globalAiLogs, setGlobalAiLogs] = useState<AiUsageLog[]>([]);
+  const [globalReports, setGlobalReports] = useState<WeeklyReport[]>([]);
+  const [isBatchGeneratingReports, setIsBatchGeneratingReports] = useState(false);
+  const [batchReportNotice, setBatchReportNotice] = useState<string | null>(null);
 
   // Client Portal Access (Gmail) quick-assign state
   const [assignBizId, setAssignBizId] = useState<string>('');
@@ -138,9 +184,15 @@ export function ManagementConsoleView({
   useEffect(() => {
     const unsubUids = subscribeToAdmins((items) => setAdmins(items));
     const unsubEmails = subscribeToAdminEmails((items) => setAdminEmails(items));
+    const unsubStandReqs = subscribeToAllQrStandRequests((items) => setStandRequests(items));
+    const unsubAiLogs = subscribeToAllAiUsage((items) => setGlobalAiLogs(items));
+    const unsubWeekly = subscribeToAllWeeklyReports((items) => setGlobalReports(items));
     return () => {
       unsubUids();
       unsubEmails();
+      unsubStandReqs();
+      unsubAiLogs();
+      unsubWeekly();
     };
   }, []);
 
@@ -161,10 +213,19 @@ export function ManagementConsoleView({
     if (!selectedBiz) return;
     setClientEmailInput(selectedBiz.clientEmail || '');
     setAccessLevelInput(selectedBiz.clientAccessLevel || 'full');
-    setFeaturesInput(selectedBiz.enabledFeatures);
+    setQrStandLimitInput(selectedBiz.qrStandLimit ?? 4);
+    setFeaturesInput({
+      aiReviewDrafts: selectedBiz.enabledFeatures.aiReviewDrafts,
+      customQuestions: selectedBiz.enabledFeatures.customQuestions,
+      pdfPosterExport: selectedBiz.enabledFeatures.pdfPosterExport,
+      analyticsView: selectedBiz.enabledFeatures.analyticsView,
+      inStoreQrStands: selectedBiz.enabledFeatures.inStoreQrStands ?? true,
+      gbpAutoReply: selectedBiz.enabledFeatures.gbpAutoReply ?? true,
+      weeklyReports: selectedBiz.enabledFeatures.weeklyReports ?? true,
+    });
     setGovernanceNotice(null);
     setGovernanceError(null);
-  }, [selectedBiz?.id]);
+  }, [selectedBiz?.id, selectedBiz?.qrStandLimit]);
 
   const aggregateStats = useMemo(() => {
     let totalScans = 0;
@@ -223,6 +284,147 @@ export function ManagementConsoleView({
     );
   }, [businesses, clientSearchQuery]);
 
+  const pendingStandRequestsCount = useMemo(
+    () => standRequests.filter((r) => r.status === 'pending').length,
+    [standRequests],
+  );
+
+  const aiGlobalSummary = useMemo(() => {
+    let totalTokens = 0;
+    let totalCostUsd = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    const byModel = new Map<
+      string,
+      {
+        provider: string;
+        modelName: string;
+        count: number;
+        success: number;
+        failed: number;
+        tokens: number;
+        costUsd: number;
+      }
+    >();
+    const byBusiness = new Map<
+      string,
+      { businessName: string; count: number; tokens: number; costUsd: number }
+    >();
+
+    for (const log of globalAiLogs) {
+      const tokens = log.totalTokens || 0;
+      const cost = log.estimatedCostUsd || 0;
+      totalTokens += tokens;
+      totalCostUsd += cost;
+      if (log.status === 'failed') failedCount += 1;
+      else successCount += 1;
+
+      const provider = log.provider || 'gemini';
+      const modelName = log.modelName || 'gemini-3.1-flash-lite';
+      const mKey = `${provider}::${modelName}`;
+      const mEntry = byModel.get(mKey) || {
+        provider,
+        modelName,
+        count: 0,
+        success: 0,
+        failed: 0,
+        tokens: 0,
+        costUsd: 0,
+      };
+      mEntry.count += 1;
+      if (log.status === 'failed') mEntry.failed += 1;
+      else mEntry.success += 1;
+      mEntry.tokens += tokens;
+      mEntry.costUsd += cost;
+      byModel.set(mKey, mEntry);
+
+      const bEntry = byBusiness.get(log.businessId) || {
+        businessName: bizNameMap[log.businessId] || log.businessId,
+        count: 0,
+        tokens: 0,
+        costUsd: 0,
+      };
+      bEntry.count += 1;
+      bEntry.tokens += tokens;
+      bEntry.costUsd += cost;
+      byBusiness.set(log.businessId, bEntry);
+    }
+
+    return {
+      totalRequests: globalAiLogs.length,
+      successCount,
+      failedCount,
+      totalTokens,
+      totalCostUsd,
+      models: Array.from(byModel.values()).sort((a, b) => b.count - a.count),
+      businesses: Array.from(byBusiness.entries())
+        .map(([businessId, val]) => ({ businessId, ...val }))
+        .sort((a, b) => b.tokens - a.tokens),
+    };
+  }, [globalAiLogs, bizNameMap]);
+
+  const handleReviewStandRequest = async (
+    req: QrStandRequest,
+    decision: 'approved' | 'rejected',
+  ) => {
+    setProcessingReqId(req.id);
+    setRequestBanner(null);
+    try {
+      await reviewQrStandRequest({
+        request: req,
+        decision,
+        adminUser: user,
+        adminNote: requestNoteMap[req.id] || '',
+      });
+      setRequestBanner(
+        decision === 'approved'
+          ? `Approved +${req.requestedAdditionalStands} QR stands for ${req.businessName}. New quota: ${req.currentLimit + req.requestedAdditionalStands}.`
+          : `Rejected expansion request for ${req.businessName}.`,
+      );
+      setTimeout(() => setRequestBanner(null), 4000);
+    } catch (err) {
+      setRequestBanner(err instanceof Error ? err.message : 'Unable to process stand request.');
+    } finally {
+      setProcessingReqId(null);
+    }
+  };
+
+  const handleBatchGenerateWeeklyReports = async (choice: 'previous' | 'current') => {
+    setIsBatchGeneratingReports(true);
+    setBatchReportNotice(null);
+    try {
+      const win = getMondaySundayWindow(choice === 'previous' ? -1 : 0);
+      let generated = 0;
+      for (const biz of businesses) {
+        if (biz.enabledFeatures.weeklyReports === false) continue;
+        const existing = globalReports.find(
+          (r) => r.businessId === biz.id && r.weekStart === win.weekStart,
+        );
+        const bizLogs = globalAiLogs.filter((l) => l.businessId === biz.id);
+        await generateAndSaveWeeklyReport({
+          business: biz,
+          events,
+          qrStands: [],
+          gbpReviews: [],
+          aiUsageLogs: bizLogs,
+          generatedBy: user.email || user.uid,
+          weekStart: win.weekStart,
+          weekEnd: win.weekEnd,
+          startMs: win.startMs,
+          endMs: win.endMs,
+          existingReport: existing,
+        });
+        generated += 1;
+      }
+      setBatchReportNotice(
+        `Compiled ${generated} Weekly Business Report(s) for ${win.weekStart} – ${win.weekEnd}.`,
+      );
+      setTimeout(() => setBatchReportNotice(null), 5000);
+    } finally {
+      setIsBatchGeneratingReports(false);
+    }
+  };
+
   const handleSaveGovernance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBiz) return;
@@ -235,11 +437,12 @@ export function ManagementConsoleView({
         {
           clientEmail: normalizeEmail(clientEmailInput),
           clientAccessLevel: accessLevelInput,
+          qrStandLimit: Math.min(100, Math.max(1, Math.round(qrStandLimitInput) || 4)),
           enabledFeatures: featuresInput,
         },
         { isAdmin: true },
       );
-      setGovernanceNotice('Customer Gmail access and portal permissions saved.');
+      setGovernanceNotice('Customer Gmail access, QR stand quota, and portal permissions saved.');
       setTimeout(() => setGovernanceNotice(null), 3000);
     } catch (err) {
       setGovernanceError(err instanceof Error ? err.message : 'Failed to update permissions.');
@@ -364,7 +567,7 @@ export function ManagementConsoleView({
     : null;
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200">
+    <div className="flex flex-col h-full liquid-glass-nav border-r border-white/75">
       <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
         <span className="font-display text-lg font-bold tracking-tight text-slate-900">
           ReviewFlow
@@ -402,6 +605,64 @@ export function ManagementConsoleView({
         >
           <Building2 className="w-4 h-4 shrink-0" />
           <span>All Businesses</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSection('stand_requests');
+            setSelectedBizId(null);
+            setMobileMenuOpen(false);
+          }}
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center justify-between gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+            section === 'stand_requests'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="inline-flex items-center gap-3">
+            <Layers className="w-4 h-4 shrink-0" />
+            <span>QR Stand Requests</span>
+          </span>
+          {pendingStandRequestsCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500 text-white tabular-nums">
+              {pendingStandRequestsCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSection('ai_usage');
+            setSelectedBizId(null);
+            setMobileMenuOpen(false);
+          }}
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
+            section === 'ai_usage'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Coins className="w-4 h-4 shrink-0" />
+          <span>AI Usage &amp; Costs</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSection('weekly_reports');
+            setSelectedBizId(null);
+            setMobileMenuOpen(false);
+          }}
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
+            section === 'weekly_reports'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <FileBarChart2 className="w-4 h-4 shrink-0" />
+          <span>Weekly Reports</span>
         </button>
 
         <button
@@ -484,7 +745,7 @@ export function ManagementConsoleView({
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
+    <div className="min-h-screen spatial-canvas text-slate-900 flex">
       <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
         {sidebarContent}
       </aside>
@@ -492,7 +753,7 @@ export function ManagementConsoleView({
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-slate-900/40"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="relative w-72 max-w-[85vw] h-full z-10">{sidebarContent}</div>
@@ -500,7 +761,7 @@ export function ManagementConsoleView({
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-20 h-16 liquid-glass-nav border-b border-white/75 px-4 sm:px-8 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -529,11 +790,17 @@ export function ManagementConsoleView({
                 <span className="font-semibold text-slate-900 truncate">
                   {section === 'directory'
                     ? 'All Businesses'
-                    : section === 'clients'
-                      ? 'Client Portal Access'
-                      : section === 'activity'
-                        ? 'Global Activity'
-                        : 'Team Admins'}
+                    : section === 'stand_requests'
+                      ? 'QR Stand Requests'
+                      : section === 'ai_usage'
+                        ? 'AI Usage & Costs'
+                        : section === 'weekly_reports'
+                          ? 'Weekly Reports'
+                          : section === 'clients'
+                            ? 'Client Portal Access'
+                            : section === 'activity'
+                              ? 'Global Activity'
+                              : 'Team Admins'}
                 </span>
               )}
             </div>
@@ -568,6 +835,9 @@ export function ManagementConsoleView({
                     [
                       { id: 'access', label: 'Client Access & Features', icon: UserCheck },
                       { id: 'overview', label: 'Analytics', icon: Activity },
+                      { id: 'stands', label: 'QR Stands', icon: Layers },
+                      { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
+                      { id: 'weekly', label: 'Weekly Reports', icon: FileBarChart2 },
                       { id: 'qr', label: 'QR Studio', icon: QrCode },
                       { id: 'questions', label: 'Questions', icon: SlidersHorizontal },
                       { id: 'branding', label: 'Branding', icon: Palette },
@@ -596,7 +866,7 @@ export function ManagementConsoleView({
               {detailTab === 'access' && (
                 <form
                   onSubmit={handleSaveGovernance}
-                  className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-6"
+                  className="liquid-glass rounded-2xl p-6 sm:p-8 space-y-6"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
                     <div>
@@ -628,7 +898,7 @@ export function ManagementConsoleView({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1.5">
                         Assigned Business Client Email
@@ -668,6 +938,22 @@ export function ManagementConsoleView({
                       </select>
                     </div>
 
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                        Active QR Stand Limit (Default: 4)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={qrStandLimitInput}
+                        onChange={(e) => setQrStandLimitInput(Number(e.target.value) || 4)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm font-mono font-semibold"
+                      />
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Strictly enforced by backend API &amp; Firestore Security Rules.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="pt-4 border-t border-slate-200">
@@ -696,6 +982,21 @@ export function ManagementConsoleView({
                           title: 'Client Analytics View',
                           desc: 'Display live scan, draft, and Google redirect counts in /portal.',
                         },
+                        {
+                          key: 'inStoreQrStands' as const,
+                          title: 'In-Store QR Stand Management',
+                          desc: 'Enable multi-stand QR provisioning & per-stand conversion tracking.',
+                        },
+                        {
+                          key: 'gbpAutoReply' as const,
+                          title: 'Google Business Profile AI Auto Reply',
+                          desc: 'Enable GBP OAuth sync, rating-based rules, and AI reply queue.',
+                        },
+                        {
+                          key: 'weeklyReports' as const,
+                          title: 'Weekly Business Reports (Mon–Sun)',
+                          desc: 'Enable automated weekly summaries, PDF downloads, and contact dispatch.',
+                        },
                       ].map((feat) => (
                         <label
                           key={feat.key}
@@ -707,7 +1008,7 @@ export function ManagementConsoleView({
                           </div>
                           <input
                             type="checkbox"
-                            checked={featuresInput[feat.key]}
+                            checked={Boolean(featuresInput[feat.key])}
                             onChange={(e) =>
                               setFeaturesInput((prev) => ({
                                 ...prev,
@@ -735,6 +1036,35 @@ export function ManagementConsoleView({
                   }}
                 />
               )}
+              {detailTab === 'stands' && (
+                <QrStandsTab
+                  business={selectedBiz}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin
+                  events={events}
+                  canEdit
+                />
+              )}
+              {detailTab === 'gbp_reply' && (
+                <GbpAutoReplyTab
+                  business={selectedBiz}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin
+                  canEdit
+                />
+              )}
+              {detailTab === 'weekly' && (
+                <WeeklyReportsTab
+                  business={selectedBiz}
+                  userUid={user.uid}
+                  userEmail={user.email || ''}
+                  isAdmin
+                  events={events}
+                  canEdit
+                />
+              )}
               {detailTab === 'qr' && <QrStudioTab business={selectedBiz} isAdmin />}
               {detailTab === 'questions' && (
                 <QuestionBuilderTab
@@ -760,7 +1090,7 @@ export function ManagementConsoleView({
             <>
               {/* Cross-Business Aggregate KPIs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
                   <p className="text-xs font-medium text-slate-500">Total Businesses</p>
                   <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
                     {aggregateStats.totalBusinesses}
@@ -769,21 +1099,21 @@ export function ManagementConsoleView({
                     {aggregateStats.activeQrCount} active QR codes
                   </p>
                 </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
                   <p className="text-xs font-medium text-slate-500">Platform QR Scans</p>
                   <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
                     {aggregateStats.totalScans}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">Across all client storefronts</p>
                 </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
                   <p className="text-xs font-medium text-slate-500">AI Drafts Generated</p>
                   <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
                     {aggregateStats.totalDrafts}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">Personalized customer drafts</p>
                 </div>
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
                   <p className="text-xs font-medium text-slate-500">Google Redirects</p>
                   <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
                     {aggregateStats.totalRedirects}
@@ -793,7 +1123,7 @@ export function ManagementConsoleView({
               </div>
 
               {/* Filter Toolbar & All-Businesses Table */}
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="liquid-glass rounded-2xl overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="relative flex-1 max-w-sm">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -928,11 +1258,357 @@ export function ManagementConsoleView({
                 )}
               </div>
             </>
+          ) : section === 'stand_requests' ? (
+            <div className="space-y-6">
+              <div className="liquid-glass rounded-2xl p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+                  <div>
+                    <h2 className="font-display text-xl font-bold text-slate-900">
+                      Additional QR Stand Approval Queue
+                    </h2>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Approving a request atomically raises the business&apos;s maximum active QR stand limit in Firestore &amp; backend checks.
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-800 text-xs font-bold tabular-nums">
+                    {pendingStandRequestsCount} Pending
+                  </span>
+                </div>
+
+                {requestBanner && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+                    {requestBanner}
+                  </div>
+                )}
+
+                {standRequests.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-8 text-center">
+                    No QR stand expansion requests have been submitted yet.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {standRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="p-4 rounded-xl border border-slate-200 bg-white/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-sm text-slate-900">
+                              {req.businessName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-[11px] font-mono font-bold text-slate-700">
+                              +{req.requestedAdditionalStands} stands (Current max {req.currentLimit})
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase ${
+                                req.status === 'approved'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : req.status === 'rejected'
+                                    ? 'bg-red-50 text-red-700'
+                                    : 'bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              {req.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600">{req.reason}</p>
+                          <p className="text-[11px] text-slate-400 font-mono">
+                            Client: {req.clientEmail || 'Unassigned'} · Submitted{' '}
+                            {formatTime(req.createdAt)}
+                          </p>
+                        </div>
+
+                        {req.status === 'pending' ? (
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <input
+                              type="text"
+                              value={requestNoteMap[req.id] || ''}
+                              onChange={(e) =>
+                                setRequestNoteMap((prev) => ({ ...prev, [req.id]: e.target.value }))
+                              }
+                              placeholder="Optional admin note..."
+                              className="h-9 px-3 rounded-lg border border-slate-200 text-xs w-48"
+                            />
+                            <button
+                              type="button"
+                              disabled={processingReqId === req.id}
+                              onClick={() => handleReviewStandRequest(req, 'approved')}
+                              className="px-3.5 py-2 rounded-lg bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold cursor-pointer whitespace-nowrap disabled:opacity-50"
+                            >
+                              Approve (+{req.requestedAdditionalStands})
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingReqId === req.id}
+                              onClick={() => handleReviewStandRequest(req, 'rejected')}
+                              className="px-3.5 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-700 text-xs font-semibold cursor-pointer whitespace-nowrap disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500 text-right shrink-0">
+                            Reviewed by <span className="font-mono">{req.reviewedByEmail || 'Admin'}</span>
+                            {req.adminNote && <p className="text-[11px]">Note: {req.adminNote}</p>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : section === 'ai_usage' ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
+                  <p className="text-xs font-medium text-slate-500">Total AI Requests</p>
+                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
+                    {aiGlobalSummary.totalRequests}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 tabular-nums">
+                    {aiGlobalSummary.successCount} succeeded · {aiGlobalSummary.failedCount} failed
+                  </p>
+                </div>
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
+                  <p className="text-xs font-medium text-slate-500">Total Tokens Processed</p>
+                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
+                    {aiGlobalSummary.totalTokens.toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Drafts + GBP auto replies</p>
+                </div>
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
+                  <p className="text-xs font-medium text-slate-500">Estimated Platform AI Cost</p>
+                  <p className="mt-2 font-display text-3xl font-bold text-[#005c55] tabular-nums">
+                    ${aiGlobalSummary.totalCostUsd.toFixed(4)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Recorded per Gemini generation</p>
+                </div>
+                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
+                  <p className="text-xs font-medium text-slate-500">Active AI Models</p>
+                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
+                    {aiGlobalSummary.models.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Tracked providers &amp; model IDs</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="liquid-glass rounded-2xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200">
+                    <h3 className="font-display text-base font-bold text-slate-900">
+                      Model Breakdown (Provider &amp; Model ID)
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                          <th className="py-2.5 px-4">Provider / Model</th>
+                          <th className="py-2.5 px-4 text-right">Requests</th>
+                          <th className="py-2.5 px-4 text-right">Tokens</th>
+                          <th className="py-2.5 px-4 text-right">Est. Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {aiGlobalSummary.models.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-6 text-center text-slate-500">
+                              No AI generation telemetry recorded yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          aiGlobalSummary.models.map((m) => (
+                            <tr key={`${m.provider}-${m.modelName}`}>
+                              <td className="py-2.5 px-4">
+                                <span className="font-bold uppercase text-slate-600 mr-1.5">
+                                  {m.provider}
+                                </span>
+                                <span className="font-mono text-slate-900">{m.modelName}</span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                                {m.success}/{m.count}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                                {m.tokens.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono font-bold text-[#005c55] tabular-nums">
+                                ${m.costUsd.toFixed(5)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="liquid-glass rounded-2xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200">
+                    <h3 className="font-display text-base font-bold text-slate-900">
+                      Usage by Business Account
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                          <th className="py-2.5 px-4">Business</th>
+                          <th className="py-2.5 px-4 text-right">AI Calls</th>
+                          <th className="py-2.5 px-4 text-right">Tokens</th>
+                          <th className="py-2.5 px-4 text-right">Est. Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {aiGlobalSummary.businesses.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-6 text-center text-slate-500">
+                              No per-business AI usage logged yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          aiGlobalSummary.businesses.map((b) => (
+                            <tr key={b.businessId}>
+                              <td className="py-2.5 px-4 font-semibold text-slate-900">
+                                {b.businessName}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                                {b.count}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                                {b.tokens.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-mono font-bold text-[#005c55] tabular-nums">
+                                ${b.costUsd.toFixed(5)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : section === 'weekly_reports' ? (
+            <div className="space-y-6">
+              <div className="liquid-glass rounded-2xl p-6 space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-display text-xl font-bold text-slate-900">
+                        Weekly Business Reports (Monday–Sunday)
+                      </h2>
+                      {isMondayToday() && (
+                        <span className="px-2.5 py-0.5 rounded-md bg-teal-50 text-teal-800 text-xs font-bold">
+                          Monday Weekly Cycle Ready
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Generate and download automated Monday–Sunday executive PDF reports across all client businesses.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isBatchGeneratingReports || businesses.length === 0}
+                      onClick={() => handleBatchGenerateWeeklyReports('current')}
+                      className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[#0f766e]" />
+                      <span>Compile Current Week</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBatchGeneratingReports || businesses.length === 0}
+                      onClick={() => handleBatchGenerateWeeklyReports('previous')}
+                      className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    >
+                      {isBatchGeneratingReports ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <FileBarChart2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>Run Monday Mon–Sun Batch</span>
+                    </button>
+                  </div>
+                </div>
+
+                {batchReportNotice && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+                    {batchReportNotice}
+                  </div>
+                )}
+              </div>
+
+              <div className="liquid-glass rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                  <h3 className="font-display text-base font-bold text-slate-900">
+                    Stored Business Weekly Snapshots ({globalReports.length})
+                  </h3>
+                </div>
+                {globalReports.length === 0 ? (
+                  <p className="p-8 text-center text-sm text-slate-500">
+                    No weekly reports generated yet. Use the batch actions above or open a business to generate its weekly snapshot.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                          <th className="py-3 px-6">Business</th>
+                          <th className="py-3 px-4">Week Window</th>
+                          <th className="py-3 px-4 text-right">Scans / Google</th>
+                          <th className="py-3 px-4 text-right">GBP AI Replies</th>
+                          <th className="py-3 px-4 text-right">Tokens / Cost</th>
+                          <th className="py-3 px-6 text-right">Export</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {globalReports.map((rep) => (
+                          <tr key={rep.id} className="hover:bg-slate-50/70">
+                            <td className="py-3 px-6 font-semibold text-slate-900 whitespace-nowrap">
+                              {rep.businessName}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                              {rep.weekStart} – {rep.weekEnd}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono tabular-nums">
+                              {rep.reviewGenMetrics.totalScans} / {rep.reviewGenMetrics.googleRedirects}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono tabular-nums">
+                              {rep.autoReplyMetrics.aiRepliesGenerated} ({rep.autoReplyMetrics.autoPublished} auto)
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono tabular-nums">
+                              {rep.aiUsageMetrics.totalTokens.toLocaleString()} · $
+                              {rep.aiUsageMetrics.estimatedCostUsd.toFixed(4)}
+                            </td>
+                            <td className="py-3 px-6 text-right">
+                              <button
+                                type="button"
+                                onClick={() => downloadWeeklyReportPdf(rep)}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>PDF</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : section === 'clients' ? (
             <div className="space-y-6">
               <form
                 onSubmit={handleSaveClientAccess}
-                className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5"
+                className="liquid-glass rounded-2xl p-6 sm:p-8 space-y-5"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
                   <div>
@@ -1033,7 +1709,7 @@ export function ManagementConsoleView({
                 )}
               </form>
 
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="liquid-glass rounded-2xl overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-display text-base font-bold text-slate-900">
@@ -1144,7 +1820,7 @@ export function ManagementConsoleView({
               </div>
             </div>
           ) : section === 'activity' ? (
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="liquid-glass rounded-2xl overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                 <h2 className="font-display text-lg font-bold text-slate-900">
                   Cross-Business Activity Feed
@@ -1178,12 +1854,24 @@ export function ManagementConsoleView({
                           <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
                             {ev.eventType === 'scan'
                               ? 'QR Scan'
-                              : ev.eventType === 'generate'
-                                ? 'AI Draft Created'
-                                : 'Opened Google Review'}
+                              : ev.eventType === 'form_start'
+                                ? 'Started Feedback Form'
+                                : ev.eventType === 'generate'
+                                  ? 'AI Draft Created'
+                                  : 'Opened Google Review'}
+                            {(ev.standName || ev.standCode) && (
+                              <span className="ml-1.5 font-mono text-[11px] text-[#005c55]">
+                                ({ev.standName || ev.standCode})
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-slate-600 capitalize whitespace-nowrap">
                             {ev.reviewStyle || '—'}
+                            {ev.language && (
+                              <span lang={ev.language} className="ml-1.5 text-[11px] text-[#005c55] font-semibold">
+                                ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'EN'})
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-slate-600 max-w-xs truncate">
                             {ev.selectedHighlights?.length
@@ -1202,7 +1890,7 @@ export function ManagementConsoleView({
             </div>
           ) : (
             <div className="space-y-6 max-w-3xl">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+              <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
                 <div>
                   <h2 className="font-display text-lg font-bold text-slate-900">
                     Business Management Access (By Gmail)
@@ -1286,7 +1974,7 @@ export function ManagementConsoleView({
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+              <div className="liquid-glass rounded-2xl p-6 sm:p-8 space-y-5">
                 <div>
                   <h3 className="font-display text-base font-bold text-slate-900">
                     UID-Based Manager Grants (Legacy)

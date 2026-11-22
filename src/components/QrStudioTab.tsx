@@ -147,7 +147,7 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Left: Live QR Preview & Downloads */}
-      <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 flex flex-col items-center text-center">
+      <div className="lg:col-span-5 liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 flex flex-col items-center text-center">
         <div className="w-full flex items-center justify-between text-xs mb-6">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
             {isActive ? (
@@ -239,7 +239,7 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
 
       {/* Right: Customization & Lifecycle Controls */}
       <div className="lg:col-span-7 space-y-6">
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-6">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
           <div>
             <h2 className="text-lg font-display font-bold text-slate-900">
               QR Appearance &amp; Branding
@@ -331,7 +331,7 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
         </div>
 
         {/* Lifecycle Controls */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
           <h2 className="text-lg font-display font-bold text-slate-900">QR Status &amp; Replacement</h2>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">

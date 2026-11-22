@@ -2,7 +2,7 @@
   "entities": {
     "Business": {
       "title": "Business",
-      "description": "Owner and management-controlled business profile, client assignment, permissions, branding, QR settings, lifecycle status, tenant Firebase metadata, and feedback form configuration.",
+      "description": "Owner and management-controlled business profile, client assignment, permissions, branding, QR settings, QR stand limits, GBP reply settings, weekly report settings, and feedback form configuration.",
       "type": "object",
       "properties": {
         "ownerId": {
@@ -101,6 +101,18 @@
           "type": "array",
           "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
         },
+        "qrStandLimit": {
+          "type": "integer",
+          "description": "Maximum number of QR stands allowed for this business (default 4, admin-controlled)."
+        },
+        "gbpSettings": {
+          "type": "object",
+          "description": "Rating-based Google Business Profile AI Auto Reply rules and brand voice."
+        },
+        "weeklyReportConfig": {
+          "type": "object",
+          "description": "Weekly Monday-Sunday automated business report configuration and recipients."
+        },
         "lifecycleStatus": {
           "type": "string",
           "enum": ["onboarding", "provisioning", "active", "suspended"]
@@ -194,16 +206,14 @@
           "type": "array"
         },
         "seoKeywords": {
-          "type": "array",
-          "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
+          "type": "array"
         },
         "lifecycleStatus": {
           "type": "string",
           "enum": ["onboarding", "provisioning", "active", "suspended"]
         },
         "tenantFirebase": {
-          "type": "object",
-          "description": "Public WebApp config for routing guest submissions to the business's dedicated Firestore."
+          "type": "object"
         },
         "createdAt": {
           "type": "string",
@@ -232,51 +242,21 @@
     },
     "BusinessStats": {
       "title": "BusinessStats",
-      "description": "Per-business scan, AI draft generation, and Google redirect counters accessible to management and the assigned client.",
+      "description": "Per-business scan, form start, AI draft generation, and Google redirect counters accessible to management and the assigned client.",
       "type": "object",
       "properties": {
-        "businessId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "ownerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "clientEmail": {
-          "type": "string",
-          "maxLength": 120
-        },
-        "slug": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 80,
-          "pattern": "^[a-z0-9-]+$"
-        },
-        "scans": {
-          "type": "integer"
-        },
-        "generated": {
-          "type": "integer"
-        },
-        "redirects": {
-          "type": "integer"
-        },
-        "styleShort": {
-          "type": "integer"
-        },
-        "styleDetailed": {
-          "type": "integer"
-        },
-        "styleProfessional": {
-          "type": "integer"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9-]+$" },
+        "scans": { "type": "integer" },
+        "formsStarted": { "type": "integer" },
+        "generated": { "type": "integer" },
+        "redirects": { "type": "integer" },
+        "styleShort": { "type": "integer" },
+        "styleDetailed": { "type": "integer" },
+        "styleProfessional": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": [
         "businessId",
@@ -294,48 +274,23 @@
     },
     "ReviewEvent": {
       "title": "ReviewEvent",
-      "description": "Immutable analytics event recorded when a customer scans a QR code, generates an AI draft, or clicks through to Google.",
+      "description": "Immutable analytics event recorded when a customer scans a QR code or stand, starts a feedback form, generates an AI draft, or clicks through to Google.",
       "type": "object",
       "properties": {
-        "businessId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "ownerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "clientUid": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "slug": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 80,
-          "pattern": "^[a-z0-9-]+$"
-        },
-        "eventType": {
-          "type": "string",
-          "enum": ["scan", "generate", "copy_redirect"]
-        },
-        "reviewStyle": {
-          "type": "string",
-          "maxLength": 40
-        },
-        "sentiment": {
-          "type": "string",
-          "maxLength": 40
-        },
-        "selectedHighlights": {
-          "type": "array"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientUid": { "type": "string", "maxLength": 128 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9-]+$" },
+        "eventType": { "type": "string", "enum": ["scan", "form_start", "generate", "copy_redirect"] },
+        "reviewStyle": { "type": "string", "maxLength": 40 },
+        "sentiment": { "type": "string", "maxLength": 40 },
+        "language": { "type": "string", "enum": ["en", "hi", "mr"] },
+        "selectedHighlights": { "type": "array" },
+        "standId": { "type": "string", "maxLength": 128 },
+        "standCode": { "type": "string", "maxLength": 64 },
+        "standName": { "type": "string", "maxLength": 120 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": [
         "businessId",
@@ -346,6 +301,205 @@
         "sentiment",
         "selectedHighlights",
         "createdAt"
+      ]
+    },
+    "QrStand": {
+      "title": "QrStand",
+      "description": "In-store physical QR stand placement scoped to a business slot (default 4 stands max, expandable by admin approval).",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientUid": { "type": "string", "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9-]+$" },
+        "slotNumber": { "type": "integer" },
+        "standCode": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "placement": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "isActive": { "type": "boolean" },
+        "fgColor": { "type": "string", "maxLength": 20 },
+        "bgColor": { "type": "string", "maxLength": 20 },
+        "includeLogo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "clientEmail",
+        "slug",
+        "slotNumber",
+        "standCode",
+        "name",
+        "placement",
+        "isActive",
+        "fgColor",
+        "bgColor",
+        "includeLogo",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "QrStandRequest": {
+      "title": "QrStandRequest",
+      "description": "Client request for additional QR stands beyond the default 4 limit, reviewed and approved or rejected by management.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "businessName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientUid": { "type": "string", "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "requestedAdditionalStands": { "type": "integer" },
+        "currentLimit": { "type": "integer" },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 400 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "reviewedByUid": { "type": "string", "maxLength": 128 },
+        "reviewedByEmail": { "type": "string", "maxLength": 120 },
+        "adminNote": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "businessName",
+        "ownerId",
+        "clientEmail",
+        "requestedAdditionalStands",
+        "currentLimit",
+        "reason",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GbpConnection": {
+      "title": "GbpConnection",
+      "description": "Non-secret Google Business Profile OAuth connection state and selected location metadata for a business.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "connectionStatus": { "type": "string", "enum": ["disconnected", "connected", "pending_api_approval"] },
+        "connectedEmail": { "type": "string", "maxLength": 120 },
+        "accountName": { "type": "string", "maxLength": 160 },
+        "locationName": { "type": "string", "maxLength": 200 },
+        "locationTitle": { "type": "string", "maxLength": 160 },
+        "placeId": { "type": "string", "maxLength": 120 },
+        "lastSyncedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "clientEmail",
+        "connectionStatus",
+        "connectedEmail",
+        "accountName",
+        "locationName",
+        "locationTitle",
+        "placeId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GbpReview": {
+      "title": "GbpReview",
+      "description": "Synchronized Google Business Profile review and Gemini AI auto-reply workflow record with model and token tracking.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "externalReviewId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "reviewerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "starRating": { "type": "integer" },
+        "comment": { "type": "string", "maxLength": 4000 },
+        "reviewDate": { "type": "string", "maxLength": 64 },
+        "source": { "type": "string", "enum": ["google_gbp_api", "pubsub_webhook", "manual_sync"] },
+        "aiReplyText": { "type": "string", "maxLength": 4000 },
+        "replyStatus": {
+          "type": "string",
+          "enum": [
+            "pending_generation",
+            "awaiting_approval",
+            "auto_published",
+            "manually_approved",
+            "published",
+            "failed",
+            "ignored"
+          ]
+        },
+        "aiProvider": { "type": "string", "maxLength": 40 },
+        "aiModelId": { "type": "string", "maxLength": 80 },
+        "inputTokens": { "type": "integer" },
+        "outputTokens": { "type": "integer" },
+        "totalTokens": { "type": "integer" },
+        "estimatedCostUsd": { "type": "number" },
+        "errorMessage": { "type": "string", "maxLength": 400 },
+        "publishedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "ownerId",
+        "clientEmail",
+        "externalReviewId",
+        "reviewerName",
+        "starRating",
+        "comment",
+        "reviewDate",
+        "source",
+        "aiReplyText",
+        "replyStatus",
+        "aiProvider",
+        "aiModelId",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "estimatedCostUsd",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WeeklyReport": {
+      "title": "WeeklyReport",
+      "description": "Monday-Sunday weekly performance report storing review generation, AI auto-reply, and AI model usage metrics per business.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "businessName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "weekStart": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "weekEnd": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "reviewGenMetrics": { "type": "object" },
+        "autoReplyMetrics": { "type": "object" },
+        "aiUsageMetrics": { "type": "object" },
+        "dispatchedToEmails": { "type": "array" },
+        "dispatchedAt": { "type": "string", "maxLength": 64 },
+        "generatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessId",
+        "businessName",
+        "ownerId",
+        "clientEmail",
+        "weekStart",
+        "weekEnd",
+        "reviewGenMetrics",
+        "autoReplyMetrics",
+        "aiUsageMetrics",
+        "dispatchedToEmails",
+        "generatedBy",
+        "createdAt",
+        "updatedAt"
       ]
     },
     "BusinessIntegration": {
@@ -382,16 +536,20 @@
     },
     "AiUsageLog": {
       "title": "AiUsageLog",
-      "description": "Immutable AI request and token usage telemetry record per business.",
+      "description": "Immutable AI request, model, cost, and token usage telemetry record per business.",
       "type": "object",
       "properties": {
         "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientEmail": { "type": "string", "maxLength": 120 },
+        "provider": { "type": "string", "maxLength": 40 },
+        "operationType": { "type": "string", "enum": ["review_draft", "gbp_auto_reply", "seo_keywords"] },
         "modelName": { "type": "string", "maxLength": 80 },
         "inputTokens": { "type": "integer" },
         "outputTokens": { "type": "integer" },
         "totalTokens": { "type": "integer" },
+        "estimatedCostUsd": { "type": "number" },
         "status": { "type": "string", "enum": ["success", "failed"] },
         "errorCode": { "type": "string", "maxLength": 64 },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -414,25 +572,10 @@
       "description": "Platform management administrator grant keyed by Firebase Auth UID.",
       "type": "object",
       "properties": {
-        "uid": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "email": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 120
-        },
-        "addedBy": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "addedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "addedBy", "createdAt"]
     },
@@ -441,22 +584,84 @@
       "description": "Platform business management access grant keyed by verified lowercase Gmail/email address.",
       "type": "object",
       "properties": {
-        "email": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 120
-        },
-        "addedBy": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
+        "email": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "addedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "addedBy", "createdAt"]
+    },
+    "FeedbackSubmission": {
+      "title": "FeedbackSubmission",
+      "description": "Immutable customer feedback answers and comments submitted via a business QR link.",
+      "type": "object",
+      "properties": {
+        "submissionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientUid": { "type": "string", "maxLength": 128 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9-]+$" },
+        "responses": { "type": "array" },
+        "additionalComments": { "type": "string", "maxLength": 2000 },
+        "sentiment": { "type": "string", "maxLength": 40 },
+        "selectedHighlights": { "type": "array" },
+        "standId": { "type": "string", "maxLength": 128 },
+        "standCode": { "type": "string", "maxLength": 64 },
+        "standName": { "type": "string", "maxLength": 120 },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "submissionId",
+        "businessId",
+        "ownerId",
+        "slug",
+        "responses",
+        "additionalComments",
+        "sentiment",
+        "selectedHighlights",
+        "sessionId",
+        "createdAt"
+      ]
+    },
+    "ReviewDraft": {
+      "title": "ReviewDraft",
+      "description": "Generated multilingual customer review draft tracking text, language, status lifecycle (Generated, Edited, Copied, Deleted), and feedback submission link.",
+      "type": "object",
+      "properties": {
+        "draftId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "businessId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientUid": { "type": "string", "maxLength": 128 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9-]+$" },
+        "feedbackSubmissionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reviewText": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "language": { "type": "string", "enum": ["en", "hi", "mr"] },
+        "reviewStyle": { "type": "string", "enum": ["short", "detailed", "professional"] },
+        "variationSeed": { "type": "integer" },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["Generated", "Edited", "Copied", "Deleted"] },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "copiedAt": { "type": "string", "format": "date-time" },
+        "deletedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "draftId",
+        "businessId",
+        "ownerId",
+        "slug",
+        "feedbackSubmissionId",
+        "reviewText",
+        "language",
+        "reviewStyle",
+        "variationSeed",
+        "sessionId",
+        "status",
+        "generatedAt",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -470,11 +675,39 @@
     },
     "/businessStats/{businessId}": {
       "schema": { "$ref": "#/entities/BusinessStats" },
-      "description": "Aggregate scan, generation, and redirect counters for each business."
+      "description": "Aggregate scan, form start, generation, and redirect counters for each business."
     },
     "/reviewEvents/{eventId}": {
       "schema": { "$ref": "#/entities/ReviewEvent" },
-      "description": "Append-only QR scan, AI draft generation, and Google redirect analytics events."
+      "description": "Append-only QR scan, stand scan, form start, AI draft generation, and Google redirect analytics events."
+    },
+    "/feedbackSubmissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/FeedbackSubmission" },
+      "description": "Immutable customer feedback submissions preserving responses independently from generated draft lifecycle."
+    },
+    "/reviewDrafts/{draftId}": {
+      "schema": { "$ref": "#/entities/ReviewDraft" },
+      "description": "Customer review drafts with language selection (en, hi, mr) and lifecycle status tracking."
+    },
+    "/qrStands/{standId}": {
+      "schema": { "$ref": "#/entities/QrStand" },
+      "description": "In-store QR stand placements bound to deterministic business slot IDs enforcing qrStandLimit."
+    },
+    "/qrStandRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/QrStandRequest" },
+      "description": "Client requests for additional QR stand capacity pending admin approval or rejection."
+    },
+    "/gbpConnections/{businessId}": {
+      "schema": { "$ref": "#/entities/GbpConnection" },
+      "description": "Google Business Profile OAuth connection state and selected location metadata per business."
+    },
+    "/gbpReviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/GbpReview" },
+      "description": "Synchronized Google Business Profile reviews and AI auto-reply state per business."
+    },
+    "/weeklyReports/{reportId}": {
+      "schema": { "$ref": "#/entities/WeeklyReport" },
+      "description": "Monday-Sunday weekly performance reports stored per business."
     },
     "/businessIntegrations/{businessId}": {
       "schema": { "$ref": "#/entities/BusinessIntegration" },
@@ -482,7 +715,7 @@
     },
     "/aiUsageLogs/{logId}": {
       "schema": { "$ref": "#/entities/AiUsageLog" },
-      "description": "Immutable per-business Gemini token usage logs."
+      "description": "Immutable per-business Gemini token usage and cost logs."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminUser" },

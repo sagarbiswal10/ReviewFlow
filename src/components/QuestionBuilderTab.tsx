@@ -158,7 +158,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="font-display text-lg font-bold text-slate-900">
             Custom Question Builder
@@ -211,7 +211,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
         {questions.map((q, index) => (
           <div
             key={q.id}
-            className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="liquid-glass spatial-card-3d rounded-2xl p-5 sm:p-6 space-y-4"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3 flex-1 min-w-0">

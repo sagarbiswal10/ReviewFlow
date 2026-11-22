@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   BadgeCheck,
@@ -43,6 +43,8 @@ import type { User } from 'firebase/auth';
 import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
 import { HERO_TABLETOP_IMAGE } from '../data/categoryPresets';
 import { WarpCarousel, type WarpCard } from './ui/warp-carousel';
+import { LiquidNavbar, NimbusIcons, type LiquidNavItem } from './ui/liquid-glass-navbar';
+import { SpatialTilt } from './ui/spatial-tilt';
 
 interface LandingPageProps {
   user?: User | null;
@@ -288,6 +290,39 @@ export function LandingPage({
   const [scanJustTriggered, setScanJustTriggered] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<BusinessCategory>('Hair Salons');
   const [activeFeatureIdx, setActiveFeatureIdx] = useState(0);
+  const [activeNavIdx, setActiveNavIdx] = useState(0);
+
+  const navItems: LiquidNavItem[] = useMemo(
+    () => [
+      { label: 'Platform', href: '#top', icon: NimbusIcons.home, fx: 'glow' },
+      { label: 'Interactive Showcase', href: '#interactive-cockpit', icon: NimbusIcons.globe, fx: 'spin' },
+      { label: 'Capabilities', href: '#capabilities', icon: NimbusIcons.drop, fx: 'drop' },
+      {
+        label: 'Industries',
+        href: '#industries',
+        icon: <Store className="w-[17px] h-[17px]" />,
+        fx: 'wave',
+      },
+    ],
+    [],
+  );
+
+  useEffect(() => {
+    const sectionIds = ['top', 'interactive-cockpit', 'capabilities', 'industries'];
+    const handleScroll = () => {
+      const y = window.scrollY + 180;
+      let nextIdx = 0;
+      sectionIds.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (el && el.offsetTop <= y) {
+          nextIdx = idx;
+        }
+      });
+      setActiveNavIdx(nextIdx);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const openAuthModal = (initialTab: AuthTab = 'signin') => {
     setAuthTab(initialTab);
@@ -430,30 +465,31 @@ export function LandingPage({
 
   return (
     <div className="min-h-screen spatial-canvas text-[#131b2e] antialiased selection:bg-[#ccfbf1] selection:text-[#005c55] relative">
-      {/* Subtle Spatial Ambient Light Fields */}
+      {/* Subtle Spatial Ambient Light Fields & 3D Depth Horizon */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 overflow-hidden z-0"
       >
+        <div className="absolute inset-x-0 top-0 h-[620px] spatial-grid-plane opacity-75" />
         <div
           className="absolute -top-44 left-[8%] w-[560px] h-[560px] rounded-full opacity-55 blur-3xl"
           style={{
             background:
-              'radial-gradient(circle, rgba(20,184,166,0.16) 0%, rgba(20,184,166,0) 72%)',
+              'radial-gradient(circle, rgba(20,184,166,0.18) 0%, rgba(20,184,166,0) 72%)',
           }}
         />
         <div
           className="absolute top-[18%] -right-32 w-[520px] h-[520px] rounded-full opacity-50 blur-3xl"
           style={{
             background:
-              'radial-gradient(circle, rgba(56,189,248,0.15) 0%, rgba(56,189,248,0) 72%)',
+              'radial-gradient(circle, rgba(56,189,248,0.16) 0%, rgba(56,189,248,0) 72%)',
           }}
         />
       </div>
 
       {/* Floating Minimalist Liquid Glass Navigation Bar */}
       <header className="sticky top-0 z-40 pt-3 pb-2 px-4 sm:px-6 lg:px-8">
-        <div className="h-[60px] max-w-[1280px] mx-auto px-3.5 sm:px-5 flex items-center justify-between gap-4 rounded-full liquid-glass-nav ring-1 ring-slate-900/[0.04]">
+        <div className="min-h-[62px] max-w-[1280px] mx-auto px-3.5 sm:px-5 py-1 flex items-center justify-between gap-4 sm:gap-6 rounded-full liquid-glass-nav ring-1 ring-slate-900/[0.04]">
           {/* Zone 1: Clean Brand Wordmark */}
           <a
             href="#top"
@@ -467,36 +503,14 @@ export function LandingPage({
             </span>
           </a>
 
-          {/* Zone 2: Minimalist Frosted Well Navigation */}
-          <nav
-            aria-label="Primary navigation"
-            className="hidden lg:flex items-center gap-1 p-1 rounded-full liquid-glass-well text-sm font-semibold"
-          >
-            <a
-              href="#top"
-              className="px-4 py-1.5 rounded-full bg-white/90 text-[#005c55] shadow-[0_1px_4px_rgba(15,23,42,0.06)] whitespace-nowrap shrink-0 transition-all"
-            >
-              Platform
-            </a>
-            <a
-              href="#interactive-cockpit"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
-            >
-              Interactive Showcase
-            </a>
-            <a
-              href="#capabilities"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
-            >
-              Capabilities
-            </a>
-            <a
-              href="#industries"
-              className="px-4 py-1.5 rounded-full text-slate-600 hover:text-[#005c55] hover:bg-white/60 whitespace-nowrap shrink-0 transition-all"
-            >
-              Industries
-            </a>
-          </nav>
+          {/* Zone 2: Nimbus Liquid Glass Waterline Navigation */}
+          <LiquidNavbar
+            items={navItems}
+            active={activeNavIdx}
+            onChange={(idx) => setActiveNavIdx(idx)}
+            tone="light"
+            className="hidden lg:inline-flex shrink-0"
+          />
 
           {/* Zone 3: Actions */}
           <div className="flex items-center gap-2 shrink-0">
@@ -648,10 +662,10 @@ export function LandingPage({
                 </div>
               </div>
 
-              {/* Right Column: Tabletop Standee Showcase Card */}
+              {/* Right Column: Spatial 3D Tabletop Standee Showcase Card */}
               <div className="lg:col-span-6 relative">
-                <div className="relative mx-auto max-w-[520px] lg:max-w-none">
-                  <div className="rounded-3xl overflow-hidden liquid-glass p-3">
+                <SpatialTilt maxTilt={5.5} scale={1.015} className="relative mx-auto max-w-[520px] lg:max-w-none rounded-3xl">
+                  <div className="rounded-3xl overflow-visible liquid-glass p-3 spatial-preserve-3d">
                     <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900 ring-1 ring-black/5">
                       {heroImageFailed ? (
                         <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-white bg-gradient-to-br from-slate-900 via-slate-800 to-teal-950">
@@ -673,8 +687,8 @@ export function LandingPage({
                         />
                       )}
 
-                      {/* Bottom Floating Overlay Card */}
-                      <div className="absolute bottom-3 left-3 right-3 p-3.5 sm:p-4 rounded-2xl bg-white/80 backdrop-blur-2xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_32px_rgba(15,23,42,0.16)] flex items-center justify-between gap-3">
+                      {/* Bottom Floating Overlay Card (Spatial Z-Depth) */}
+                      <div className="absolute bottom-3 left-3 right-3 p-3.5 sm:p-4 rounded-2xl bg-white/82 backdrop-blur-2xl border border-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_14px_34px_rgba(15,23,42,0.18)] flex items-center justify-between gap-3 spatial-depth-1">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 flex items-center justify-center text-[#005c55] shrink-0">
                             <Nfc className="w-5 h-5" />
@@ -698,8 +712,8 @@ export function LandingPage({
                     </div>
                   </div>
 
-                  {/* Asymmetric Top-Left Callout */}
-                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -top-5 -left-5">
+                  {/* Asymmetric Top-Left Callout (Elevated Spatial Z-Layer) */}
+                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -top-5 -left-5 spatial-depth-2">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0f766e] to-[#005c55] text-white flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
                       <TrendingUp className="w-5 h-5" />
                     </div>
@@ -713,8 +727,8 @@ export function LandingPage({
                     </div>
                   </div>
 
-                  {/* Asymmetric Bottom-Right Callout */}
-                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -bottom-5 -right-4">
+                  {/* Asymmetric Bottom-Right Callout (Elevated Spatial Z-Layer) */}
+                  <div className="hidden sm:flex items-center gap-3 px-4 py-3 rounded-2xl liquid-glass-nav absolute -bottom-5 -right-4 spatial-depth-2">
                     <div className="w-10 h-10 rounded-full bg-[#6df5e1]/90 text-[#005048] flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                       <ThumbsUp className="w-5 h-5" />
                     </div>
@@ -727,7 +741,7 @@ export function LandingPage({
                       </p>
                     </div>
                   </div>
-                </div>
+                </SpatialTilt>
               </div>
             </div>
           </div>
@@ -826,7 +840,7 @@ export function LandingPage({
               ].map((step) => (
                 <div
                   key={step.num}
-                  className="group rounded-2xl liquid-glass p-6 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between"
+                  className="group rounded-2xl liquid-glass spatial-card-3d p-6 flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-6">
@@ -905,14 +919,15 @@ export function LandingPage({
 
             {showcaseTab === 'mobile' ? (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-                {/* Left: Interactive Mobile Simulator */}
+                {/* Left: Interactive 3D Spatial Mobile Simulator */}
                 <div className="lg:col-span-6 flex justify-center">
-                  <div className="w-full max-w-[360px] rounded-[40px] bg-slate-900 p-3 shadow-2xl">
-                    <div className="w-24 h-3.5 bg-slate-900 rounded-full mx-auto mb-2 flex items-center justify-center">
-                      <div className="w-12 h-2 bg-black rounded-full" />
-                    </div>
+                  <SpatialTilt maxTilt={5} scale={1.012} className="w-full max-w-[360px] rounded-[40px]">
+                    <div className="w-full rounded-[40px] bg-slate-900 p-3 shadow-[0_32px_64px_-22px_rgba(15,23,42,0.45)] ring-1 ring-white/25">
+                      <div className="w-24 h-3.5 bg-slate-900 rounded-full mx-auto mb-2 flex items-center justify-center">
+                        <div className="w-12 h-2 bg-black rounded-full" />
+                      </div>
 
-                    <div className="rounded-[32px] bg-white p-5 flex flex-col min-h-[560px] text-slate-900 relative overflow-hidden">
+                      <div className="rounded-[32px] bg-white p-5 flex flex-col min-h-[560px] text-slate-900 relative overflow-hidden">
                       <div className="flex items-center justify-between mb-4 bg-[#f2f3ff] p-3 rounded-xl">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-[#0f766e] text-white flex items-center justify-center font-bold text-xs">
@@ -1065,12 +1080,13 @@ export function LandingPage({
                         </div>
                       )}
                     </div>
-                  </div>
+                    </div>
+                  </SpatialTilt>
                 </div>
 
                 {/* Right: Flow Psychology Breakdown */}
                 <div className="lg:col-span-6 flex flex-col gap-6">
-                  <div className="p-8 rounded-2xl liquid-glass">
+                  <div className="p-8 rounded-2xl liquid-glass spatial-card-3d">
                     <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-5">
                       <Sparkles className="w-6 h-6" />
                     </div>
@@ -1137,7 +1153,7 @@ export function LandingPage({
             ) : (
               /* TAB VIEW 2: MULTI-LOCATION ANALYTICS & TOKEN CONTROLS */
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-8 rounded-2xl liquid-glass p-6 sm:p-8">
+                <div className="lg:col-span-8 rounded-2xl liquid-glass spatial-card-3d p-6 sm:p-8">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
                     <div>
                       <span className="text-xs font-bold uppercase tracking-wider text-[#005c55]">
@@ -1247,7 +1263,7 @@ export function LandingPage({
 
                 {/* Right Column Controls */}
                 <div className="lg:col-span-4 flex flex-col gap-6">
-                  <div className="rounded-2xl liquid-glass p-6">
+                  <div className="rounded-2xl liquid-glass spatial-card-3d p-6">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-display text-lg font-bold text-slate-900">
                         Instant Token Controls
@@ -1352,47 +1368,49 @@ export function LandingPage({
             </div>
 
             {/* Spatial AI WarpCarousel Feature Stage */}
-            <div className="mb-10 rounded-3xl liquid-glass p-3 sm:p-4">
-              <div className="relative w-full rounded-[22px] overflow-hidden border border-white/80 bg-[#edf3f8] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-                <WarpCarousel
-                  cards={FEATURE_WARP_CARDS}
-                  index={activeFeatureIdx}
-                  onIndexChange={setActiveFeatureIdx}
-                  step={1}
-                  interval={4.2}
-                  background="#edf3f8"
-                  warp={0.9}
-                  font='"Plus Jakarta Sans", system-ui, sans-serif'
-                  ariaLabel="ReviewFlow spatial platform features"
-                  style={{ height: 420 }}
-                />
-              </div>
-              <div className="mt-3 px-1 sm:px-2 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 p-1 rounded-full liquid-glass-well">
-                  {FEATURE_WARP_LABELS.map((label, idx) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => setActiveFeatureIdx(idx)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer tabular-nums ${
-                        activeFeatureIdx === idx
-                          ? 'bg-white/95 text-[#005c55] shadow-sm'
-                          : 'text-slate-600 hover:text-[#005c55]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+            <SpatialTilt maxTilt={2.2} scale={1.006} glare={false} className="mb-10 rounded-3xl">
+              <div className="rounded-3xl liquid-glass p-3 sm:p-4">
+                <div className="relative w-full rounded-[22px] overflow-hidden border border-white/80 bg-[#edf3f8] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                  <WarpCarousel
+                    cards={FEATURE_WARP_CARDS}
+                    index={activeFeatureIdx}
+                    onIndexChange={setActiveFeatureIdx}
+                    step={1}
+                    interval={4.2}
+                    background="#edf3f8"
+                    warp={0.9}
+                    font='"Plus Jakarta Sans", system-ui, sans-serif'
+                    ariaLabel="ReviewFlow spatial platform features"
+                    style={{ height: 420 }}
+                  />
                 </div>
-                <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-                  Drag or click edges to explore
-                </span>
+                <div className="mt-3 px-1 sm:px-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 p-1 rounded-full liquid-glass-well">
+                    {FEATURE_WARP_LABELS.map((label, idx) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setActiveFeatureIdx(idx)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer tabular-nums ${
+                          activeFeatureIdx === idx
+                            ? 'bg-white/95 text-[#005c55] shadow-sm'
+                            : 'text-slate-600 hover:text-[#005c55]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                    Drag or click edges to explore
+                  </span>
+                </div>
               </div>
-            </div>
+            </SpatialTilt>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-7">
               {/* Pillar 1 */}
-              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass spatial-card-3d p-7 flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <QrCode className="w-6 h-6" />
@@ -1426,7 +1444,7 @@ export function LandingPage({
               </div>
 
               {/* Pillar 2 */}
-              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass spatial-card-3d p-7 flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <SlidersHorizontal className="w-6 h-6" />
@@ -1457,7 +1475,7 @@ export function LandingPage({
               </div>
 
               {/* Pillar 3 */}
-              <div className="rounded-2xl liquid-glass p-7 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-18px_rgba(15,118,110,0.18)] transition-all duration-300 flex flex-col justify-between">
+              <div className="rounded-2xl liquid-glass spatial-card-3d p-7 flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 rounded-xl bg-[#f0fdfa]/90 border border-[#0f766e]/15 text-[#005c55] flex items-center justify-center mb-6">
                     <Sparkles className="w-6 h-6" />
@@ -1524,10 +1542,10 @@ export function LandingPage({
                     key={category}
                     type="button"
                     onClick={() => setSelectedCategory(category)}
-                    className={`group p-4 rounded-2xl transition-all flex flex-col items-center justify-center text-center cursor-pointer ${
+                    className={`group p-4 rounded-2xl spatial-card-3d transition-all flex flex-col items-center justify-center text-center cursor-pointer ${
                       active
                         ? 'liquid-glass-tint text-[#005c55] ring-2 ring-[#0f766e]/30'
-                        : 'liquid-glass text-slate-900 hover:-translate-y-0.5 hover:border-[#0f766e]/30'
+                        : 'liquid-glass text-slate-900 hover:border-[#0f766e]/30'
                     }`}
                   >
                     <div className="mb-2">{renderCategoryIcon(category, active)}</div>
@@ -1544,7 +1562,7 @@ export function LandingPage({
             </div>
 
             {/* Dynamic Category Preview Card */}
-            <div className="rounded-3xl liquid-glass p-7 lg:p-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
+            <div className="rounded-3xl liquid-glass spatial-card-3d p-7 lg:p-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
               <div className="flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#005c55] mb-2">
                   {activeCategoryMeta.badge}
@@ -1589,7 +1607,7 @@ export function LandingPage({
            ========================================== */}
         <section className="w-full py-16">
           <div className="max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="rounded-2xl liquid-glass-tint p-7 lg:p-10 flex flex-col md:flex-row items-start gap-6">
+            <div className="rounded-2xl liquid-glass-tint spatial-card-3d p-7 lg:p-10 flex flex-col md:flex-row items-start gap-6">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#0f766e] to-[#005c55] text-white flex items-center justify-center shrink-0 shadow-sm">
                 <Scale className="w-6 h-6" />
               </div>
@@ -1627,44 +1645,46 @@ export function LandingPage({
            ========================================== */}
         <section className="w-full py-20 lg:py-24 bg-white/35 backdrop-blur-md border-t border-white/75">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="rounded-3xl bg-gradient-to-br from-[#0f766e] via-[#0d655e] to-[#042f2e] border border-white/20 text-white p-8 sm:p-12 lg:p-16 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_28px_60px_-20px_rgba(15,118,110,0.45)] relative overflow-hidden">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -top-28 -right-24 w-80 h-80 rounded-full opacity-35 blur-3xl"
-                style={{ background: 'radial-gradient(circle, #5eead4 0%, transparent 70%)' }}
-              />
-              <div className="relative max-w-2xl">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#9cf2e8] block mb-3">
-                  Instant Storefront Deployment
-                </span>
-                <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight [text-wrap:balance] mb-5">
-                  Ready to scale your local Google reviews this week?
-                </h2>
-                <p className="text-base sm:text-lg text-white/90 mb-9 leading-relaxed">
-                  Create your workspace in minutes, connect your Google Business Profiles, and export
-                  your custom printable QR display kit immediately.
-                </p>
+            <SpatialTilt maxTilt={2.2} scale={1.008} className="rounded-3xl">
+              <div className="rounded-3xl bg-gradient-to-br from-[#0f766e] via-[#0d655e] to-[#042f2e] border border-white/25 text-white p-8 sm:p-12 lg:p-16 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_28px_60px_-20px_rgba(15,118,110,0.45)] relative overflow-hidden">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -top-28 -right-24 w-80 h-80 rounded-full opacity-35 blur-3xl"
+                  style={{ background: 'radial-gradient(circle, #5eead4 0%, transparent 70%)' }}
+                />
+                <div className="relative max-w-2xl">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#9cf2e8] block mb-3">
+                    Instant Storefront Deployment
+                  </span>
+                  <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight [text-wrap:balance] mb-5">
+                    Ready to scale your local Google reviews this week?
+                  </h2>
+                  <p className="text-base sm:text-lg text-white/90 mb-9 leading-relaxed">
+                    Create your workspace in minutes, connect your Google Business Profiles, and export
+                    your custom printable QR display kit immediately.
+                  </p>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-                  {renderPrimaryWorkspaceCta(
-                    'Sign In to Get Started',
-                    'px-7 py-4 rounded-xl bg-white text-slate-900 font-bold text-sm sm:text-base shadow-lg hover:bg-slate-100 transition-colors',
-                  )}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                    {renderPrimaryWorkspaceCta(
+                      'Sign In to Get Started',
+                      'px-7 py-4 rounded-xl bg-white text-slate-900 font-bold text-sm sm:text-base shadow-lg hover:bg-slate-100 transition-colors',
+                    )}
 
-                  <button
-                    type="button"
-                    onClick={onTryDemo}
-                    className="px-7 py-4 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-semibold text-sm sm:text-base hover:bg-white/25 transition-colors text-center cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    Try Live Customer Demo
-                  </button>
+                    <button
+                      type="button"
+                      onClick={onTryDemo}
+                      className="px-7 py-4 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-semibold text-sm sm:text-base hover:bg-white/25 transition-colors text-center cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Try Live Customer Demo
+                    </button>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-white/75 mt-6">
+                    Instant digital QR generation · Printable PDF posters · Cancel anytime
+                  </p>
                 </div>
-
-                <p className="text-xs sm:text-sm text-white/75 mt-6">
-                  Instant digital QR generation · Printable PDF posters · Cancel anytime
-                </p>
               </div>
-            </div>
+            </SpatialTilt>
           </div>
         </section>
       </main>
