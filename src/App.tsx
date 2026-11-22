@@ -146,7 +146,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [navigatedInternally, setNavigatedInternally] = useState(false);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState(false);
-  const [openAuthFromRoute] = useState(() =>
+  const [openAuthFromRoute, setOpenAuthFromRoute] = useState(() =>
     typeof window !== 'undefined' && /^\/(signin|login|auth)\/?$/i.test(window.location.pathname),
   );
 
@@ -553,9 +553,29 @@ export default function App() {
 
   const handleSignOut = async () => {
     setRedirectAfterLogin(false);
-    await signOut(auth);
+    setOpenAuthFromRoute(false);
+    setAuthError(null);
     setVerificationNotice(null);
-    navigateTo('/', true);
+    setShowOnboarding(false);
+    setSelectedBusinessId(null);
+    try {
+      localStorage.removeItem('reviewflow_active_business_id');
+    } catch {
+      // ignore
+    }
+    try {
+      await signOut(auth);
+    } catch (err) {
+      setAuthError(formatAuthError(err));
+    } finally {
+      loadedUidRef.current = null;
+      authIdentityRef.current = null;
+      setBusinesses([]);
+      setStatsMap({});
+      setEvents([]);
+      setIsAdmin(false);
+      navigateTo('/', true);
+    }
   };
 
   // 1. Walk-in Guest Public Review Route (/review/:slug)

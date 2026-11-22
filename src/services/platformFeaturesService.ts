@@ -436,14 +436,50 @@ export async function reviewQrStandRequest(input: {
   }
 }
 
+const GBP_OAUTH_CLIENT_STORAGE_KEY = 'reviewflow_gbp_oauth_client_id';
+
+export function getSavedGbpOAuthClientId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return (localStorage.getItem(GBP_OAUTH_CLIENT_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+export function saveGbpOAuthClientId(clientId: string): string {
+  const clean = clientId.trim();
+  if (clean && !clean.endsWith('.apps.googleusercontent.com')) {
+    throw new Error(
+      'Enter a valid Google OAuth Web Client ID ending in .apps.googleusercontent.com (never paste a Client Secret).',
+    );
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      if (clean) {
+        localStorage.setItem(GBP_OAUTH_CLIENT_STORAGE_KEY, clean);
+      } else {
+        localStorage.removeItem(GBP_OAUTH_CLIENT_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return clean;
+}
+
 export function getGoogleOAuthClientId(): string {
   const envId = (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim();
   if (envId) return envId;
+  const savedId = getSavedGbpOAuthClientId();
+  if (savedId) return savedId;
   return (firebaseConfig.oAuthClientId || '').trim();
 }
 
 export function isCustomGbpOAuthClientConfigured(): boolean {
-  return Boolean((import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim());
+  return Boolean(
+    (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim() || getSavedGbpOAuthClientId(),
+  );
 }
 
 interface GoogleTokenClient {

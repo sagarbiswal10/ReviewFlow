@@ -523,11 +523,11 @@ export function LandingPage({
           />
 
           {/* Zone 3: Actions */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onTryDemo}
-              className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 rounded-full bg-white/55 hover:bg-white/90 border border-white/75 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              className="hidden sm:inline-flex items-center justify-center px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 rounded-full bg-white/55 hover:bg-white/90 border border-white/75 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
               Try Demo
             </button>
@@ -538,24 +538,26 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onOpenAdmin}
-                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    Business Management
+                    <span className="sm:hidden">Admin</span>
+                    <span className="hidden sm:inline">Business Management</span>
                   </button>
                 ) : hasClientAccess && onOpenPortal ? (
                   <button
                     type="button"
                     onClick={onOpenPortal}
-                    className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white bg-gradient-to-b from-[#0f766e] to-[#005c55] rounded-full hover:brightness-105 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_6px_16px_-4px_rgba(15,118,110,0.38)] whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    Client Portal
+                    <span className="sm:hidden">Portal</span>
+                    <span className="hidden sm:inline">Client Portal</span>
                   </button>
                 ) : null}
                 {onSignOut && (
                   <button
                     type="button"
                     onClick={onSignOut}
-                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 bg-white/60 hover:bg-white/90 border border-white/80 rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-white/75 hover:bg-white border border-slate-200/90 rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Sign Out
                   </button>

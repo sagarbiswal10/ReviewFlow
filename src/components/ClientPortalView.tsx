@@ -893,10 +893,10 @@ export function ClientPortalView({
               onClick={onSignOut}
               title="Sign Out"
               aria-label="Sign Out"
-              className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
+              <span>Sign Out</span>
             </button>
           </div>
         </div>
@@ -978,6 +978,14 @@ export function ClientPortalView({
                   <span>Go to Landing Page</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+              </button>
             </div>
           </div>
         ) : (
