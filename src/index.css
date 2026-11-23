@@ -176,6 +176,30 @@
   animation: rf-dash-flow 1.2s linear infinite;
 }
 
+.portal-aurora-canvas {
+  background-color: #f4f7fa;
+  background-image:
+    radial-gradient(48% 42% at 6% 10%, rgba(216, 243, 220, 0.55) 0%, rgba(216, 243, 220, 0) 70%),
+    radial-gradient(46% 42% at 92% 8%, rgba(254, 243, 199, 0.52) 0%, rgba(254, 243, 199, 0) 68%),
+    radial-gradient(50% 45% at 78% 78%, rgba(209, 250, 229, 0.5) 0%, rgba(209, 250, 229, 0) 70%),
+    radial-gradient(42% 38% at 18% 82%, rgba(224, 231, 255, 0.48) 0%, rgba(224, 231, 255, 0) 70%);
+}
+
+.portal-aurora-canvas .spatial-card-3d,
+.portal-aurora-canvas .spatial-card-3d:hover {
+  transform: none !important;
+  will-change: auto;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.portal-aurora-canvas .liquid-glass {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.04);
+}
+
 .spatial-canvas {
   background-color: #eef3f8;
   background-image:
