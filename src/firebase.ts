@@ -134,8 +134,13 @@ export function handleFirestoreError(
 
   const lower = rawMessage.toLowerCase();
   if (lower.includes('permission') || lower.includes('insufficient')) {
+    const activeEmail = auth.currentUser?.email;
+    const verifiedNote =
+      auth.currentUser && !auth.currentUser.emailVerified ? ' (email not verified)' : '';
+    const actor = activeEmail ? `Signed in as ${activeEmail}${verifiedNote}` : 'Not signed in';
+    const target = path ? `${operationType} on ${path}` : operationType;
     throw new Error(
-      'Permission denied: your account does not have permission for this action.',
+      `Permission denied: your account does not have permission for this action (${target}; ${actor}).`,
     );
   }
   if (lower.includes('not-found') || lower.includes('no document to update')) {

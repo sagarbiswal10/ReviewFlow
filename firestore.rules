@@ -767,7 +767,13 @@ service cloud.firestore {
         resource == null ||
         resource.data.qrConfig.isActive == true ||
         isAdmin() ||
-        (isVerifiedUser() && resource.data.ownerId == request.auth.uid)
+        (isVerifiedUser() && (
+          resource.data.ownerId == request.auth.uid ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+          )
+        ))
       );
       allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
       allow create: if isVerifiedUser() &&
@@ -937,7 +943,13 @@ service cloud.firestore {
     match /qrStands/{standId} {
       allow get: if isVerifiedUser() && isValidId(standId) && (
         isAdmin() ||
-        (resource != null && isAssignedClient(existing()))
+        (resource != null && (
+          isAssignedClient(existing()) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
+        ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
@@ -1000,7 +1012,13 @@ service cloud.firestore {
     match /qrStandRequests/{requestId} {
       allow get: if isVerifiedUser() && isValidId(requestId) && (
         isAdmin() ||
-        (resource != null && isAssignedClient(existing()))
+        (resource != null && (
+          isAssignedClient(existing()) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
+        ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
@@ -1075,7 +1093,7 @@ service cloud.firestore {
           isAdmin() ||
           (
             exists(/databases/$(database)/documents/businesses/$(businessId)) &&
-            isAssignedClient(existing()) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data) &&
             get(/databases/$(database)/documents/businesses/$(businessId)).data.clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -1091,7 +1109,13 @@ service cloud.firestore {
     match /gbpReviews/{reviewId} {
       allow get: if isVerifiedUser() && isValidId(reviewId) && (
         isAdmin() ||
-        (resource != null && isAssignedClient(existing()))
+        (resource != null && (
+          isAssignedClient(existing()) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
+        ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
@@ -1132,7 +1156,7 @@ service cloud.firestore {
           ) ||
           (
             exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
-            isAssignedClient(existing()) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
             get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -1149,7 +1173,13 @@ service cloud.firestore {
     match /weeklyReports/{reportId} {
       allow get: if isVerifiedUser() && isValidId(reportId) && (
         isAdmin() ||
-        (resource != null && isAssignedClient(existing()))
+        (resource != null && (
+          isAssignedClient(existing()) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
+        ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
@@ -1186,7 +1216,7 @@ service cloud.firestore {
           ) ||
           (
             exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
-            isAssignedClient(existing()) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'businessName', 'reviewGenMetrics', 'autoReplyMetrics', 'aiUsageMetrics',
@@ -1217,14 +1247,26 @@ service cloud.firestore {
         isValidBusinessIntegration(incoming()) &&
         incoming().businessId == businessId &&
         incoming().updatedAt == request.time &&
-        (isAdmin() || isAssignedClient(incoming()));
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data)
+        );
       allow update: if isVerifiedUser() &&
         isValidId(businessId) &&
         isValidBusinessIntegration(incoming()) &&
         incoming().businessId == existing().businessId &&
         incoming().ownerId == existing().ownerId &&
         incoming().updatedAt == request.time &&
-        (isAdmin() || isAssignedClient(existing()));
+        (
+          isAdmin() ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data) &&
+            incoming().clientEmail == existing().clientEmail
+          )
+        );
       allow delete: if isVerifiedUser() && isValidId(businessId) && isAdmin();
     }
 

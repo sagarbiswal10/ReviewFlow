@@ -898,7 +898,7 @@ export default function App() {
         <OnboardingModal
           ownerId={user.uid}
           userEmail={user.email || ''}
-          isAdmin={showingAdminConsole}
+          isAdmin={isAdmin}
           canClose
           onClose={() => setShowOnboarding(false)}
           onCreated={(newId) => {

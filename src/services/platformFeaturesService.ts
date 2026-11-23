@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -652,10 +653,7 @@ export async function saveGbpConnection(input: {
 }): Promise<void> {
   const now = serverTimestamp();
   const ref = doc(db, 'gbpConnections', input.business.id);
-  const payload = {
-    businessId: input.business.id,
-    ownerId: input.business.ownerId,
-    clientEmail: normalizeEmail(input.business.clientEmail || ''),
+  const mutableFields = {
     connectionStatus: input.connectionStatus,
     connectedEmail: normalizeEmail(input.connectedEmail || ''),
     accountName: clampString(input.accountName, 160),
@@ -663,13 +661,41 @@ export async function saveGbpConnection(input: {
     locationTitle: clampString(input.locationTitle, 160),
     placeId: clampString(input.placeId, 120),
     lastSyncedAt: now,
-    createdAt: input.existing?.createdAt ?? now,
     updatedAt: now,
+  };
+
+  let existingDoc = input.existing;
+  if (!existingDoc) {
+    try {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        existingDoc = snap.data() as GbpConnection;
+      }
+    } catch {
+      // Proceed cleanly to write below
+    }
+  }
+
+  if (existingDoc) {
+    try {
+      await updateDoc(ref, mutableFields);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `gbpConnections/${input.business.id}`);
+    }
+    return;
+  }
+
+  const payload = {
+    businessId: input.business.id,
+    ownerId: input.business.ownerId,
+    clientEmail: normalizeEmail(input.business.clientEmail || ''),
+    ...mutableFields,
+    createdAt: now,
   };
   try {
     await setDoc(ref, payload);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `gbpConnections/${input.business.id}`);
+    handleFirestoreError(err, OperationType.CREATE, `gbpConnections/${input.business.id}`);
   }
 }
 
@@ -1308,15 +1334,23 @@ export async function generateAndSaveWeeklyReport(input: {
   }
 
   const reportId = `${business.id}_${weekStart}`;
+  const reportRef = doc(db, 'weeklyReports', reportId);
   const now = serverTimestamp();
 
-  const payload = {
-    businessId: business.id,
+  let existingDoc = input.existingReport;
+  if (!existingDoc) {
+    try {
+      const snap = await getDoc(reportRef);
+      if (snap.exists()) {
+        existingDoc = snap.data() as WeeklyReport;
+      }
+    } catch {
+      // Proceed to write
+    }
+  }
+
+  const mutableFields = {
     businessName: clampString(business.name, 120) || 'Business',
-    ownerId: business.ownerId,
-    clientEmail: normalizeEmail(business.clientEmail || ''),
-    weekStart,
-    weekEnd,
     reviewGenMetrics: {
       totalScans: scanEvents.length,
       uniqueSessions: uniqueSessionIds.size,
@@ -1349,20 +1383,47 @@ export async function generateAndSaveWeeklyReport(input: {
       estimatedCostUsd: totalCost,
       byModel: Array.from(modelBuckets.values()),
     },
-    dispatchedToEmails: input.existingReport?.dispatchedToEmails ?? [],
-    ...(input.existingReport?.dispatchedAt
-      ? { dispatchedAt: input.existingReport.dispatchedAt }
-      : {}),
+    dispatchedToEmails: existingDoc?.dispatchedToEmails ?? [],
+    ...(existingDoc?.dispatchedAt ? { dispatchedAt: existingDoc.dispatchedAt } : {}),
     generatedBy: clampString(input.generatedBy, 128) || 'system',
-    createdAt: input.existingReport?.createdAt ?? now,
     updatedAt: now,
   };
 
+  const fullReport: WeeklyReport = {
+    id: reportId,
+    businessId: business.id,
+    ownerId: business.ownerId,
+    clientEmail: existingDoc?.clientEmail ?? normalizeEmail(business.clientEmail || ''),
+    weekStart,
+    weekEnd,
+    ...mutableFields,
+    createdAt: existingDoc?.createdAt ?? now,
+  };
+
+  if (existingDoc) {
+    try {
+      await updateDoc(reportRef, mutableFields);
+      return fullReport;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `weeklyReports/${reportId}`);
+    }
+  }
+
+  const payload = {
+    businessId: business.id,
+    ownerId: business.ownerId,
+    clientEmail: normalizeEmail(business.clientEmail || ''),
+    weekStart,
+    weekEnd,
+    ...mutableFields,
+    createdAt: now,
+  };
+
   try {
-    await setDoc(doc(db, 'weeklyReports', reportId), payload);
+    await setDoc(reportRef, payload);
     return { ...payload, id: reportId };
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `weeklyReports/${reportId}`);
+    handleFirestoreError(err, OperationType.CREATE, `weeklyReports/${reportId}`);
   }
 }
 

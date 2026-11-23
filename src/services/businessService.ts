@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   increment,
   limit,
   onSnapshot,
@@ -578,8 +579,13 @@ export async function grantAdminByUid(uid: string, email: string, addedByUid: st
   const cleanUid = clampString(uid, 128);
   const cleanEmail = normalizeEmail(email);
   const path = `admins/${cleanUid}`;
+  const ref = doc(db, 'admins', cleanUid);
   try {
-    await setDoc(doc(db, 'admins', cleanUid), {
+    const existingSnap = await getDoc(ref);
+    if (existingSnap.exists()) {
+      return;
+    }
+    await setDoc(ref, {
       uid: cleanUid,
       email: cleanEmail,
       addedBy: addedByUid,
@@ -596,8 +602,13 @@ export async function grantAdminByEmail(email: string, addedByUid: string): Prom
     throw new Error('Please enter a valid Gmail or email address.');
   }
   const path = `adminEmails/${cleanEmail}`;
+  const ref = doc(db, 'adminEmails', cleanEmail);
   try {
-    await setDoc(doc(db, 'adminEmails', cleanEmail), {
+    const existingSnap = await getDoc(ref);
+    if (existingSnap.exists()) {
+      return;
+    }
+    await setDoc(ref, {
       email: cleanEmail,
       addedBy: addedByUid,
       createdAt: serverTimestamp(),
@@ -643,6 +654,10 @@ export async function checkSlugAvailability(
     }
     return { available: false, normalizedSlug };
   } catch (error) {
+    const msg = error instanceof Error ? error.message.toLowerCase() : '';
+    if (msg.includes('permission') || msg.includes('insufficient')) {
+      return { available: false, normalizedSlug };
+    }
     handleFirestoreError(error, OperationType.GET, path);
   }
 }
@@ -1086,10 +1101,55 @@ export async function updateBusiness(
 
   try {
     await batch.commit();
-    return nextSlug;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `businesses/${current.id}`);
   }
+
+  if (isAdmin && clientEmailChanged) {
+    // Best-effort sync so client-scoped queries on qrStands, weeklyReports, and gbpConnections match the reassigned clientEmail
+    try {
+      const syncBatch = writeBatch(db);
+      let pendingOps = 0;
+
+      const gbpRef = doc(db, 'gbpConnections', current.id);
+      const gbpSnap = await getDoc(gbpRef).catch(() => null);
+      if (gbpSnap?.exists()) {
+        syncBatch.update(gbpRef, { clientEmail: nextClientEmail, updatedAt: now });
+        pendingOps += 1;
+      }
+
+      const [standsSnap, reportsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'qrStands'), where('businessId', '==', current.id), limit(100))).catch(
+          () => null,
+        ),
+        getDocs(query(collection(db, 'weeklyReports'), where('businessId', '==', current.id), limit(100))).catch(
+          () => null,
+        ),
+      ]);
+
+      standsSnap?.docs.forEach((d) => {
+        if (pendingOps < 450) {
+          syncBatch.update(d.ref, { clientEmail: nextClientEmail, clientUid: '', updatedAt: now });
+          pendingOps += 1;
+        }
+      });
+
+      reportsSnap?.docs.forEach((d) => {
+        if (pendingOps < 450) {
+          syncBatch.update(d.ref, { clientEmail: nextClientEmail, updatedAt: now });
+          pendingOps += 1;
+        }
+      });
+
+      if (pendingOps > 0) {
+        await syncBatch.commit();
+      }
+    } catch {
+      // Non-blocking secondary email sync
+    }
+  }
+
+  return nextSlug;
 }
 
 export async function deleteBusiness(business: Business): Promise<void> {
