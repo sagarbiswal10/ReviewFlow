@@ -978,6 +978,12 @@ export async function processGenerateReview(
           )
           .slice(0, 3)
       : [];
+    const seoKeywords = Array.isArray(body.seoKeywords)
+      ? body.seoKeywords
+          .filter((kw): kw is string => typeof kw === 'string' && kw.trim().length > 0)
+          .map((kw) => kw.trim().slice(0, 60))
+          .slice(0, 15)
+      : [];
 
     if (!businessName) {
       return { status: 400, data: { error: 'Business name is required.' } };
@@ -1140,8 +1146,16 @@ export async function processGenerateReview(
           ].join('\n')
         : '';
 
+    const seoKeywordsBlock =
+      seoKeywords.length > 0
+        ? language === 'hinglish'
+          ? `Business Local SEO Context (express naturally in Roman Hindi meaning ONLY if directly relevant to what the customer experienced — do NOT insert raw English buzzwords): ${seoKeywords.join(', ')}`
+          : `Target Local SEO Keywords for ${businessName}: ${seoKeywords.join(', ')} (naturally weave 1-2 relevant keywords that genuinely fit what the customer experienced without stuffing or inventing unmentioned services).`
+        : '';
+
     const prompt = [
       `Business Context: ${businessName}${category ? ` (${category})` : ''}`,
+      seoKeywordsBlock,
       `Requested Language: ${languageLabel}`,
       `Length/Flow Preference: ${styleGuidance[style]}`,
       `Draft Variation #${variationSeed}: ${selectedAngle}`,
@@ -1159,12 +1173,12 @@ export async function processGenerateReview(
       'Return ONLY valid JSON strictly matching this format: {"review": string, "language": string, "script": "roman" | "devanagari", "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "validation": {"english_vocabulary_found": boolean, "facts_preserved": boolean, "sentiment_preserved": boolean, "unsupported_claims": boolean}, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[]}.',
       languageRules[language],
       'Strict Authenticity, Grounding & Final Validation Rules:',
-      '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment. NEVER invent products/services purchased, food items ordered, staff names, conversations, discounts/offers, facilities, specific incidents, or unmentioned intentions.',
+      '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment (plus naturally phrasing 1-2 fitting business SEO keywords if compatible). NEVER invent specific services purchased, food items ordered, staff names, conversations, pricing/discounts, facilities, or unmentioned incidents.',
       '2. Preserve exact customer meaning and sentiment across all 6 levels (very_positive, positive, neutral, mixed, negative, very_negative). If answers are mixed or average, preserve both positive and negative points accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
       '3. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and readable; 2-4 natural sentences.',
       '4. NEVER use generic AI clichés or promotional language ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever").',
       '5. No quotation marks wrapping the review, no bullet points, no titles/headings, no explanations outside JSON, no hashtags, no emojis (unless supplied by customer), and never claim the review is "human-written".',
-      '6. In groundedFacts, list exact facts from the customer feedback you used. In keywordsUsed, list 0-3 short natural phrases directly from the feedback.',
+      '6. In groundedFacts, list exact facts from the customer feedback you used. In keywordsUsed, list 0-3 short natural keywords/phrases used cleanly in the review.',
     ].join('\n');
 
     const reviewResponseSchema = {

@@ -697,6 +697,7 @@ export function CustomerReviewFlow({
           visitorId,
           businessName: profile.name,
           category: profile.category,
+          seoKeywords: Array.isArray(profile.seoKeywords) ? profile.seoKeywords.slice(0, 15) : [],
           responses,
           additionalComments,
           style: selectedStyle,
