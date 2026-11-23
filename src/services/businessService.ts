@@ -245,6 +245,26 @@ function needsFeaturesRepair(f?: Partial<EnabledFeatures>): boolean {
   );
 }
 
+const VALID_BUSINESS_CATEGORIES = new Set<BusinessCategory>([
+  'Restaurants',
+  'Hair Salons',
+  'Beauty Salons',
+  'Hotels',
+  'Spas',
+  'Gyms',
+  'Healthcare',
+  'Retail Stores',
+  'Automobile Services',
+  'Other Businesses',
+]);
+
+function sanitizeBusinessCategory(cat: unknown): BusinessCategory {
+  if (typeof cat === 'string' && VALID_BUSINESS_CATEGORIES.has(cat as BusinessCategory)) {
+    return cat as BusinessCategory;
+  }
+  return 'Other Businesses';
+}
+
 function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
   return (
     typeof raw.address !== 'string' ||
@@ -252,8 +272,71 @@ function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
     typeof raw.contactEmail !== 'string' ||
     typeof raw.googleReviewUrl !== 'string' ||
     typeof raw.logoDataUrl !== 'string' ||
-    !Array.isArray(raw.questions)
+    !Array.isArray(raw.questions) ||
+    !VALID_BUSINESS_CATEGORIES.has(raw.category as BusinessCategory)
   );
+}
+
+function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
+  ownerName: boolean;
+  clientUid: boolean;
+  website: boolean;
+  seoKeywords: boolean;
+  qrStandLimit: boolean;
+  gbpSettings: boolean;
+  weeklyReportConfig: boolean;
+  clientEmail: boolean;
+  clientAccessLevel: boolean;
+} {
+  const gbp = raw.gbpSettings as Record<string, unknown> | undefined;
+  const gbpValid =
+    gbp === undefined ||
+    (typeof gbp === 'object' &&
+      gbp !== null &&
+      (gbp.fiveStarMode === 'auto_publish' || gbp.fiveStarMode === 'approval_required') &&
+      (gbp.midStarMode === 'auto_publish' || gbp.midStarMode === 'approval_required') &&
+      gbp.lowStarMode === 'manual_approval_only' &&
+      typeof gbp.brandVoice === 'string' &&
+      typeof gbp.autoSyncEnabled === 'boolean' &&
+      Object.keys(gbp).every((k) =>
+        ['fiveStarMode', 'midStarMode', 'lowStarMode', 'brandVoice', 'autoSyncEnabled'].includes(k),
+      ));
+
+  const wrc = raw.weeklyReportConfig as Record<string, unknown> | undefined;
+  const wrcValid =
+    wrc === undefined ||
+    (typeof wrc === 'object' &&
+      wrc !== null &&
+      typeof wrc.enabled === 'boolean' &&
+      Array.isArray(wrc.recipients) &&
+      typeof wrc.autoMondayEnabled === 'boolean' &&
+      Object.keys(wrc).every((k) =>
+        ['enabled', 'recipients', 'autoMondayEnabled', 'lastGeneratedWeekKey'].includes(k),
+      ));
+
+  return {
+    ownerName: 'ownerName' in raw && typeof raw.ownerName !== 'string',
+    clientUid: 'clientUid' in raw && typeof raw.clientUid !== 'string',
+    website: 'website' in raw && typeof raw.website !== 'string',
+    seoKeywords:
+      'seoKeywords' in raw &&
+      (!Array.isArray(raw.seoKeywords) ||
+        raw.seoKeywords.length > 15 ||
+        raw.seoKeywords.some((k) => typeof k !== 'string')),
+    qrStandLimit:
+      'qrStandLimit' in raw &&
+      (typeof raw.qrStandLimit !== 'number' ||
+        !Number.isInteger(raw.qrStandLimit) ||
+        raw.qrStandLimit < 1 ||
+        raw.qrStandLimit > 100),
+    gbpSettings: !gbpValid,
+    weeklyReportConfig: !wrcValid,
+    clientEmail: typeof raw.clientEmail !== 'string',
+    clientAccessLevel:
+      raw.clientAccessLevel !== 'read_only' &&
+      raw.clientAccessLevel !== 'qr_and_questions' &&
+      raw.clientAccessLevel !== 'full',
+  };
 }
 
 function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
@@ -921,23 +1004,49 @@ export async function updateBusiness(
   const now = serverTimestamp();
   const batch = writeBatch(db);
 
-  // Check whether publicProfiles/{current.slug} exists without letting a paused-profile read block us
+  // Inspect live raw documents so any legacy/null/malformed fields on either doc are healed automatically
+  let rawBizLive: Record<string, unknown> | null = null;
   let publicProfileState: 'exists' | 'missing' | 'unknown' = 'unknown';
   let publicNeedsBrandingRepair = false;
   let publicNeedsQrRepair = false;
   let publicNeedsFeaturesRepair = false;
-  try {
-    const publicSnap = await getDoc(doc(db, 'publicProfiles', current.slug));
+  let publicNeedsCoreRepair = false;
+  let publicNeedsCategoryRepair = false;
+  let publicNeedsSeoRepair = false;
+  let publicNeedsClientUidRepair = false;
+
+  const [bizSnapResult, publicSnapResult] = await Promise.allSettled([
+    getDoc(doc(db, 'businesses', current.id)),
+    getDoc(doc(db, 'publicProfiles', current.slug)),
+  ]);
+
+  if (bizSnapResult.status === 'fulfilled' && bizSnapResult.value.exists()) {
+    rawBizLive = bizSnapResult.value.data() as Record<string, unknown>;
+  }
+
+  if (publicSnapResult.status === 'fulfilled') {
+    const publicSnap = publicSnapResult.value;
     if (publicSnap.exists()) {
       publicProfileState = 'exists';
-      const rawPub = publicSnap.data() as Partial<PublicProfile>;
-      publicNeedsBrandingRepair = needsBrandingRepair(rawPub.branding);
-      publicNeedsQrRepair = needsQrConfigRepair(rawPub.qrConfig);
-      publicNeedsFeaturesRepair = needsFeaturesRepair(rawPub.enabledFeatures);
+      const rawPub = publicSnap.data() as Record<string, unknown>;
+      publicNeedsBrandingRepair = needsBrandingRepair(rawPub.branding as Partial<BusinessBranding>);
+      publicNeedsQrRepair = needsQrConfigRepair(rawPub.qrConfig as Partial<QrConfig>);
+      publicNeedsFeaturesRepair = needsFeaturesRepair(rawPub.enabledFeatures as Partial<EnabledFeatures>);
+      publicNeedsCoreRepair =
+        typeof rawPub.googleReviewUrl !== 'string' ||
+        typeof rawPub.logoDataUrl !== 'string' ||
+        !Array.isArray(rawPub.questions);
+      publicNeedsCategoryRepair = !VALID_BUSINESS_CATEGORIES.has(rawPub.category as BusinessCategory);
+      publicNeedsSeoRepair =
+        'seoKeywords' in rawPub &&
+        (!Array.isArray(rawPub.seoKeywords) ||
+          rawPub.seoKeywords.length > 15 ||
+          rawPub.seoKeywords.some((k) => typeof k !== 'string'));
+      publicNeedsClientUidRepair = 'clientUid' in rawPub && typeof rawPub.clientUid !== 'string';
     } else {
       publicProfileState = 'missing';
     }
-  } catch {
+  } else {
     // Permission error on paused public profile for non-owner client means doc exists
     publicProfileState = 'exists';
   }
@@ -1003,7 +1112,7 @@ export async function updateBusiness(
     updates.name !== undefined
       ? clampString(updates.name, 120) || current.name
       : current.name;
-  const nextCategory = updates.category ?? current.category;
+  const nextCategory = sanitizeBusinessCategory(updates.category ?? current.category);
   const nextGoogleUrl =
     updates.googleReviewUrl !== undefined
       ? clampString(sanitizeExternalUrl(updates.googleReviewUrl, 'https://www.google.com/maps'), 500)
@@ -1030,6 +1139,9 @@ export async function updateBusiness(
     ? sanitizeEnabledFeatures(updates.enabledFeatures ?? current.enabledFeatures)
     : current.enabledFeatures;
 
+  const optionalRepairs = rawBizLive ? needsOptionalBusinessFieldRepair(rawBizLive) : null;
+  const liveNeedsCoreRepair = rawBizLive ? needsCoreBusinessStringsRepair(rawBizLive) : false;
+
   // Build minimal diff for businesses/{id} while self-healing any invalid nested subobjects
   const businessUpdates: Record<string, unknown> = { updatedAt: now };
   const publicUpdates: Record<string, unknown> = { updatedAt: now };
@@ -1041,30 +1153,40 @@ export async function updateBusiness(
     businessUpdates.name = nextName;
     publicUpdates.name = nextName;
   }
-  if (updates.category !== undefined) {
+  if (updates.category !== undefined || liveNeedsCoreRepair || publicNeedsCategoryRepair) {
     businessUpdates.category = nextCategory;
     publicUpdates.category = nextCategory;
   }
-  if (updates.address !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (updates.address !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
     businessUpdates.address = clampString(updates.address ?? current.address, 240);
   }
-  if (updates.phone !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (updates.phone !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
     businessUpdates.phone = clampString(updates.phone ?? current.phone, 40);
   }
-  if (updates.contactEmail !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (updates.contactEmail !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
     businessUpdates.contactEmail = clampString(updates.contactEmail ?? current.contactEmail, 120);
   }
-  if (updates.website !== undefined) {
+  if (updates.website !== undefined || optionalRepairs?.website) {
     businessUpdates.website = clampString(
-      updates.website ? sanitizeExternalUrl(updates.website, '') : '',
+      updates.website ? sanitizeExternalUrl(updates.website, '') : current.website || '',
       300,
     );
   }
-  if (updates.googleReviewUrl !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (
+    updates.googleReviewUrl !== undefined ||
+    rawNeedsCoreStringsRepair.has(current) ||
+    liveNeedsCoreRepair ||
+    publicNeedsCoreRepair
+  ) {
     businessUpdates.googleReviewUrl = nextGoogleUrl;
     publicUpdates.googleReviewUrl = nextGoogleUrl;
   }
-  if (updates.logoDataUrl !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (
+    updates.logoDataUrl !== undefined ||
+    rawNeedsCoreStringsRepair.has(current) ||
+    liveNeedsCoreRepair ||
+    publicNeedsCoreRepair
+  ) {
     businessUpdates.logoDataUrl = nextLogo;
     publicUpdates.logoDataUrl = nextLogo;
   }
@@ -1072,6 +1194,7 @@ export async function updateBusiness(
     updates.branding !== undefined ||
     needsBrandingRepair(current.branding) ||
     rawNeedsBrandingRepair.has(current) ||
+    (rawBizLive && needsBrandingRepair(rawBizLive.branding as Partial<BusinessBranding>)) ||
     publicNeedsBrandingRepair
   ) {
     businessUpdates.branding = nextBranding;
@@ -1081,12 +1204,18 @@ export async function updateBusiness(
     updates.qrConfig !== undefined ||
     needsQrConfigRepair(current.qrConfig) ||
     rawNeedsQrRepair.has(current) ||
+    (rawBizLive && needsQrConfigRepair(rawBizLive.qrConfig as Partial<QrConfig>)) ||
     publicNeedsQrRepair
   ) {
     businessUpdates.qrConfig = nextQrConfig;
     publicUpdates.qrConfig = nextQrConfig;
   }
-  if (updates.questions !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+  if (
+    updates.questions !== undefined ||
+    rawNeedsCoreStringsRepair.has(current) ||
+    liveNeedsCoreRepair ||
+    publicNeedsCoreRepair
+  ) {
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;
   }
@@ -1094,48 +1223,69 @@ export async function updateBusiness(
     businessUpdates.formTemplate = nextFormTemplate;
     publicUpdates.formTemplate = nextFormTemplate;
   }
-  if (updates.seoKeywords !== undefined) {
+  if (updates.seoKeywords !== undefined || optionalRepairs?.seoKeywords || publicNeedsSeoRepair) {
     businessUpdates.seoKeywords = nextSeoKeywords;
     publicUpdates.seoKeywords = nextSeoKeywords;
   }
-  if (updates.ownerName !== undefined) {
-    businessUpdates.ownerName = clampString(updates.ownerName, 120);
+  if (updates.ownerName !== undefined || optionalRepairs?.ownerName) {
+    businessUpdates.ownerName = clampString(updates.ownerName ?? current.ownerName, 120);
   }
-  if (updates.gbpSettings !== undefined) {
-    businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings);
+  if (updates.gbpSettings !== undefined || optionalRepairs?.gbpSettings) {
+    businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings ?? current.gbpSettings);
   }
-  if (updates.weeklyReportConfig !== undefined) {
+  if (updates.weeklyReportConfig !== undefined || optionalRepairs?.weeklyReportConfig) {
     businessUpdates.weeklyReportConfig = sanitizeWeeklyReportConfig(
-      updates.weeklyReportConfig,
+      updates.weeklyReportConfig ?? current.weeklyReportConfig,
       nextClientEmail,
     );
   }
 
   const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
-    if (updates.clientEmail !== undefined) {
+    if (updates.clientEmail !== undefined || optionalRepairs?.clientEmail) {
       businessUpdates.clientEmail = nextClientEmail;
     }
-    if (updates.clientAccessLevel !== undefined) {
+    if (updates.clientAccessLevel !== undefined || optionalRepairs?.clientAccessLevel) {
       businessUpdates.clientAccessLevel = nextAccessLevel;
     }
     if (
       updates.enabledFeatures !== undefined ||
       rawNeedsFeaturesRepair.has(current) ||
+      (rawBizLive && needsFeaturesRepair(rawBizLive.enabledFeatures as Partial<EnabledFeatures>)) ||
       publicNeedsFeaturesRepair
     ) {
       businessUpdates.enabledFeatures = nextFeatures;
       publicUpdates.enabledFeatures = nextFeatures;
     }
-    if (updates.qrStandLimit !== undefined) {
-      const parsedLimit = Math.round(Number(updates.qrStandLimit));
+    if (updates.qrStandLimit !== undefined || optionalRepairs?.qrStandLimit) {
+      const parsedLimit = Math.round(Number(updates.qrStandLimit ?? current.qrStandLimit));
       businessUpdates.qrStandLimit = Math.min(100, Math.max(1, parsedLimit || 4));
     }
-    if (clientEmailChanged) {
-      businessUpdates.clientUid = '';
-      publicUpdates.clientUid = '';
+    if (clientEmailChanged || optionalRepairs?.clientUid || publicNeedsClientUidRepair) {
+      const nextUid = clientEmailChanged ? '' : current.clientUid || '';
+      businessUpdates.clientUid = nextUid;
+      publicUpdates.clientUid = nextUid;
     }
   }
+
+  const buildFreshPublicProfilePayload = (targetSlug: string) => ({
+    businessId: current.id,
+    ownerId: current.ownerId,
+    clientUid: clientEmailChanged ? '' : current.clientUid || '',
+    slug: targetSlug,
+    name: nextName,
+    category: nextCategory,
+    googleReviewUrl: nextGoogleUrl,
+    logoDataUrl: nextLogo,
+    enabledFeatures: nextFeatures,
+    branding: nextBranding,
+    qrConfig: nextQrConfig,
+    questions: nextQuestions,
+    formTemplate: nextFormTemplate,
+    seoKeywords: nextSeoKeywords,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   batch.update(doc(db, 'businesses', current.id), businessUpdates);
 
@@ -1143,44 +1293,10 @@ export async function updateBusiness(
     if (publicProfileState !== 'missing') {
       batch.delete(doc(db, 'publicProfiles', current.slug));
     }
-    batch.set(doc(db, 'publicProfiles', nextSlug), {
-      businessId: current.id,
-      ownerId: current.ownerId,
-      clientUid: clientEmailChanged ? '' : current.clientUid || '',
-      slug: nextSlug,
-      name: nextName,
-      category: nextCategory,
-      googleReviewUrl: nextGoogleUrl,
-      logoDataUrl: nextLogo,
-      enabledFeatures: nextFeatures,
-      branding: nextBranding,
-      qrConfig: nextQrConfig,
-      questions: nextQuestions,
-      formTemplate: nextFormTemplate,
-      seoKeywords: nextSeoKeywords,
-      createdAt: now,
-      updatedAt: now,
-    });
+    batch.set(doc(db, 'publicProfiles', nextSlug), buildFreshPublicProfilePayload(nextSlug));
   } else if (publicProfileState === 'missing') {
     if (isOwnerOrAdmin) {
-      batch.set(doc(db, 'publicProfiles', current.slug), {
-        businessId: current.id,
-        ownerId: current.ownerId,
-        clientUid: clientEmailChanged ? '' : current.clientUid || '',
-        slug: current.slug,
-        name: nextName,
-        category: nextCategory,
-        googleReviewUrl: nextGoogleUrl,
-        logoDataUrl: nextLogo,
-        enabledFeatures: nextFeatures,
-        branding: nextBranding,
-        qrConfig: nextQrConfig,
-        questions: nextQuestions,
-        formTemplate: nextFormTemplate,
-        seoKeywords: nextSeoKeywords,
-        createdAt: now,
-        updatedAt: now,
-      });
+      batch.set(doc(db, 'publicProfiles', current.slug), buildFreshPublicProfilePayload(current.slug));
     }
   } else if (Object.keys(publicUpdates).length > 1) {
     batch.update(doc(db, 'publicProfiles', current.slug), publicUpdates);
@@ -1200,6 +1316,33 @@ export async function updateBusiness(
   try {
     await batch.commit();
   } catch (error) {
+    const rawMsg = error instanceof Error ? error.message.toLowerCase() : '';
+    const isPermErr = rawMsg.includes('permission') || rawMsg.includes('insufficient');
+
+    // If an admin/owner batch failed because the sibling publicProfiles doc had a legacy/broken schema,
+    // update businesses/{id} first and recreate publicProfiles/{slug} cleanly so the save succeeds.
+    if (isPermErr && isOwnerOrAdmin && !slugChanged) {
+      try {
+        await updateDoc(doc(db, 'businesses', current.id), businessUpdates);
+        try {
+          if (Object.keys(publicUpdates).length > 1) {
+            await updateDoc(doc(db, 'publicProfiles', current.slug), publicUpdates);
+          }
+        } catch {
+          const repairBatch = writeBatch(db);
+          repairBatch.delete(doc(db, 'publicProfiles', current.slug));
+          repairBatch.set(
+            doc(db, 'publicProfiles', current.slug),
+            buildFreshPublicProfilePayload(current.slug),
+          );
+          await repairBatch.commit();
+        }
+        return nextSlug;
+      } catch (isolatedErr) {
+        handleFirestoreError(isolatedErr, OperationType.UPDATE, `businesses/${current.id}`);
+      }
+    }
+
     handleFirestoreError(error, OperationType.UPDATE, `businesses/${current.id}`);
   }
 

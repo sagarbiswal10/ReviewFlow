@@ -207,9 +207,9 @@ service cloud.firestore {
           'lifecycleStatus', 'tenantFirebase', 'createdAt', 'updatedAt'
         ]) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
-        (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 120)) &&
+        (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 120)) &&
         data.clientEmail is string && data.clientEmail.size() <= 120 &&
-        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         data.clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
         isValidEnabledFeatures(data.enabledFeatures) &&
         isValidSlug(data.slug) &&
@@ -218,18 +218,18 @@ service cloud.firestore {
         data.address is string && data.address.size() <= 240 &&
         data.phone is string && data.phone.size() <= 40 &&
         data.contactEmail is string && data.contactEmail.size() <= 120 &&
-        (!('website' in data) || (data.website is string && data.website.size() <= 300)) &&
+        (!('website' in data) || data.website == null || (data.website is string && data.website.size() <= 300)) &&
         data.googleReviewUrl is string && data.googleReviewUrl.size() <= 500 &&
         data.logoDataUrl is string && data.logoDataUrl.size() <= 350000 &&
         isValidBranding(data.branding) &&
         isValidQrConfig(data.qrConfig) &&
         isValidQuestions(data.questions) &&
-        (!('formTemplate' in data) || isValidFormTemplate(data.formTemplate)) &&
-        (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
-        (!('qrStandLimit' in data) || (data.qrStandLimit is int && data.qrStandLimit >= 1 && data.qrStandLimit <= 100)) &&
-        (!('gbpSettings' in data) || isValidGbpSettings(data.gbpSettings)) &&
-        (!('weeklyReportConfig' in data) || isValidWeeklyReportConfig(data.weeklyReportConfig)) &&
-        (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
+        (!('formTemplate' in data) || data.formTemplate == null || isValidFormTemplate(data.formTemplate)) &&
+        (!('seoKeywords' in data) || data.seoKeywords == null || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('qrStandLimit' in data) || data.qrStandLimit == null || (data.qrStandLimit is int && data.qrStandLimit >= 1 && data.qrStandLimit <= 100)) &&
+        (!('gbpSettings' in data) || data.gbpSettings == null || isValidGbpSettings(data.gbpSettings)) &&
+        (!('weeklyReportConfig' in data) || data.weeklyReportConfig == null || isValidWeeklyReportConfig(data.weeklyReportConfig)) &&
+        (!('lifecycleStatus' in data) || data.lifecycleStatus == null || isValidLifecycleStatus(data.lifecycleStatus)) &&
         (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -249,7 +249,7 @@ service cloud.firestore {
         ]) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
-        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         isValidCategory(data.category) &&
@@ -259,9 +259,9 @@ service cloud.firestore {
         isValidBranding(data.branding) &&
         isValidQrConfig(data.qrConfig) &&
         isValidQuestions(data.questions) &&
-        (!('formTemplate' in data) || isValidFormTemplate(data.formTemplate)) &&
-        (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
-        (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
+        (!('formTemplate' in data) || data.formTemplate == null || isValidFormTemplate(data.formTemplate)) &&
+        (!('seoKeywords' in data) || data.seoKeywords == null || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('lifecycleStatus' in data) || data.lifecycleStatus == null || isValidLifecycleStatus(data.lifecycleStatus)) &&
         (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
