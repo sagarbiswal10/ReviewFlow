@@ -438,16 +438,16 @@ export function saveGbpOAuthClientId(clientId: string): string {
 }
 
 export function getGoogleOAuthClientId(): string {
-  const envId = (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim();
-  if (envId) return envId;
   const savedId = getSavedGbpOAuthClientId();
   if (savedId) return savedId;
+  const envId = (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim();
+  if (envId) return envId;
   return (firebaseConfig.oAuthClientId || '').trim();
 }
 
 export function isCustomGbpOAuthClientConfigured(): boolean {
   return Boolean(
-    (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim() || getSavedGbpOAuthClientId(),
+    getSavedGbpOAuthClientId() || (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim(),
   );
 }
 
@@ -554,7 +554,7 @@ export async function requestGbpOAuthToken(options?: {
       finish(() =>
         reject(
           new Error(
-            'Google authorization timed out. If the popup showed "Access blocked: Authorisation error" or was closed, verify your Authorized JavaScript Origins and Test Users in Google Cloud Console.',
+            'Google authorization timed out. If the popup showed "Access blocked: Authorisation error", check the Google Cloud OAuth Checklist below.',
           ),
         ),
       );
@@ -570,7 +570,7 @@ export async function requestGbpOAuthToken(options?: {
           finish(() =>
             reject(
               new Error(
-                `Google OAuth error (${desc}). Make sure ${currentOrigin || 'this app URL'} is authorized for OAuth Client ${clientId} and Google Business Profile API access is approved.`,
+                `Google OAuth error (${desc}). Verify ${currentOrigin || 'this URL'} is in Authorized JavaScript origins on Client ID ${clientId}, Audience is set to Testing with your Gmail added under Test Users (for business.manage scope), and Google Business Profile APIs are enabled.`,
               ),
             ),
           );
@@ -587,7 +587,7 @@ export async function requestGbpOAuthToken(options?: {
           finish(() =>
             reject(
               new Error(
-                `Authorization popup was closed. If Google showed "Access blocked: Authorisation error" (Error 400: origin_mismatch), verify ${currentOrigin || 'this domain'} is listed under Authorized JavaScript Origins on OAuth Client ${clientId} and your Gmail is under OAuth Consent Screen -> Test Users.`,
+                `Authorization popup closed. If Google showed "Access blocked: Authorisation error" for Client ID ${clientId}, check: (1) ${currentOrigin || 'this URL'} is in Authorized JavaScript origins (not Redirect URIs), (2) Google Auth Platform -> Audience is in Testing mode with your Gmail added under Test Users (business.manage is a sensitive scope), and (3) My Business Account Management & Business Information APIs are enabled.`,
               ),
             ),
           );
@@ -607,7 +607,7 @@ export async function requestGbpOAuthToken(options?: {
           reject(
             new Error(
               err?.message ||
-                'Google OAuth could not start. Check your OAuth Client ID and Authorized JavaScript Origins.',
+                'Google OAuth could not start. Check your Web OAuth Client ID and Authorized JavaScript origins.',
             ),
           ),
         );

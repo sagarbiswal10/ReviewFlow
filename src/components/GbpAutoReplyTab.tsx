@@ -106,6 +106,7 @@ export function GbpAutoReplyTab({
   );
   const [showOAuthConfig, setShowOAuthConfig] = useState(false);
   const [copiedOrigin, setCopiedOrigin] = useState(false);
+  const [copiedClientId, setCopiedClientId] = useState(false);
   const [oauthConfigVersion, setOauthConfigVersion] = useState(0);
   const hasCustomOAuthClient = useMemo(
     () => isCustomGbpOAuthClientConfigured(),
@@ -241,6 +242,17 @@ export function GbpAutoReplyTab({
     }
   };
 
+  const handleCopyClientId = async () => {
+    if (!activeOAuthClientId) return;
+    try {
+      await navigator.clipboard.writeText(activeOAuthClientId);
+      setCopiedClientId(true);
+      setTimeout(() => setCopiedClientId(false), 2000);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
   const handleConnectGoogleOAuth = async () => {
     setConnError(null);
     setConnNotice(null);
@@ -254,7 +266,7 @@ export function GbpAutoReplyTab({
     const attemptId = ++oauthAttemptRef.current;
     setIsConnecting(true);
     try {
-      const token = await requestGbpOAuthToken({ loginHint: userEmail });
+      const token = await requestGbpOAuthToken();
       if (oauthAttemptRef.current !== attemptId) return;
       setGbpToken(token);
       try {
@@ -266,7 +278,7 @@ export function GbpAutoReplyTab({
           await saveGbpConnection({
             business,
             connectionStatus: 'connected',
-            connectedEmail: userEmail,
+            connectedEmail: '',
             accountName: locations[0].accountName,
             locationName: locations[0].locationName,
             locationTitle: locations[0].title,
@@ -278,7 +290,7 @@ export function GbpAutoReplyTab({
           await saveGbpConnection({
             business,
             connectionStatus: 'connected',
-            connectedEmail: userEmail,
+            connectedEmail: '',
             accountName: 'authorized',
             locationName: '',
             locationTitle: 'No GBP locations found on this Google account',
@@ -293,7 +305,7 @@ export function GbpAutoReplyTab({
         await saveGbpConnection({
           business,
           connectionStatus: 'pending_api_approval',
-          connectedEmail: userEmail,
+          connectedEmail: '',
           accountName: 'oauth_authorized',
           locationName: '',
           locationTitle: 'Pending Google GBP API Access Approval',
@@ -306,9 +318,7 @@ export function GbpAutoReplyTab({
       }
     } catch (err) {
       if (oauthAttemptRef.current !== attemptId) return;
-      if (!hasCustomOAuthClient) {
-        setShowOAuthConfig(true);
-      }
+      setShowOAuthConfig(true);
       setConnError(err instanceof Error ? err.message : 'Google Business Profile OAuth failed.');
     } finally {
       if (oauthAttemptRef.current === attemptId) {
@@ -327,7 +337,7 @@ export function GbpAutoReplyTab({
       await saveGbpConnection({
         business,
         connectionStatus: 'connected',
-        connectedEmail: userEmail,
+        connectedEmail: connection?.connectedEmail || '',
         accountName: loc.accountName,
         locationName: loc.locationName,
         locationTitle: loc.title,
@@ -363,7 +373,7 @@ export function GbpAutoReplyTab({
     try {
       let tokenToUse = gbpToken;
       if (!tokenToUse) {
-        tokenToUse = await requestGbpOAuthToken({ loginHint: userEmail });
+        tokenToUse = await requestGbpOAuthToken();
         if (oauthAttemptRef.current !== attemptId) return;
         setGbpToken(tokenToUse);
       }
@@ -561,7 +571,9 @@ export function GbpAutoReplyTab({
             <p className="text-xs sm:text-sm text-slate-600">
               {connection?.locationTitle
                 ? `Location: ${connection.locationTitle}${
-                    allowOAuthConnection ? ` (${connection.connectedEmail || userEmail})` : ''
+                    allowOAuthConnection && connection.connectedEmail
+                      ? ` (${connection.connectedEmail})`
+                      : ''
                   }`
                 : allowOAuthConnection
                   ? 'Connect Google Business Profile via OAuth 2.0 (business.manage scope) to fetch reviews and publish AI owner replies.'
@@ -671,9 +683,9 @@ export function GbpAutoReplyTab({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-slate-900 inline-flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-[#0f766e]" />
-                <span>Google Business Profile OAuth Setup</span>
+                <span>Google Business Profile OAuth Setup &amp; Troubleshooter</span>
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {currentOrigin && (
                   <button
                     type="button"
@@ -688,84 +700,119 @@ export function GbpAutoReplyTab({
                     <span>{copiedOrigin ? 'Origin Copied' : `Copy ${currentOrigin}`}</span>
                   </button>
                 )}
-                {!showOAuthConfig && !envOAuthClientConfigured && (
+                {activeOAuthClientId && (
                   <button
                     type="button"
-                    onClick={() => setShowOAuthConfig(true)}
-                    className="px-2.5 py-1 rounded-lg bg-[#0f766e] hover:bg-[#005c55] text-white text-[11px] font-semibold cursor-pointer"
+                    onClick={handleCopyClientId}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
                   >
-                    Set OAuth Client ID
+                    {copiedClientId ? (
+                      <Check className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copiedClientId ? 'Client ID Copied' : 'Copy Client ID'}</span>
+                  </button>
+                )}
+                {showOAuthConfig && hasCustomOAuthClient && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOAuthConfig(false)}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-600 cursor-pointer"
+                  >
+                    Hide
                   </button>
                 )}
               </div>
             </div>
 
-            <p className="leading-relaxed">
-              Google blocks the default fallback client ID (
-              <span className="font-mono">{activeOAuthClientId || 'not set'}</span>) on{' '}
-              <span className="font-mono">{currentOrigin || 'this URL'}</span> because it only
-              authorizes Firebase Auth. Create a <span className="font-semibold">Web Application</span>{' '}
-              OAuth Client in your Google Cloud project, add{' '}
-              <span className="font-mono">{currentOrigin || 'this URL'}</span> under{' '}
-              <span className="font-semibold">Authorized JavaScript Origins</span>, add your Gmail under{' '}
-              <span className="font-semibold">OAuth Consent Screen &rarr; Test Users</span>, and paste
-              your Client ID below (or set <span className="font-mono">VITE_GOOGLE_OAUTH_CLIENT_ID</span>{' '}
-              in Vercel). You can also click{' '}
-              <span className="font-semibold">Process Incoming Review</span> right now without OAuth.
-            </p>
+            <div className="space-y-1.5 leading-relaxed">
+              <p>
+                Active OAuth Client ID:{' '}
+                <span className="font-mono font-semibold text-slate-900 break-all">
+                  {activeOAuthClientId || 'not set'}
+                </span>
+              </p>
+              <p className="font-semibold text-slate-800 pt-1">
+                If Google shows &ldquo;Access blocked: Authorisation error&rdquo;, verify all 4 items in Google Cloud Console:
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                <li>
+                  <span className="font-semibold">Credentials &rarr; OAuth Client Type:</span> Must be{' '}
+                  <span className="font-semibold">Web application</span> matching the Client ID above.
+                </li>
+                <li>
+                  <span className="font-semibold">Authorized JavaScript origins:</span> Add{' '}
+                  <span className="font-mono font-semibold text-slate-900">{currentOrigin || 'this URL'}</span>{' '}
+                  exact URL with <span className="font-semibold">no trailing slash</span> (do{' '}
+                  <span className="italic">not</span> only add it to Redirect URIs).
+                </li>
+                <li>
+                  <span className="font-semibold">Google Auth Platform &rarr; Audience:</span> Keep Publishing Status as{' '}
+                  <span className="font-semibold">Testing</span> (unverified Production blocks sensitive scope{' '}
+                  <span className="font-mono">business.manage</span>) and add the Google Business Gmail under{' '}
+                  <span className="font-semibold">Test users</span>.
+                </li>
+                <li>
+                  <span className="font-semibold">APIs &amp; Services &rarr; Library:</span> Enable{' '}
+                  <span className="font-semibold">My Business Account Management API</span> and{' '}
+                  <span className="font-semibold">My Business Business Information API</span> in the same project.
+                </li>
+              </ol>
+              <p className="text-slate-600 pt-0.5">
+                Or test replies immediately without OAuth using <span className="font-semibold">Process Incoming Review</span>.
+              </p>
+            </div>
 
-            {(showOAuthConfig || !envOAuthClientConfigured) && (
-              <form
-                onSubmit={handleSaveCustomOAuthClient}
-                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1"
+            <form
+              onSubmit={handleSaveCustomOAuthClient}
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1"
+            >
+              <input
+                type="text"
+                value={customClientInput}
+                onChange={(e) => setCustomClientInput(e.target.value)}
+                placeholder="Override OAuth Client ID for this browser (e.g. 123456-abc.apps.googleusercontent.com)"
+                className="flex-1 h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900"
+              />
+              <button
+                type="submit"
+                className="h-9 px-3.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
               >
-                <input
-                  type="text"
-                  value={customClientInput}
-                  onChange={(e) => setCustomClientInput(e.target.value)}
-                  placeholder="Paste Google OAuth Client ID (e.g. 123456789-abc.apps.googleusercontent.com)"
-                  className="flex-1 h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900"
-                />
+                Save Client ID
+              </button>
+              {getSavedGbpOAuthClientId() && (
                 <button
-                  type="submit"
-                  className="h-9 px-3.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  type="button"
+                  onClick={() => {
+                    setCustomClientInput('');
+                    saveGbpOAuthClientId('');
+                    setOauthConfigVersion((v) => v + 1);
+                    setConnNotice('Cleared browser override; using environment OAuth Client ID.');
+                  }}
+                  className="h-9 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
                 >
-                  Save Client ID
+                  Reset Override
                 </button>
-                {getSavedGbpOAuthClientId() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCustomClientInput('');
-                      saveGbpOAuthClientId('');
-                      setOauthConfigVersion((v) => v + 1);
-                      setConnNotice('Cleared saved custom OAuth Client ID.');
-                    }}
-                    className="h-9 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
-                  >
-                    Clear
-                  </button>
-                )}
-              </form>
-            )}
+              )}
+            </form>
           </div>
         )}
         {allowOAuthConnection &&
           hasCustomOAuthClient &&
           !showOAuthConfig &&
-          connection?.connectionStatus !== 'connected' &&
-          !envOAuthClientConfigured && (
+          connection?.connectionStatus !== 'connected' && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
-            <span>
-              Using custom Google OAuth Client ID:{' '}
+            <span className="break-all">
+              Using {getSavedGbpOAuthClientId() ? 'saved override' : envOAuthClientConfigured ? 'Vercel env' : 'custom'} Google OAuth Client ID:{' '}
               <span className="font-mono font-semibold">{activeOAuthClientId}</span>
             </span>
             <button
               type="button"
               onClick={() => setShowOAuthConfig(true)}
-              className="text-xs font-semibold text-[#005c55] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#005c55] hover:underline cursor-pointer shrink-0"
             >
-              Change Client ID
+              OAuth Setup / Change ID
             </button>
           </div>
         )}
