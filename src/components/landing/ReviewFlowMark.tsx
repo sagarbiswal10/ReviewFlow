@@ -9,16 +9,20 @@ interface ReviewFlowMarkProps {
 export function ReviewFlowMark({ size = 'md', className = '' }: ReviewFlowMarkProps) {
   const dims =
     size === 'sm'
-      ? { box: 'w-6 h-4', circle: 'w-3.5 h-3.5', right: 'left-2' }
+      ? 'w-7 h-7 rounded-lg'
       : size === 'lg'
-      ? { box: 'w-9 h-6', circle: 'w-5 h-5', right: 'left-3.5' }
-      : { box: 'w-7 h-5', circle: 'w-4 h-4', right: 'left-2.5' };
+        ? 'w-10 h-10 rounded-xl'
+        : 'w-8 h-8 rounded-xl';
 
   return (
-    <span className={`relative inline-flex items-center shrink-0 ${dims.box} ${className}`} aria-hidden="true">
-      <span className={`absolute left-0 rounded-full bg-[#FF3D8B] ${dims.circle}`} />
-      <span
-        className={`absolute ${dims.right} rounded-full bg-[#2454FF] mix-blend-normal ring-1 ring-white/25 ${dims.circle}`}
+    <span
+      className={`inline-flex items-center justify-center shrink-0 overflow-hidden shadow-xs bg-[#0E0A26] ${dims} ${className}`}
+      aria-hidden="true"
+    >
+      <img
+        src="/reviewflow-logo.png"
+        alt="ReviewFlow logo"
+        className="w-full h-full object-cover"
       />
     </span>
   );

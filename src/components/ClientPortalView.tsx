@@ -50,6 +50,7 @@ import {
 } from '../services/businessService';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { getPortalTimeGreeting } from '../utils/domainHelpers';
 import { hasPasswordProvider, sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { getFormTemplateById } from '../data/formTemplates';
 import { AccountSecurityModal } from './AccountSecurityModal';
@@ -842,13 +843,11 @@ export function ClientPortalView({
             onClick={onViewLanding}
             className="flex items-center gap-2.5 cursor-pointer text-left"
           >
-            <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                isDark ? 'bg-white text-[#101015]' : 'bg-slate-900 text-white'
-              }`}
-            >
-              <QrCode className="w-4 h-4" />
-            </div>
+            <img
+              src="/reviewflow-logo.png"
+              alt="ReviewFlow"
+              className="w-8 h-8 rounded-xl object-cover shadow-xs shrink-0 bg-[#0E0A26]"
+            />
             <span className={`font-display text-base font-bold tracking-tight ${textPrimary}`}>
               ReviewFlow
             </span>
@@ -1270,6 +1269,18 @@ export function ClientPortalView({
                  ========================================== */}
               {activeTab === 'qr_features' && (
                 <div className="space-y-6">
+                  {/* Time-of-day greeting for business owner */}
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                    <div>
+                      <h1 className={`font-display text-2xl sm:text-3xl font-bold tracking-tight ${textPrimary}`}>
+                        {getPortalTimeGreeting()}, {user.displayName?.trim() || activeBusiness.name || user.email?.split('@')[0] || 'there'}
+                      </h1>
+                      <p className={`text-xs sm:text-sm mt-1 ${surfaceMuted}`}>
+                        Here is the live review overview for {activeBusiness.name}.
+                      </p>
+                    </div>
+                  </div>
+
                   {pdfExportError && (
                     <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-xs text-red-400 font-medium">
                       {pdfExportError}
@@ -1282,9 +1293,9 @@ export function ClientPortalView({
                     <div className={`lg:col-span-8 ${surfaceCard} rounded-2xl p-6 flex flex-col justify-between`}>
                       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                         <div>
-                          <h1 className={`font-display text-lg font-semibold ${textPrimary}`}>
+                          <h2 className={`font-display text-lg font-semibold ${textPrimary}`}>
                             Scan &amp; Review Flow
-                          </h1>
+                          </h2>
                           <p className={`text-xs mt-0.5 ${surfaceMuted}`}>
                             7-day QR scans, AI drafts, and Google redirects
                           </p>

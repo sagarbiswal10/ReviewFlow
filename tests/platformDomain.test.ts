@@ -8,6 +8,7 @@ import {
   formatQuotaCountdown,
   formatReviewEventActionLabel,
   getMondaySundayWindow,
+  getPortalTimeGreeting,
   getTimestampMs,
   isMondayToday,
   normalizeEmail,
@@ -234,4 +235,12 @@ test('TC-ARCH-03: Business Management controls and Client Portal enforces formTe
     assert.match(onboardingSrc, new RegExp(flag));
     assert.match(clientPortalSrc, new RegExp(flag));
   }
+});
+
+test('TC-DOM-10: getPortalTimeGreeting returns morning, afternoon, evening, and Hello at night', () => {
+  assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 8, 30)), 'Good morning');
+  assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 14, 0)), 'Good afternoon');
+  assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 18, 45)), 'Good evening');
+  assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 22, 15)), 'Hello');
+  assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 2, 0)), 'Hello');
 });

@@ -824,9 +824,11 @@ export function ManagementConsoleView({
       <div>
         <div className="h-16 px-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-[#4F46E5] text-white flex items-center justify-center shadow-xs shrink-0">
-              <Sparkles className="w-4 h-4" />
-            </span>
+            <img
+              src="/reviewflow-logo.png"
+              alt="ReviewFlow"
+              className="w-8 h-8 rounded-xl object-cover shadow-xs shrink-0 bg-[#0E0A26]"
+            />
             <div className="leading-tight">
               <span
                 className={`font-display text-base font-bold tracking-tight block ${

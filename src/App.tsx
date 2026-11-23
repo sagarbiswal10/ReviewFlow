@@ -338,7 +338,7 @@ export default function App() {
     if (route.kind === 'review') return;
 
     if (isAdmin) {
-      if (route.kind === 'home') {
+      if (redirectAfterLogin && route.kind === 'home') {
         setRedirectAfterLogin(false);
         navigateTo('/admin', true);
       }
@@ -847,7 +847,7 @@ export default function App() {
   // 5. Landing Page ('/' for signed-in Client Portal or unassigned accounts), Business Management (/admin), vs Client Portal (/portal)
   const hasClientAccess = businesses.length > 0;
   const showingAdminConsole = isAdmin && route.kind === 'admin';
-  const showingLandingPage = !isAdmin && route.kind === 'home';
+  const showingLandingPage = route.kind === 'home';
 
   return (
     <>
