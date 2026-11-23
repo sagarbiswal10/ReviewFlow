@@ -134,6 +134,8 @@ function issueLabel(type: QualityIssueType): string {
       return 'Script Mismatch';
     case 'ai_cliche':
       return 'AI Cliché';
+    case 'formatting_violation':
+      return 'Formatting Rule';
     case 'empty_output':
       return 'Empty Output';
     default:

@@ -6,6 +6,7 @@ export type QualityIssueType =
   | 'repetition'
   | 'script_mismatch'
   | 'ai_cliche'
+  | 'formatting_violation'
   | 'empty_output';
 
 export interface QualityIssue {
@@ -45,20 +46,31 @@ const LATIN_WORD_REGEX = /[A-Za-z]+/g;
 
 const BANNED_AI_CLICHES = [
   'absolutely amazing experience',
+  'absolutely delightful',
+  'delightful experience',
   'amazing experience',
   'truly amazing',
   'exceptional hospitality',
   'outstanding hospitality',
   'exceptional service',
   'outstanding service',
+  'perfect blend',
+  'epitome of excellence',
   'exceeded all expectations',
   'exceeded my expectations',
   'beyond expectations',
   'hidden gem',
+  'must-visit destination',
   'must-visit',
   'must visit',
+  'highly recommended to everyone',
+  'would highly recommend',
+  'highly recommended',
   'cannot recommend enough',
   'can not recommend enough',
+  'one of the best places ever',
+  'overall experience was amazing',
+  'overall customer experience',
   'top-notch',
   'top notch',
   'world-class',
@@ -66,8 +78,24 @@ const BANNED_AI_CLICHES = [
   'truly unforgettable',
   'unforgettable experience',
   'everything was perfect',
+  'everything was just perfect',
   'zero complaints',
   'no complaints at all',
+];
+
+const HINGLISH_STIFF_VOCAB = [
+  'cuisine',
+  'hospitality',
+  'personnel',
+  'establishment',
+  'exquisite',
+  'impeccable',
+  'delectable',
+  'extraordinary',
+  'unparalleled',
+  'stellar',
+  'phenomenal',
+  'once again',
 ];
 
 const UNGROUNDED_SPECIFIC_TERMS = [
@@ -360,7 +388,7 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
     }
   }
 
-  // 4. AI cliché detection
+  // 4. AI cliché & formal/corporate jargon detection
   let clicheCount = 0;
   for (const phrase of BANNED_AI_CLICHES) {
     if (lowerReview.includes(phrase)) {
@@ -372,6 +400,69 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
         evidence: phrase,
       });
     }
+  }
+
+  if (language === 'hinglish') {
+    for (const stiffWord of HINGLISH_STIFF_VOCAB) {
+      const stiffRegex = new RegExp(`\\b${stiffWord.replace(/\s+/g, '\\s+')}\\b`, 'i');
+      if (stiffRegex.test(lowerReview) && !stiffRegex.test(userFactsCorpus)) {
+        clicheCount += 1;
+        issues.push({
+          type: 'ai_cliche',
+          severity: 'warning',
+          message: `Prefer simple Hinglish wording instead of formal/corporate term "${stiffWord}".`,
+          evidence: stiffWord,
+        });
+      }
+    }
+  }
+
+  // 4b. Output formatting & meta-output rules (no hashtags, emojis unless in user note, titles, or "human-written" claims)
+  const hashtagMatch = reviewText.match(/(?:^|\s)(#[\p{L}\p{N}_]+)/u);
+  if (hashtagMatch) {
+    issues.push({
+      type: 'formatting_violation',
+      severity: 'warning',
+      message: 'Review should not contain hashtags.',
+      evidence: hashtagMatch[1],
+    });
+  }
+
+  const userCommentHasEmoji = Boolean(
+    input.additionalComments && /\p{Extended_Pictographic}/u.test(input.additionalComments),
+  );
+  const emojiMatch = reviewText.match(/\p{Extended_Pictographic}/u);
+  if (emojiMatch && !userCommentHasEmoji) {
+    issues.push({
+      type: 'formatting_violation',
+      severity: 'warning',
+      message: 'Do not include emojis unless explicitly requested by the customer.',
+      evidence: emojiMatch[0],
+    });
+  }
+
+  const metaOrTitleMatch = reviewText.match(
+    /^(?:#+\s|\*\*[^*\n]+\*\*|(?:review|title)\s*:|here(?:'s| is)\s+(?:a|your)\s+review)/i,
+  );
+  if (metaOrTitleMatch) {
+    issues.push({
+      type: 'formatting_violation',
+      severity: 'warning',
+      message: 'Review output should not include a title, markdown header, or explanation preamble.',
+      evidence: metaOrTitleMatch[0].slice(0, 40),
+    });
+  }
+
+  const humanClaimMatch = reviewText.match(
+    /\b(human-written|written by a human|not ai[- ]generated|as a human customer)\b/i,
+  );
+  if (humanClaimMatch) {
+    issues.push({
+      type: 'formatting_violation',
+      severity: 'error',
+      message: 'Output must never claim to be human-written.',
+      evidence: humanClaimMatch[0],
+    });
   }
 
   // 5. Contradiction detection
@@ -417,10 +508,10 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
     }
   }
 
-  // Negative/mixed input glossed over as "flawless / no complaints"
+  // Negative/mixed/average input glossed over as "flawless / excellent / no complaints"
   if (hasNegativeOrMixedInput) {
     const glossOverMatch = lowerReview.match(
-      /\b(flawless|no complaints|nothing wrong|everything was perfect|zero flaws)\b/i,
+      /\b(flawless|no complaints|nothing wrong|everything was perfect|zero flaws|ekdum perfect|best place ever)\b/i,
     );
     if (glossOverMatch) {
       contradictionCount += 1;
@@ -429,6 +520,22 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
         severity: 'error',
         message: 'Draft claimed perfection while ignoring average or slow feedback from the customer.',
         evidence: glossOverMatch[0],
+      });
+    }
+  }
+
+  // If customer explicitly rated something average/okay/poor without saying excellent, do not inflate it to excellent/best ever
+  const hasAverageOrPoorInput = /\b(average|okay|ok|poor|bad|disappointing)\b/i.test(userFactsCorpus);
+  const userSaidExcellent = /\b(excellent|zabardast|best)\b/i.test(userFactsCorpus);
+  if (hasAverageOrPoorInput && !userSaidExcellent) {
+    const inflatedMatch = lowerReview.match(/\b(excellent|laajawab|superb|best ever|outstanding)\b/i);
+    if (inflatedMatch) {
+      contradictionCount += 1;
+      issues.push({
+        type: 'contradiction',
+        severity: 'error',
+        message: 'Draft exaggerated average or sub-par feedback into "excellent/outstanding".',
+        evidence: inflatedMatch[0],
       });
     }
   }

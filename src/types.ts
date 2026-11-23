@@ -385,6 +385,7 @@ export type QualityIssueType =
   | 'repetition'
   | 'script_mismatch'
   | 'ai_cliche'
+  | 'formatting_violation'
   | 'empty_output';
 
 export interface QualityIssue {

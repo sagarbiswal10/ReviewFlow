@@ -841,11 +841,18 @@ export async function processGenerateReview(
       };
     }
 
-    const styleGuidance: Record<ReviewStyle, string> = {
-      short: 'Keep it concise and natural (around 2-3 everyday sentences).',
-      detailed: 'Write a relaxed 3-5 sentence review covering only the points the customer actually shared.',
-      professional: 'Keep the tone polite, clear, and conversational (2-4 sentences).',
-    };
+    const styleGuidance: Record<ReviewStyle, string> =
+      language === 'hinglish'
+        ? {
+            short: 'Keep it concise and straightforward (2-3 simple everyday sentences; do not pad length or force an intro/conclusion).',
+            detailed: 'Write a relaxed 3-4 sentence Hinglish review covering ONLY the points shared by the customer without filler words or forced recommendations.',
+            professional: 'Keep the tone polite, clear, and conversational (2-3 sentences), still sounding like an ordinary customer rather than corporate language.',
+          }
+        : {
+            short: 'Keep it concise and natural (around 2-3 everyday sentences).',
+            detailed: 'Write a relaxed 3-5 sentence review covering only the points the customer actually shared.',
+            professional: 'Keep the tone polite, clear, and conversational (2-4 sentences).',
+          };
 
     const variationAngles = [
       'Start directly with the main thing the customer noticed first, then wrap up naturally.',
@@ -879,18 +886,35 @@ export async function processGenerateReview(
         'Good natural Marathi example: "इथलं जेवण खूप छान होतं आणि स्टाफसुद्धा खूप मदत करणारा होता. फक्त सर्व्हिसला थोडा वेळ लागला. बाकी अनुभव चांगला होता."',
       ].join('\n'),
       hinglish: [
-        'Target Language: Hinglish (Conversational Indian Hinglish in Roman English script ONLY).',
-        '1. Generate the review using a natural combination of everyday Hindi and English.',
-        '2. Use Roman English characters ONLY — STRICTLY ZERO Devanagari characters (e.g. write "accha", NEVER "अच्छा").',
-        '3. Preserve commonly used Hindi expressions such as "kaafi accha", "bahut badhiya", "dobara zaroor aayenge", "accha tha", "overall experience acha raha".',
-        '4. Use commonly spoken English words such as food, service, ambience, staff, and experience where natural.',
-        '5. Avoid translating every English word into Hindi.',
-        '6. Avoid overly formal Hindi and unnatural textbook constructions.',
-        '7. Maintain natural conversational Indian Hinglish.',
-        '8. Preserve the customer\'s actual sentiment and questionnaire answers.',
-        '9. Do not insert slang, grammatical errors, or exaggerated praise artificially.',
-        '10. Do not invent experiences or business details.',
-        'Good natural Hinglish example (for Food: Good, Service: Quick, Ambience: Average, Return visit: Yes): "Food accha tha aur service bhi kaafi quick thi. Ambience okay tha, but overall experience acha raha. Dobara visit karna pasand karunga."',
+        'ROLE & TARGET LANGUAGE: You are an expert Indian Hinglish conversational writer working for ReviewFlow. Convert customer questionnaire answers into a simple, natural Hinglish Google review that an ordinary Indian customer would comfortably write.',
+        '1. ROMAN SCRIPT ONLY: Write in everyday Indian Hinglish using Roman English characters ONLY — NEVER use Devanagari script (write "accha", NEVER "अच्छा").',
+        '2. PREFERRED EVERYDAY VOCABULARY (use simple Hindi + commonly spoken English naturally):',
+        '   - Use "accha" instead of "excellent"',
+        '   - Use "kaafi" instead of "extremely"',
+        '   - Use "khana" or "food" instead of "cuisine"',
+        '   - Use "service" instead of "hospitality"',
+        '   - Use "staff" instead of "personnel"',
+        '   - Use "jagah" instead of "establishment"',
+        '   - Use "dobara" instead of "once again"',
+        '   - Use "experience" instead of "overall customer experience"',
+        '   - Mix natural Hindi expressions ("kaafi accha", "bahut badhiya", "accha laga", "thoda wait", "dobara aana pasand karunga") with simple English words (food, service, ambience, staff, experience) without translating every English word or using stiff textbook Hindi.',
+        '3. STYLE REFERENCE EXAMPLES (match tone ONLY — NEVER repeatedly copy these exact sentences):',
+        '   - "Food kaafi accha tha aur service bhi quick thi."',
+        '   - "Staff ka behaviour accha laga."',
+        '   - "Jagah clean thi aur overall experience bhi badhiya raha."',
+        '   - "Thoda wait karna pada, but food accha tha."',
+        '   - "Overall sab accha tha, dobara aana pasand karunga."',
+        '4. STRICTLY FORBIDDEN AI / PROMOTIONAL / CORPORATE PHRASES:',
+        '   - NEVER use: "An absolutely delightful experience", "A truly unforgettable experience", "Exceptional hospitality and outstanding service", "A perfect blend of quality and excellence", "Highly recommended to everyone", "A must-visit destination", "The epitome of excellence", "Overall experience was amazing", "I would highly recommend this place", "Everything was just perfect", "One of the best places ever".',
+        '   - Avoid difficult English vocabulary, corporate jargon, and excessive adjectives.',
+        '5. NATURAL SENTENCE VARIATION & NO FORCED PADDING:',
+        '   - Keep it 2-3 short, clear sentences (or concise single flow). Do NOT force an intro, a positive closing, a recommendation, or an emotional statement.',
+        '   - Do NOT add extra words just to stretch length, and NEVER intentionally introduce spelling mistakes or broken grammar.',
+        '6. SENTIMENT ACCURACY:',
+        '   - Positive: natural satisfaction without exaggeration.',
+        '   - Neutral / Average: balanced & straightforward — if something was "Average", keep it average/okay/theek; NEVER upgrade average to excellent.',
+        '   - Negative / Mixed: mention both good and bad points honestly and respectfully without hiding criticism or manipulating sentiment.',
+        '7. OUTPUT FORMAT & HYGIENE: Output ONLY clean Hinglish review text — NO hashtags, NO emojis (unless the customer used one), NO title, NO explanation, NO claim of being "human-written".',
       ].join('\n'),
     };
 
@@ -938,16 +962,17 @@ export async function processGenerateReview(
 
     const systemInstruction = [
       'You help a real customer put their own feedback into a natural, personal, everyday Google review.',
-      'Return valid JSON strictly matching this schema: {"review": string, "language": string, "sentimentDetected": string, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[], "selfCheck": {"noInventedClaims": boolean, "scriptCompliant": boolean, "conversationalTone": boolean}}.',
+      'Return valid JSON strictly matching this schema: {"review": string, "language": string, "sentimentDetected": string, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[], "selfCheck": {"noInventedClaims": boolean, "scriptCompliant": boolean, "conversationalTone": boolean, "simpleVocabulary": boolean, "accurateSentiment": boolean}}.',
       languageRules[language],
-      'Strict Authenticity & Grounding Rules:',
-      '1. Use ONLY the customer\'s actual answers, selected options, and written note. NEVER invent services, dishes, staff names, prices, claims, or details the customer never mentioned.',
-      '2. Preserve the customer\'s exact meaning and sentiment. If they gave mixed, average, or critical feedback (like slow service or okay ambience), state it plainly and honestly — do NOT hide negatives or claim everything was perfect.',
+      'Strict Authenticity, Grounding & Final Quality Verification Rules:',
+      '1. Use ONLY the customer\'s actual answers, selected options, and written note. NEVER invent dishes/products ordered, staff names/conversations, discounts/offers, amenities/facilities, pricing, or unmentioned incidents.',
+      '2. Preserve the customer\'s exact meaning and sentiment. If they gave mixed, average, or critical feedback (like slow service or average ambience), state it plainly and honestly — NEVER convert "average" into "excellent" or claim everything was perfect.',
       '3. If the customer said "No" or "Maybe" to returning, NEVER promise they will definitely come back.',
-      '4. NEVER use generic AI phrases, marketing fluff, or excessive adjectives (ban words like "amazing experience", "exceptional", "outstanding hospitality", "exceeded all expectations", "hidden gem", "top-notch", "must-visit", "wonderful", "seamless experience", "everything was perfect").',
-      '5. Vary sentence length and structure naturally so different drafts do not repeat sentences or sound templated.',
-      '6. Do not force business names or marketing keywords if they make the review sound unnatural or scripted. No quotation marks around the review, no bullet points, no hashtags, no emojis.',
-      '7. In groundedFacts, list the exact facts from the customer feedback you included. In keywordsUsed, list 0-3 short exact phrases directly drawn from what the customer mentioned.',
+      '4. NEVER use generic AI phrases, marketing fluff, or excessive adjectives (ban words like "amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded all expectations", "hidden gem", "top-notch", "must-visit destination", "highly recommended", "seamless experience", "everything was just perfect", "one of the best places ever").',
+      '5. Vary sentence length and structure naturally so different drafts do not repeat sentences or sound templated. Never force an intro/conclusion or pad words.',
+      '6. Do not force business names or marketing keywords if they make the review sound unnatural or scripted. No quotation marks around the review, no bullet points, no titles, no explanations, no hashtags, no emojis (unless in customer note), and never claim the review is "human-written".',
+      '7. Before responding, internally verify in selfCheck: (a) natural conversational everyday phrasing, (b) simple commonly used words, (c) natural language/script mix, (d) accurate sentiment & answers, (e) zero unsupported claims, (f) zero repetitive promotional phrases, (g) easy for an ordinary customer to read.',
+      '8. In groundedFacts, list the exact facts from the customer feedback you included. In keywordsUsed, list 0-3 short exact phrases directly drawn from what the customer mentioned.',
     ].join('\n');
 
     const reviewResponseSchema = {
@@ -971,8 +996,16 @@ export async function processGenerateReview(
             noInventedClaims: { type: Type.BOOLEAN },
             scriptCompliant: { type: Type.BOOLEAN },
             conversationalTone: { type: Type.BOOLEAN },
+            simpleVocabulary: { type: Type.BOOLEAN },
+            accurateSentiment: { type: Type.BOOLEAN },
           },
-          required: ['noInventedClaims', 'scriptCompliant', 'conversationalTone'],
+          required: [
+            'noInventedClaims',
+            'scriptCompliant',
+            'conversationalTone',
+            'simpleVocabulary',
+            'accurateSentiment',
+          ],
         },
       },
       required: [
@@ -1034,6 +1067,8 @@ export async function processGenerateReview(
         noInventedClaims?: boolean;
         scriptCompliant?: boolean;
         conversationalTone?: boolean;
+        simpleVocabulary?: boolean;
+        accurateSentiment?: boolean;
       };
     }
 
@@ -1048,6 +1083,8 @@ export async function processGenerateReview(
           noInventedClaims: boolean;
           scriptCompliant: boolean;
           conversationalTone: boolean;
+          simpleVocabulary: boolean;
+          accurateSentiment: boolean;
         };
       };
     } => {
@@ -1060,6 +1097,8 @@ export async function processGenerateReview(
         noInventedClaims: true,
         scriptCompliant: true,
         conversationalTone: true,
+        simpleVocabulary: true,
+        accurateSentiment: true,
       };
 
       if (rawText) {
@@ -1092,6 +1131,8 @@ export async function processGenerateReview(
               noInventedClaims: Boolean(parsed.selfCheck.noInventedClaims ?? true),
               scriptCompliant: Boolean(parsed.selfCheck.scriptCompliant ?? true),
               conversationalTone: Boolean(parsed.selfCheck.conversationalTone ?? true),
+              simpleVocabulary: Boolean(parsed.selfCheck.simpleVocabulary ?? true),
+              accurateSentiment: Boolean(parsed.selfCheck.accurateSentiment ?? true),
             };
           }
         } catch {
@@ -1136,7 +1177,15 @@ export async function processGenerateReview(
       autoRepaired: false,
     });
 
-    if (!qualityReport.passed || !qualityReport.scriptCompliant || qualityReport.clicheCount > 0) {
+    const hasFormattingViolation = qualityReport.issues.some(
+      (i) => i.type === 'formatting_violation',
+    );
+    if (
+      !qualityReport.passed ||
+      !qualityReport.scriptCompliant ||
+      qualityReport.clicheCount > 0 ||
+      hasFormattingViolation
+    ) {
       const repairIssues = qualityReport.issues
         .map((i) => `- [${i.type}] ${i.message}${i.evidence ? ` (Evidence: "${i.evidence}")` : ''}`)
         .join('\n');

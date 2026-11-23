@@ -158,3 +158,55 @@ test('TC-QUAL-07: Phase 2 category presets include experience & return-visit anc
     assert.ok(qs.some((q) => q.id === 'q-return'), `Expected q-return for ${cat}`);
   }
 });
+
+test('TC-QUAL-08: Flags stiff corporate vocabulary, promotional fluff, hashtags, emojis, and titles in Hinglish', () => {
+  const stiffReport = validateReviewQuality({
+    reviewText:
+      'Review: The cuisine was exquisite and personnel hospitality was an epitome of excellence! #foodie 😍',
+    language: 'hinglish',
+    businessName: 'Spice Garden',
+    category: 'Restaurants',
+    responses: [{ question: 'Food', answers: ['Good'] }],
+  });
+  assert.ok(stiffReport.clicheCount >= 2);
+  assert.ok(stiffReport.issues.some((i) => i.type === 'formatting_violation'));
+  assert.equal(stiffReport.passed, false);
+
+  const naturalMixed = validateReviewQuality({
+    reviewText: 'Thoda wait karna pada, but food kaafi accha tha aur staff ka behaviour accha laga.',
+    language: 'hinglish',
+    businessName: 'Spice Garden',
+    category: 'Restaurants',
+    responses: [
+      { question: 'Food', answers: ['Good'] },
+      { question: 'Wait time', answers: ['Wait Was Slightly Long'] },
+    ],
+  });
+  assert.equal(naturalMixed.passed, true);
+  assert.equal(naturalMixed.clicheCount, 0);
+});
+
+test('TC-QUAL-09: Rejects inflating Average feedback into excellent and allows requested user emojis', () => {
+  const inflatedReport = validateReviewQuality({
+    reviewText: 'Food kaafi accha tha aur ambience was excellent and outstanding!',
+    language: 'hinglish',
+    businessName: 'Spice Garden',
+    category: 'Restaurants',
+    responses: [
+      { question: 'Food', answers: ['Good'] },
+      { question: 'Ambience', answers: ['Average'] },
+    ],
+  });
+  assert.equal(inflatedReport.passed, false);
+  assert.ok(inflatedReport.contradictionCount >= 1);
+
+  const humanClaimReport = validateReviewQuality({
+    reviewText: 'As a human-written review, food accha tha aur service quick thi.',
+    language: 'hinglish',
+    businessName: 'Spice Garden',
+    category: 'Restaurants',
+    responses: [{ question: 'Food', answers: ['Good'] }],
+  });
+  assert.equal(humanClaimReport.passed, false);
+  assert.ok(humanClaimReport.issues.some((i) => i.type === 'formatting_violation'));
+});
