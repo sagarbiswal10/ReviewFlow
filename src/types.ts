@@ -130,6 +130,10 @@ export const FORM_TEMPLATE_IDS = [
   'warm_editorial',
   'split_executive',
   'quick_tap_express',
+  'spatial_glass_3d',
+  'neo_brutal_3d',
+  'obsidian_cyber_3d',
+  'clay_soft_3d',
 ] as const;
 
 export type FormTemplateId = (typeof FORM_TEMPLATE_IDS)[number];

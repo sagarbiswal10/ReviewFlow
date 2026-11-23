@@ -71,7 +71,7 @@ function cleanSecretEnv(value: string | undefined): string {
 
 export const AI_PROVIDER =
   cleanSecretEnv(process.env.AI_PROVIDER).toLowerCase() === 'openai' ? 'openai' : 'gemini';
-export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-4-hydrogen';
+export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-3.1-flash-lite';
 export const GEMINI_FALLBACK_MODEL =
   process.env.GEMINI_FALLBACK_MODEL !== undefined
     ? cleanSecretEnv(process.env.GEMINI_FALLBACK_MODEL)
@@ -524,7 +524,7 @@ async function generateGeminiContentWithFallback(
 ): Promise<GeminiGenerationResult> {
   const modelAttempts = Array.from(
     new Set(
-      [GEMINI_MODEL, GEMINI_FALLBACK_MODEL, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'].filter(
+      [GEMINI_MODEL, GEMINI_FALLBACK_MODEL, 'gemini-3.1-flash-lite'].filter(
         Boolean,
       ),
     ),

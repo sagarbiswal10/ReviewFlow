@@ -47,6 +47,7 @@ import {
   mapOptionsToFiveFaces,
 } from '../data/formTemplates';
 import { BusinessLogo } from './BusinessLogo';
+import { SpatialTilt } from './ui/spatial-tilt';
 
 interface CustomerReviewFlowProps {
   profile: PublicProfile;
@@ -178,7 +179,8 @@ export function CustomerReviewFlow({
   const visitorId = useMemo(() => getOrCreateVisitorId(isPreview), [isPreview]);
 
   const activeTemplate: FormTemplateId = sanitizeFormTemplate(profile.formTemplate);
-  const isDarkTemplate = activeTemplate === 'emoji_checklist_dark';
+  const isDarkTemplate =
+    activeTemplate === 'emoji_checklist_dark' || activeTemplate === 'obsidian_cyber_3d';
   const isEmojiChecklist =
     activeTemplate === 'emoji_checklist_light' || activeTemplate === 'emoji_checklist_dark';
 
@@ -1067,22 +1069,47 @@ export function CustomerReviewFlow({
   const outerShellClass =
     activeTemplate === 'emoji_checklist_dark'
       ? 'min-h-screen bg-[#0B1221] text-slate-100 flex flex-col relative overflow-x-hidden'
-      : activeTemplate === 'warm_editorial'
-        ? 'min-h-screen bg-[#FAF7F2] text-stone-900 flex flex-col relative overflow-x-hidden'
-        : activeTemplate === 'quick_tap_express'
-          ? 'min-h-screen bg-[#F0FDFA] text-slate-900 flex flex-col relative overflow-x-hidden'
-          : 'min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col relative overflow-x-hidden';
+      : activeTemplate === 'obsidian_cyber_3d'
+        ? 'min-h-screen bg-[#060812] text-slate-100 flex flex-col relative overflow-x-hidden cyber-3d-grid'
+        : activeTemplate === 'spatial_glass_3d'
+          ? 'min-h-screen bg-gradient-to-br from-[#EEF2FF] via-[#F8FAFC] to-[#ECFEFF] text-slate-900 flex flex-col relative overflow-x-hidden'
+          : activeTemplate === 'neo_brutal_3d'
+            ? 'min-h-screen bg-[#FFFBEB] text-slate-950 flex flex-col relative overflow-x-hidden neo-brutal-dots'
+            : activeTemplate === 'clay_soft_3d'
+              ? 'min-h-screen bg-[#FFF1EE] text-slate-900 flex flex-col relative overflow-x-hidden'
+              : activeTemplate === 'warm_editorial'
+                ? 'min-h-screen bg-[#FAF7F2] text-stone-900 flex flex-col relative overflow-x-hidden'
+                : activeTemplate === 'quick_tap_express'
+                  ? 'min-h-screen bg-[#F0FDFA] text-slate-900 flex flex-col relative overflow-x-hidden'
+                  : 'min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col relative overflow-x-hidden';
 
-  const headerClass = isDarkTemplate
-    ? 'sticky top-0 z-30 bg-[#0B1221]/95 backdrop-blur-md border-b border-slate-800/80'
-    : activeTemplate === 'warm_editorial'
-      ? 'sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-stone-200/80'
-      : 'sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80';
+  const headerClass =
+    activeTemplate === 'obsidian_cyber_3d'
+      ? 'sticky top-0 z-30 bg-[#060812]/90 backdrop-blur-xl border-b border-cyan-500/25'
+      : isDarkTemplate
+        ? 'sticky top-0 z-30 bg-[#0B1221]/95 backdrop-blur-md border-b border-slate-800/80'
+        : activeTemplate === 'neo_brutal_3d'
+          ? 'sticky top-0 z-30 bg-[#FEF08A] border-b-2 border-slate-900'
+          : activeTemplate === 'spatial_glass_3d'
+            ? 'sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-white/80 shadow-xs'
+            : activeTemplate === 'clay_soft_3d'
+              ? 'sticky top-0 z-30 bg-[#FFF1EE]/90 backdrop-blur-md border-b border-rose-200/70'
+              : activeTemplate === 'warm_editorial'
+                ? 'sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-stone-200/80'
+                : 'sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80';
 
   const renderLanguageSelectorBlock = (compact = false) => {
     if (isDarkTemplate) {
       return (
-        <section className={compact ? 'pt-3' : 'bg-[#131C31] rounded-2xl border border-slate-800 p-5 sm:p-6'}>
+        <section
+          className={
+            compact
+              ? 'pt-3'
+              : activeTemplate === 'obsidian_cyber_3d'
+                ? 'bg-[#0B1120]/90 rounded-2xl border border-cyan-500/30 shadow-[0_12px_32px_-12px_rgba(34,211,238,0.28)] p-5 sm:p-6'
+                : 'bg-[#131C31] rounded-2xl border border-slate-800 p-5 sm:p-6'
+          }
+        >
           <div className="mb-3">
             <h2 className="text-sm sm:text-base font-semibold text-white">
               Choose Review Language
@@ -1110,14 +1137,18 @@ export function CustomerReviewFlow({
                   style={
                     active
                       ? {
-                          borderColor: templateAccentColor,
-                          backgroundColor: `${templateAccentColor}26`,
+                          borderColor:
+                            activeTemplate === 'obsidian_cyber_3d' ? '#22D3EE' : templateAccentColor,
+                          backgroundColor:
+                            activeTemplate === 'obsidian_cyber_3d'
+                              ? 'rgba(34, 211, 238, 0.16)'
+                              : `${templateAccentColor}26`,
                         }
                       : undefined
                   }
                   className={`min-h-[48px] px-3 py-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
                     active
-                      ? 'text-white font-semibold ring-1 ring-blue-400/50'
+                      ? 'text-white font-semibold ring-1 ring-cyan-400/50'
                       : 'bg-[#0F172A] border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
                   }`}
                 >
@@ -1144,7 +1175,13 @@ export function CustomerReviewFlow({
             ? 'pt-2'
             : activeTemplate === 'warm_editorial'
               ? 'bg-[#FFFDF9] rounded-2xl border border-stone-200/90 shadow-xs p-5 sm:p-6'
-              : 'bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6'
+              : activeTemplate === 'neo_brutal_3d'
+                ? 'bg-white rounded-2xl border-2 border-slate-900 shadow-[5px_5px_0px_#0F172A] p-5 sm:p-6'
+                : activeTemplate === 'spatial_glass_3d'
+                  ? 'bg-white/75 backdrop-blur-xl rounded-3xl border border-white/90 shadow-[0_18px_40px_-16px_rgba(79,70,229,0.2),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-6'
+                  : activeTemplate === 'clay_soft_3d'
+                    ? 'bg-white rounded-[26px] border border-rose-100 shadow-[12px_12px_24px_rgba(244,63,94,0.1),-6px_-6px_16px_rgba(255,255,255,0.95),inset_0_-3px_8px_rgba(244,63,94,0.06)] p-5 sm:p-6'
+                    : 'bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6'
         }
       >
         <div className="mb-3">
@@ -1891,7 +1928,536 @@ export function CustomerReviewFlow({
       );
     }
 
-    // 5. Classic Clean Cards (default backward-compatible template)
+    // 5. 3D Spatial Glass Prism (interactive tilt + translucent liquid layers)
+    if (activeTemplate === 'spatial_glass_3d') {
+      return (
+        <form onSubmit={handleGenerateSubmit} className="space-y-6 relative">
+          <SpatialTilt maxTilt={5} scale={1.01} glare>
+            <div className="relative rounded-3xl bg-white/75 backdrop-blur-xl border border-white/90 shadow-[0_24px_48px_-18px_rgba(79,70,229,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-7 overflow-hidden">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full blur-3xl opacity-30"
+                style={{ backgroundColor: primaryColor }}
+              />
+              <div className="relative flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4 min-w-0">
+                  <BusinessLogo
+                    src={profile.logoDataUrl}
+                    name={profile.name}
+                    primaryColor={primaryColor}
+                    sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+                  />
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-200/80 text-[11px] font-semibold text-indigo-700 mb-1.5">
+                      Interactive 3D Feedback
+                    </span>
+                    <h1
+                      className="text-xl sm:text-2xl font-display font-bold tracking-tight"
+                      style={{ color: secondaryColor }}
+                    >
+                      {profile.name}
+                    </h1>
+                    <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+                      {profile.branding?.welcomeMessage ||
+                        'Tap the floating cards below to compose your personalised review draft.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SpatialTilt>
+
+          {profile.questions.map((question, qIndex) => (
+            <SpatialTilt key={question.id} maxTilt={3.5} scale={1.006} glare>
+              <section className="rounded-3xl bg-white/75 backdrop-blur-xl border border-white/90 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-6">
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    <span className="text-indigo-500 mr-2 font-mono text-xs">{String(qIndex + 1).padStart(2, '0')}</span>
+                    {question.prompt}
+                  </h2>
+                  {question.required && (
+                    <span className="text-xs font-medium text-indigo-600 shrink-0">Required</span>
+                  )}
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
+                    className="w-full rounded-2xl border border-indigo-100 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 review-text-multilingual"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {question.options.map((option) => {
+                      const isSelected = (answers[question.id] ?? []).includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              option,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          style={
+                            isSelected
+                              ? {
+                                  background: `linear-gradient(135deg, ${primaryColor}, #6366F1)`,
+                                  borderColor: 'transparent',
+                                  boxShadow: '0 10px 20px -8px rgba(79, 70, 229, 0.45)',
+                                }
+                              : undefined
+                          }
+                          className={`min-h-[46px] px-4 py-2.5 rounded-2xl text-left text-sm font-medium border transition-all duration-200 flex items-center justify-between gap-2 cursor-pointer ${
+                            isSelected
+                              ? 'text-white -translate-y-0.5'
+                              : 'bg-white/85 border-indigo-100/90 text-slate-700 hover:bg-white hover:-translate-y-0.5 shadow-xs'
+                          }`}
+                        >
+                          <span>{option}</span>
+                          {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </SpatialTilt>
+          ))}
+
+          {renderLanguageSelectorBlock(false)}
+
+          {(validationError || generateError) && (
+            <div role="alert" className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700">
+              {validationError || generateError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            style={{
+              background: `linear-gradient(135deg, ${primaryColor}, #4F46E5)`,
+              boxShadow: '0 18px 34px -10px rgba(79, 70, 229, 0.45), inset 0 1px 0 rgba(255,255,255,0.35)',
+            }}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+              </>
+            ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
+              <span>Limit Reached · Refreshes in {countdownText}</span>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Generate Review</span>
+              </>
+            )}
+          </button>
+        </form>
+      );
+    }
+
+    // 6. Neo-Brutalism 3D Pop (bold hard-shadow blocks with physical press-down depth)
+    if (activeTemplate === 'neo_brutal_3d') {
+      return (
+        <form onSubmit={handleGenerateSubmit} className="space-y-6">
+          <div className="bg-white rounded-2xl border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] p-5 sm:p-7">
+            <div className="flex items-start gap-4">
+              <BusinessLogo
+                src={profile.logoDataUrl}
+                name={profile.name}
+                primaryColor={primaryColor}
+                sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+              />
+              <div className="min-w-0">
+                <span className="inline-block px-2 py-0.5 bg-[#FDE047] border-2 border-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-900 mb-2 shadow-[2px_2px_0px_#0F172A]">
+                  Quick Feedback
+                </span>
+                <h1 className="text-xl sm:text-2xl font-display font-black tracking-tight text-slate-950">
+                  {profile.name}
+                </h1>
+                <p className="mt-1 text-sm text-slate-700 font-medium leading-relaxed">
+                  {profile.branding?.welcomeMessage ||
+                    'Tap your highlights below and stamp out a genuine review draft.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {profile.questions.map((question, qIndex) => (
+            <section
+              key={question.id}
+              className="bg-white rounded-2xl border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] p-5 sm:p-6"
+            >
+              <div className="flex items-baseline justify-between gap-3 mb-4">
+                <h2 className="text-base font-extrabold text-slate-950">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#FB923C] border-2 border-slate-900 text-xs font-black mr-2">
+                    {qIndex + 1}
+                  </span>
+                  {question.prompt}
+                </h2>
+                {question.required && (
+                  <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-rose-100 border border-slate-900 text-slate-900 shrink-0">
+                    Required
+                  </span>
+                )}
+              </div>
+
+              {question.type === 'text' ? (
+                <textarea
+                  rows={3}
+                  value={textInputs[question.id] ?? ''}
+                  onChange={(e) => {
+                    markFormStarted();
+                    setValidationError(null);
+                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                  }}
+                  placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
+                  className="w-full rounded-xl border-2 border-slate-900 bg-[#FFFDF7] px-4 py-3 text-sm font-medium text-slate-950 placeholder:text-slate-400 focus:outline-none focus:bg-white shadow-[3px_3px_0px_#0F172A] review-text-multilingual"
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2.5">
+                  {question.options.map((option) => {
+                    const isSelected = (answers[question.id] ?? []).includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() =>
+                          toggleOption(
+                            question.id,
+                            option,
+                            question.type === 'single' ? 'single' : 'multiple',
+                          )
+                        }
+                        className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold border-2 border-slate-900 transition-all flex items-center gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#FB923C] text-slate-950 translate-x-[2px] translate-y-[2px] shadow-[1px_1px_0px_#0F172A]'
+                            : 'bg-white text-slate-900 shadow-[4px_4px_0px_#0F172A] hover:-translate-x-[1px] hover:-translate-y-[1px] hover:shadow-[5px_5px_0px_#0F172A]'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-4 h-4 stroke-[3] shrink-0" />}
+                        <span>{option}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
+
+          {renderLanguageSelectorBlock(false)}
+
+          {(validationError || generateError) && (
+            <div role="alert" className="rounded-xl border-2 border-slate-900 bg-rose-200 px-4 py-3 text-sm font-bold text-slate-950 shadow-[4px_4px_0px_#0F172A]">
+              {validationError || generateError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-[#FACC15] hover:bg-[#FDE047] text-slate-950 font-black text-base border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] active:translate-x-[3px] active:translate-y-[3px] active:shadow-[2px_2px_0px_#0F172A] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+              </>
+            ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
+              <span>Limit Reached · Refreshes in {countdownText}</span>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Generate Review</span>
+              </>
+            )}
+          </button>
+        </form>
+      );
+    }
+
+    // 7. Obsidian Cyber 3D Grid (dark futuristic holographic glow cards + tilt)
+    if (activeTemplate === 'obsidian_cyber_3d') {
+      return (
+        <form onSubmit={handleGenerateSubmit} className="space-y-6">
+          <SpatialTilt maxTilt={5} scale={1.01} glare>
+            <div className="relative rounded-3xl bg-[#0B1120]/90 border border-cyan-400/35 shadow-[0_24px_48px_-16px_rgba(34,211,238,0.28)] p-5 sm:p-7 overflow-hidden">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-20 right-0 w-56 h-56 rounded-full bg-cyan-500/15 blur-3xl"
+              />
+              <div className="relative flex items-start gap-4">
+                <BusinessLogo
+                  src={profile.logoDataUrl}
+                  name={profile.name}
+                  primaryColor="#06B6D4"
+                  sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+                />
+                <div className="min-w-0">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-[10px] font-mono uppercase tracking-wider mb-2">
+                    <Sparkles className="w-3 h-3" /> Holo 3D Experience
+                  </span>
+                  <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-white">
+                    {profile.name}
+                  </h1>
+                  <p className="mt-1 text-sm text-slate-300 leading-relaxed">
+                    {profile.branding?.welcomeMessage ||
+                      'Select your highlights below to generate a crisp Google review draft.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </SpatialTilt>
+
+          {profile.questions.map((question, qIndex) => (
+            <SpatialTilt key={question.id} maxTilt={3} scale={1.005} glare>
+              <section className="rounded-3xl bg-[#0B1120]/90 border border-cyan-500/25 shadow-[0_18px_36px_-18px_rgba(34,211,238,0.2)] p-5 sm:p-6">
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <h2 className="text-base font-semibold text-white">
+                    <span className="font-mono text-xs text-cyan-400 mr-2">
+                      [{String(qIndex + 1).padStart(2, '0')}]
+                    </span>
+                    {question.prompt}
+                  </h2>
+                  {question.required && (
+                    <span className="text-[11px] font-mono text-cyan-300 shrink-0">REQ</span>
+                  )}
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
+                    className="w-full rounded-2xl border border-cyan-500/30 bg-[#060913] px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 review-text-multilingual"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {question.options.map((option) => {
+                      const isSelected = (answers[question.id] ?? []).includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              option,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          className={`min-h-[46px] px-4 py-2.5 rounded-xl text-left text-sm font-medium border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                            isSelected
+                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.28)]'
+                              : 'bg-[#0F172A]/80 border-slate-700/80 text-slate-300 hover:border-cyan-500/50 hover:text-white'
+                          }`}
+                        >
+                          <span>{option}</span>
+                          {isSelected && <Check className="w-4 h-4 text-cyan-300 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </SpatialTilt>
+          ))}
+
+          {renderLanguageSelectorBlock(false)}
+
+          {(validationError || generateError) && (
+            <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-3 text-sm text-rose-200">
+              {validationError || generateError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-base shadow-[0_14px_32px_-8px_rgba(34,211,238,0.5)] hover:brightness-110 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+              </>
+            ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
+              <span>Limit Reached · Refreshes in {countdownText}</span>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Generate Review</span>
+              </>
+            )}
+          </button>
+        </form>
+      );
+    }
+
+    // 8. Soft Clay 3D Cushions (squishy claymorphism cards & bouncy tactile pills)
+    if (activeTemplate === 'clay_soft_3d') {
+      return (
+        <form onSubmit={handleGenerateSubmit} className="space-y-6">
+          <div
+            className="rounded-[28px] bg-white border border-rose-100 p-5 sm:p-7"
+            style={{
+              boxShadow:
+                '16px 16px 32px rgba(244, 63, 94, 0.12), -8px -8px 20px rgba(255, 255, 255, 0.95), inset 0 -5px 10px rgba(244, 63, 94, 0.08)',
+            }}
+          >
+            <div className="flex items-start gap-4">
+              <BusinessLogo
+                src={profile.logoDataUrl}
+                name={profile.name}
+                primaryColor={primaryColor}
+                sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+              />
+              <div className="min-w-0">
+                <span className="inline-block px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold mb-1.5">
+                  3D Soft Touch
+                </span>
+                <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-rose-950">
+                  {profile.name}
+                </h1>
+                <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+                  {profile.branding?.welcomeMessage ||
+                    'Share a few quick impressions below and generate a warm review draft.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {profile.questions.map((question, qIndex) => (
+            <section
+              key={question.id}
+              className="rounded-[28px] bg-white border border-rose-100 p-5 sm:p-6"
+              style={{
+                boxShadow:
+                  '14px 14px 28px rgba(244, 63, 94, 0.10), -8px -8px 18px rgba(255, 255, 255, 0.95), inset 0 -4px 8px rgba(244, 63, 94, 0.06)',
+              }}
+            >
+              <div className="flex items-baseline justify-between gap-3 mb-4">
+                <h2 className="text-base font-bold text-slate-900">
+                  <span className="text-rose-500 mr-1.5">{qIndex + 1}.</span>
+                  {question.prompt}
+                </h2>
+                {question.required && (
+                  <span className="text-xs font-semibold text-rose-500 shrink-0">Required</span>
+                )}
+              </div>
+
+              {question.type === 'text' ? (
+                <textarea
+                  rows={3}
+                  value={textInputs[question.id] ?? ''}
+                  onChange={(e) => {
+                    markFormStarted();
+                    setValidationError(null);
+                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                  }}
+                  placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
+                  className="w-full rounded-2xl border border-rose-100 bg-[#FFF8F6] px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300 review-text-multilingual"
+                  style={{
+                    boxShadow: 'inset 4px 4px 10px rgba(244, 63, 94, 0.07), inset -4px -4px 10px rgba(255,255,255,0.9)',
+                  }}
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2.5">
+                  {question.options.map((option) => {
+                    const isSelected = (answers[question.id] ?? []).includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() =>
+                          toggleOption(
+                            question.id,
+                            option,
+                            question.type === 'single' ? 'single' : 'multiple',
+                          )
+                        }
+                        style={
+                          isSelected
+                            ? {
+                                backgroundColor: '#F43F5E',
+                                boxShadow:
+                                  '0 10px 18px -4px rgba(244, 63, 94, 0.42), inset 0 -3px 6px rgba(0, 0, 0, 0.16)',
+                              }
+                            : {
+                                boxShadow:
+                                  '6px 6px 12px rgba(15, 23, 42, 0.06), -4px -4px 10px rgba(255, 255, 255, 0.95), inset 0 -2px 5px rgba(244, 63, 94, 0.06)',
+                              }
+                        }
+                        className={`min-h-[44px] px-4 py-2 rounded-2xl text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'text-white scale-[1.02]'
+                            : 'bg-[#FFF8F6] text-slate-700 hover:bg-white'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                        <span>{option}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
+
+          {renderLanguageSelectorBlock(false)}
+
+          {(validationError || generateError) && (
+            <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {validationError || generateError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            style={{
+              backgroundColor: '#F43F5E',
+              boxShadow:
+                '0 16px 28px -8px rgba(244, 63, 94, 0.45), inset 0 -4px 8px rgba(0, 0, 0, 0.18), inset 0 2px 4px rgba(255, 255, 255, 0.35)',
+            }}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-[22px] text-white font-bold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+              </>
+            ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
+              <span>Limit Reached · Refreshes in {countdownText}</span>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Generate Review</span>
+              </>
+            )}
+          </button>
+        </form>
+      );
+    }
+
+    // 9. Classic Clean Cards (default backward-compatible template)
     return (
       <form onSubmit={handleGenerateSubmit} className="space-y-6">
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-7">

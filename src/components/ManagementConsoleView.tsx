@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
+  Bell,
   Bot,
   Building2,
   Check,
@@ -22,6 +23,7 @@ import {
   LogOut,
   Mail,
   Menu,
+  Moon,
   MoreVertical,
   Palette,
   PauseCircle,
@@ -31,7 +33,9 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  Sun,
   Trash2,
+  TrendingUp,
   UserCheck,
   UserPlus,
   X,
@@ -182,11 +186,25 @@ export function ManagementConsoleView({
   const [detailTab, setDetailTab] = useState<BusinessDetailTab>('access');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
-  const [directoryView, setDirectoryView] = useState<'board' | 'table'>('board');
+  const [directoryView, setDirectoryView] = useState<'board' | 'table'>('table');
   const [sortBy, setSortBy] = useState<'scans' | 'name' | 'redirects'>('scans');
   const [featuredBizId, setFeaturedBizId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('reviewflow_admin_theme') === 'dark';
+  });
+  const toggleAdminTheme = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('reviewflow_admin_theme', next ? 'dark' : 'light');
+      }
+      return next;
+    });
+  };
+  const directoryTableRef = useRef<HTMLDivElement>(null);
   const hasPasswordAuth = hasPasswordProvider(user.providerData);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -418,6 +436,39 @@ export function ManagementConsoleView({
     }
     return m;
   }, [fiveDayPlatformSeries]);
+
+  const topBusinesses = useMemo(() => {
+    return [...businesses]
+      .sort((a, b) => (statsMap[b.id]?.scans ?? 0) - (statsMap[a.id]?.scans ?? 0))
+      .slice(0, 5);
+  }, [businesses, statsMap]);
+
+  const toneMixStats = useMemo(() => {
+    const counts = { short: 0, detailed: 0, professional: 0 };
+    for (const ev of events) {
+      if (ev.eventType !== 'generate' && ev.eventType !== 'copy_redirect') continue;
+      if (ev.reviewStyle === 'detailed') counts.detailed += 1;
+      else if (ev.reviewStyle === 'professional') counts.professional += 1;
+      else counts.short += 1;
+    }
+    let total = counts.short + counts.detailed + counts.professional;
+    if (total === 0) {
+      for (const b of businesses) {
+        const s = b.branding?.defaultReviewStyle || 'short';
+        if (s === 'detailed') counts.detailed += 1;
+        else if (s === 'professional') counts.professional += 1;
+        else counts.short += 1;
+      }
+      total = counts.short + counts.detailed + counts.professional;
+    }
+    const safeTotal = Math.max(1, total);
+    const items = [
+      { key: 'short', label: 'Short & Punchy', count: counts.short, pct: Math.round((counts.short / safeTotal) * 100), color: '#4F46E5' },
+      { key: 'detailed', label: 'Detailed Story', count: counts.detailed, pct: Math.round((counts.detailed / safeTotal) * 100), color: '#0EA5E9' },
+      { key: 'professional', label: 'Professional', count: counts.professional, pct: Math.round((counts.professional / safeTotal) * 100), color: '#EC4899' },
+    ];
+    return { items, total };
+  }, [events, businesses]);
 
   const boardColumns = useMemo(() => {
     const fullSelf: Business[] = [];
@@ -757,19 +808,44 @@ export function ManagementConsoleView({
       }
     : null;
 
+  const sidebarActiveClass = isDark
+    ? 'bg-[#23263E] text-[#A5B4FC] font-semibold'
+    : 'bg-[#EEF2FF] text-[#4F46E5] font-semibold';
+  const sidebarIdleClass = isDark
+    ? 'text-slate-400 hover:text-white hover:bg-[#1C2030]'
+    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50';
+
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200/80 justify-between">
+    <div
+      className={`flex flex-col h-full border-r justify-between transition-colors ${
+        isDark ? 'bg-[#111420] border-[#23273A]' : 'bg-white border-slate-200/80'
+      }`}
+    >
       <div>
         <div className="h-16 px-5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-bold tracking-tight text-[#141416]">
-              ReviewFlow
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-xl bg-[#4F46E5] text-white flex items-center justify-center shadow-xs shrink-0">
+              <Sparkles className="w-4 h-4" />
             </span>
+            <div className="leading-tight">
+              <span
+                className={`font-display text-base font-bold tracking-tight block ${
+                  isDark ? 'text-white' : 'text-slate-900'
+                }`}
+              >
+                ReviewFlow
+              </span>
+              <span className={`text-[10px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Admin Console
+              </span>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
+            className={`lg:hidden p-1.5 rounded-lg ${
+              isDark ? 'text-slate-400 hover:bg-[#1C2030]' : 'text-slate-500 hover:bg-slate-100'
+            }`}
             aria-label="Close menu"
           >
             <X className="w-5 h-5" />
@@ -785,16 +861,22 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center justify-between gap-2 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'directory' && !selectedBiz
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'directory' && !selectedBiz ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <span className="inline-flex items-center gap-3">
               <Building2 className="w-4 h-4 shrink-0" />
-              <span>All Businesses</span>
+              <span>Admin Dashboard</span>
             </span>
-            <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+            <span
+              className={`text-[11px] font-mono tabular-nums ${
+                section === 'directory' && !selectedBiz
+                  ? isDark
+                    ? 'text-indigo-300'
+                    : 'text-[#4F46E5]'
+                  : 'text-slate-400'
+              }`}
+            >
               {businesses.length}
             </span>
           </button>
@@ -807,9 +889,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center justify-between gap-2 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'stand_requests'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'stand_requests' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <span className="inline-flex items-center gap-3">
@@ -817,7 +897,7 @@ export function ManagementConsoleView({
               <span>QR Stand Requests</span>
             </span>
             {pendingStandRequestsCount > 0 && (
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#141416] text-white tabular-nums">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#4F46E5] text-white tabular-nums">
                 {pendingStandRequestsCount}
               </span>
             )}
@@ -831,9 +911,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'activity'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'activity' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <Activity className="w-4 h-4 shrink-0" />
@@ -848,9 +926,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'clients'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'clients' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <Mail className="w-4 h-4 shrink-0" />
@@ -858,8 +934,12 @@ export function ManagementConsoleView({
           </button>
         </nav>
 
-        <div className="px-3 pt-5 mt-5 border-t border-slate-100 space-y-1">
-          <p className="px-3.5 text-[11px] font-medium text-slate-400 mb-1.5">
+        <div
+          className={`px-3 pt-5 mt-5 border-t space-y-1 ${
+            isDark ? 'border-[#23273A]' : 'border-slate-100'
+          }`}
+        >
+          <p className="px-3.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
             Governance &amp; AI
           </p>
 
@@ -871,9 +951,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'ai_usage'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'ai_usage' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <Coins className="w-4 h-4 shrink-0" />
@@ -888,9 +966,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'ai_eval'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'ai_eval' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <FlaskConical className="w-4 h-4 shrink-0" />
@@ -905,9 +981,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'weekly_reports'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'weekly_reports' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <FileBarChart2 className="w-4 h-4 shrink-0" />
@@ -922,9 +996,7 @@ export function ManagementConsoleView({
               setMobileMenuOpen(false);
             }}
             className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
-              section === 'team'
-                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
-                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+              section === 'team' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
             <Shield className="w-4 h-4 shrink-0" />
@@ -933,27 +1005,37 @@ export function ManagementConsoleView({
         </div>
       </div>
 
-      {/* Bottom Team & Account Section */}
-      <div className="p-4 border-t border-slate-100 space-y-2.5">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-medium text-slate-400">Workspace</span>
+      {/* Bottom Workspace & Account Section */}
+      <div className={`p-4 border-t space-y-3 ${isDark ? 'border-[#23273A]' : 'border-slate-100'}`}>
+        <div
+          className={`rounded-xl p-3 border space-y-2 ${
+            isDark
+              ? 'bg-[#181C2C] border-[#262B3D]'
+              : 'bg-[#F8FAFC] border-slate-200/70'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[11px] font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              Client Workspace
+            </span>
+            <Eye className="w-3.5 h-3.5 text-[#4F46E5]" />
+          </div>
           <button
             type="button"
             onClick={onSwitchToPortal}
-            className="text-[11px] font-semibold text-[#141416] hover:underline inline-flex items-center gap-1 cursor-pointer"
+            className="w-full py-1.5 px-2.5 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-semibold cursor-pointer transition-colors"
           >
-            <Eye className="w-3 h-3" />
-            <span>Client Portal</span>
+            Open Client Portal
           </button>
         </div>
 
         <div className="flex items-center justify-between gap-2 px-1 py-1">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-[#141416] text-white flex items-center justify-center text-xs font-bold shrink-0">
+            <div className="w-8 h-8 rounded-full bg-[#4F46E5] text-white flex items-center justify-center text-xs font-bold shrink-0">
               {(user.email || 'M').slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-[#141416] truncate">
+              <p className={`text-xs font-semibold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
                 {user.displayName || 'Manager'}
               </p>
               <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
@@ -965,7 +1047,11 @@ export function ManagementConsoleView({
             onClick={onSignOut}
             title="Sign Out"
             aria-label="Sign Out"
-            className="p-1.5 rounded-lg text-slate-500 hover:text-[#141416] hover:bg-slate-100 cursor-pointer shrink-0"
+            className={`p-1.5 rounded-lg cursor-pointer shrink-0 ${
+              isDark
+                ? 'text-slate-400 hover:text-white hover:bg-[#1C2030]'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+            }`}
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -975,7 +1061,11 @@ export function ManagementConsoleView({
           <button
             type="button"
             onClick={() => setAccountSecurityOpen(true)}
-            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+            className={`w-full px-3 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+              isDark
+                ? 'border-[#262B3D] bg-[#181C2C] hover:bg-[#1F2438] text-slate-200'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+            }`}
           >
             <KeyRound className="w-3 h-3" />
             <span>{hasPasswordAuth ? 'Sign-In Methods' : 'Set Password'}</span>
@@ -986,15 +1076,15 @@ export function ManagementConsoleView({
   );
 
   return (
-    <div className="min-h-screen admin-bizlink-canvas flex">
-      <aside className="hidden lg:block w-60 shrink-0 sticky top-0 h-screen overflow-y-auto">
+    <div className={`min-h-screen flex transition-colors ${isDark ? 'admin-panel-dark' : 'admin-panel-light'}`}>
+      <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen overflow-y-auto">
         {sidebarContent}
       </aside>
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-black/35 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/45 backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="relative w-72 max-w-[85vw] h-full z-10">{sidebarContent}</div>
@@ -1002,12 +1092,18 @@ export function ManagementConsoleView({
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 sm:px-7 flex items-center justify-between gap-4">
+        <header
+          className={`sticky top-0 z-30 h-16 backdrop-blur-md border-b px-4 sm:px-7 flex items-center justify-between gap-4 transition-colors ${
+            isDark ? 'bg-[#111420]/90 border-[#23273A]' : 'bg-white/95 border-slate-200/80'
+          }`}
+        >
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100"
+              className={`lg:hidden p-2 -ml-2 rounded-lg ${
+                isDark ? 'text-slate-300 hover:bg-[#1C2030]' : 'text-slate-600 hover:bg-slate-100'
+              }`}
               aria-label="Open menu"
             >
               <Menu className="w-5 h-5" />
@@ -1021,12 +1117,14 @@ export function ManagementConsoleView({
                     setSection('directory');
                     setSelectedBizId(null);
                   }}
-                  className="text-slate-500 hover:text-[#141416] truncate cursor-pointer"
+                  className={`truncate cursor-pointer ${
+                    isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                  }`}
                 >
-                  All Businesses
+                  Admin Dashboard
                 </button>
-                <span className="text-slate-300" aria-hidden="true">/</span>
-                <span className="font-semibold text-[#141416] truncate">
+                <span className="text-slate-400" aria-hidden="true">/</span>
+                <span className={`font-semibold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   {selectedBiz
                     ? selectedBiz.name
                     : section === 'stand_requests'
@@ -1045,20 +1143,33 @@ export function ManagementConsoleView({
                 </span>
               </div>
             ) : (
-              <div className="relative flex-1 max-w-sm">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search business, slug, or client email..."
-                  className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-[#141416] placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-slate-300"
-                />
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <h1
+                  className={`font-display text-lg font-bold tracking-tight hidden sm:block shrink-0 ${
+                    isDark ? 'text-white' : 'text-slate-900'
+                  }`}
+                >
+                  Admin Dashboard
+                </h1>
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search business, slug, or client email..."
+                    className={`w-full h-9 pl-9 pr-3 rounded-xl border text-xs focus:outline-none ${
+                      isDark
+                        ? 'bg-[#181C2C] border-[#262B3D] text-white placeholder:text-slate-500 focus:border-indigo-500'
+                        : 'bg-slate-50 border-slate-200/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-300'
+                    }`}
+                  />
+                </div>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             {!selectedBiz && section === 'directory' && (
               <>
                 <button
@@ -1068,7 +1179,11 @@ export function ManagementConsoleView({
                       prev === 'scans' ? 'name' : prev === 'name' ? 'redirects' : 'scans',
                     )
                   }
-                  className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#141416] hover:bg-slate-100 cursor-pointer"
+                  className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                    isDark
+                      ? 'text-slate-300 hover:text-white hover:bg-[#1C2030]'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   <span>
@@ -1083,7 +1198,11 @@ export function ManagementConsoleView({
                       prev === 'all' ? 'active' : prev === 'active' ? 'paused' : 'all',
                     )
                   }
-                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#141416] hover:bg-slate-100 cursor-pointer"
+                  className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                    isDark
+                      ? 'text-slate-300 hover:text-white hover:bg-[#1C2030]'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
                   <ListFilter className="w-3.5 h-3.5" />
                   <span className="capitalize">Filter: {statusFilter}</span>
@@ -1093,8 +1212,44 @@ export function ManagementConsoleView({
 
             <button
               type="button"
+              onClick={toggleAdminTheme}
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className={`p-2 rounded-xl border cursor-pointer transition-colors ${
+                isDark
+                  ? 'border-[#262B3D] bg-[#181C2C] text-amber-300 hover:bg-[#1F2438]'
+                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSection('stand_requests');
+                setSelectedBizId(null);
+              }}
+              title="QR Stand Requests"
+              aria-label="View QR stand requests"
+              className={`relative p-2 rounded-xl border cursor-pointer transition-colors ${
+                isDark
+                  ? 'border-[#262B3D] bg-[#181C2C] text-slate-300 hover:bg-[#1F2438]'
+                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+              {pendingStandRequestsCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  {pendingStandRequestsCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={onOpenNewBusiness}
-              className="px-4 py-2 rounded-xl bg-[#141416] hover:bg-black text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Business</span>
@@ -1102,7 +1257,7 @@ export function ManagementConsoleView({
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-7 max-w-[1400px] w-full mx-auto space-y-6">
+        <main className="admin-embedded-stage flex-1 p-4 sm:p-7 max-w-[1440px] w-full mx-auto space-y-6">
           {/* Selected Business Management Workspace */}
           {selectedBiz ? (
             <div className="space-y-6">
@@ -1406,374 +1561,754 @@ export function ManagementConsoleView({
             </div>
           ) : section === 'directory' ? (
             <div className="space-y-6">
-              {/* Warm Stone-Sage Executive Overview Strip (BizLink aesthetic, real ReviewFlow telemetry) */}
-              <div className="rounded-3xl bg-[#F3F4EC] border border-[#E5E6DC] p-6 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-7 items-center">
-                {/* Left: 5-Day Paired Bar Chart (Scans striped vs Google Redirects solid) */}
-                <div className="lg:col-span-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-display text-sm font-semibold text-[#141416]">
-                      Platform Activity
-                    </h2>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      Last 5 days
-                    </span>
-                  </div>
-
-                  <div className="h-28 flex items-end justify-between gap-3 pt-2">
-                    {fiveDayPlatformSeries.map((day) => {
-                      const scanH = Math.max(8, Math.round((day.scans / maxFiveDayVal) * 76));
-                      const redirH = Math.max(6, Math.round((day.redirects / maxFiveDayVal) * 76));
-                      return (
-                        <div key={day.key} className="flex-1 flex flex-col items-center gap-1.5">
-                          <div className="flex items-end gap-1 h-20">
-                            <div
-                              title={`${day.label}: ${day.scans} scans`}
-                              className="w-3 rounded-t-sm"
-                              style={{
-                                height: `${scanH}px`,
-                                backgroundImage:
-                                  'repeating-linear-gradient(-45deg, #d6d8ce, #d6d8ce 2px, #e8eae0 2px, #e8eae0 4px)',
-                              }}
-                            />
-                            <div
-                              title={`${day.label}: ${day.redirects} Google redirects`}
-                              className="w-3 rounded-t-sm bg-[#141416]"
-                              style={{ height: `${redirH}px` }}
-                            />
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-500">{day.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Center: Radial Segmented Semicircle Gauge */}
-                <div className="lg:col-span-4 flex flex-col items-center justify-center">
-                  <div className="relative w-48 h-28 flex flex-col items-center justify-end">
-                    <svg viewBox="0 0 200 110" className="w-full h-full overflow-visible" aria-hidden="true">
-                      {Array.from({ length: 28 }).map((_, idx) => {
-                        const angle = Math.PI + (idx / 27) * Math.PI;
-                        const x1 = 100 + Math.cos(angle) * 66;
-                        const y1 = 100 + Math.sin(angle) * 66;
-                        const x2 = 100 + Math.cos(angle) * 86;
-                        const y2 = 100 + Math.sin(angle) * 86;
-                        const filled = (idx / 27) * 100 <= platformConversionRate;
-                        return (
-                          <line
-                            key={idx}
-                            x1={x1.toFixed(1)}
-                            y1={y1.toFixed(1)}
-                            x2={x2.toFixed(1)}
-                            y2={y2.toFixed(1)}
-                            stroke={filled ? '#141416' : '#D4D6CC'}
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                          />
-                        );
-                      })}
-                    </svg>
-                    <div className="absolute bottom-1 text-center">
-                      <p className="font-display text-2xl sm:text-3xl font-bold text-[#141416] tabular-nums leading-none">
-                        {platformConversionRate}%
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-1">Scan-to-Google Rate</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: 2 Clean KPI Columns */}
-                <div className="lg:col-span-4 grid grid-cols-2 gap-6">
-                  <button
-                    type="button"
-                    onClick={() => setSection('clients')}
-                    className="text-left group cursor-pointer flex flex-col justify-between gap-4"
-                  >
-                    <p className="font-display text-3xl sm:text-4xl font-semibold text-[#141416] tabular-nums">
-                      {aggregateStats.totalBusinesses}
-                    </p>
-                    <div className="flex items-end justify-between gap-2">
-                      <span className="text-xs text-slate-600 leading-snug">
-                        Managed
-                        <br />
-                        businesses ({aggregateStats.activeQrCount} active)
-                      </span>
-                      <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-[#141416] shrink-0" />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSection('activity')}
-                    className="text-left group cursor-pointer flex flex-col justify-between gap-4"
-                  >
-                    <p className="font-display text-3xl sm:text-4xl font-semibold text-[#141416] tabular-nums">
-                      {aggregateStats.totalDrafts}
-                    </p>
-                    <div className="flex items-end justify-between gap-2">
-                      <span className="text-xs text-slate-600 leading-snug">
-                        AI drafts
-                        <br />
-                        ({aggregateStats.totalScans} scans)
-                      </span>
-                      <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-[#141416] shrink-0" />
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              {/* View Mode Switcher Row */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-slate-500 tabular-nums">
-                  Showing <strong className="text-[#141416]">{filteredBusinesses.length}</strong> of{' '}
-                  {businesses.length} businesses · {aggregateStats.totalRedirects} total Google
-                  redirects
-                </p>
-
-                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setDirectoryView('board')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                      directoryView === 'board'
-                        ? 'bg-white text-[#141416] shadow-xs'
-                        : 'text-slate-600 hover:text-[#141416]'
-                    }`}
-                  >
-                    Board
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDirectoryView('table')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                      directoryView === 'table'
-                        ? 'bg-white text-[#141416] shadow-xs'
-                        : 'text-slate-600 hover:text-[#141416]'
-                    }`}
-                  >
-                    Table
-                  </button>
-                </div>
-              </div>
-
-              {filteredBusinesses.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center space-y-3">
-                  <p className="text-sm font-semibold text-[#141416]">
-                    {businesses.length === 0
-                      ? 'No businesses registered yet'
-                      : 'No businesses match your search filter'}
-                  </p>
-                  {businesses.length === 0 && (
+              {/* Row 1: 4 Crisp KPI Stat Cards (Screenshot 3 Admin Dashboard Style) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
+                {[
+                  {
+                    label: 'Total Businesses',
+                    value: aggregateStats.totalBusinesses,
+                    badge: `${aggregateStats.activeQrCount} Active QR`,
+                    positive: true,
+                    icon: Building2,
+                    onClick: () => setSection('clients'),
+                  },
+                  {
+                    label: 'Platform QR Scans',
+                    value: aggregateStats.totalScans,
+                    badge: `${platformConversionRate}% Conv.`,
+                    positive: platformConversionRate >= 0,
+                    icon: QrCode,
+                    onClick: () => directoryTableRef.current?.scrollIntoView({ behavior: 'smooth' }),
+                  },
+                  {
+                    label: 'AI Drafts Generated',
+                    value: aggregateStats.totalDrafts,
+                    badge: `${globalAiLogs.length} Calls`,
+                    positive: true,
+                    icon: Sparkles,
+                    onClick: () => setSection('ai_usage'),
+                  },
+                  {
+                    label: 'Google Redirects',
+                    value: aggregateStats.totalRedirects,
+                    badge:
+                      pendingStandRequestsCount > 0
+                        ? `${pendingStandRequestsCount} Stand Req`
+                        : 'Live Sync',
+                    positive: pendingStandRequestsCount === 0,
+                    icon: TrendingUp,
+                    onClick: () =>
+                      pendingStandRequestsCount > 0
+                        ? setSection('stand_requests')
+                        : setSection('activity'),
+                  },
+                ].map((kpi) => {
+                  const KpiIcon = kpi.icon;
+                  return (
                     <button
+                      key={kpi.label}
                       type="button"
-                      onClick={onOpenNewBusiness}
-                      className="px-4 py-2 rounded-xl bg-[#141416] text-white text-xs font-semibold cursor-pointer"
+                      onClick={kpi.onClick}
+                      className={`text-left rounded-2xl p-5 border transition-colors cursor-pointer ${
+                        isDark
+                          ? 'bg-[#151824] border-[#262B3D] hover:border-indigo-500/50'
+                          : 'bg-white border-slate-200/80 shadow-xs hover:border-indigo-300'
+                      }`}
                     >
-                      Create First Business
-                    </button>
-                  )}
-                </div>
-              ) : directoryView === 'board' ? (
-                /* 4-Column BizLink Governance Board */
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
-                  {boardColumns.map((col) => (
-                    <div key={col.id} className="space-y-3">
-                      <div className="flex items-center justify-between px-1">
-                        <h3 className="font-display text-base font-semibold text-[#141416]">
-                          {col.title}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-md border border-slate-200 bg-white text-[11px] font-mono font-semibold text-slate-600 tabular-nums">
-                          {col.items.length}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span
+                          className={`text-xs font-medium ${
+                            isDark ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          {kpi.label}
+                        </span>
+                        <span
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                            isDark ? 'bg-indigo-500/15 text-indigo-300' : 'bg-[#EEF2FF] text-[#4F46E5]'
+                          }`}
+                        >
+                          <KpiIcon className="w-4 h-4" />
                         </span>
                       </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={`font-display text-2xl sm:text-3xl font-bold tabular-nums tracking-tight ${
+                            isDark ? 'text-white' : 'text-slate-900'
+                          }`}
+                        >
+                          {kpi.value}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums ${
+                            kpi.positive
+                              ? isDark
+                                ? 'bg-emerald-500/15 text-emerald-300'
+                                : 'bg-emerald-50 text-emerald-700'
+                              : isDark
+                                ? 'bg-rose-500/15 text-rose-300'
+                                : 'bg-rose-50 text-rose-700'
+                          }`}
+                        >
+                          {kpi.badge}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-                      {col.items.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
-                          No businesses in this tier
+              {/* Row 2: 8-Col Smooth Dual-Curve Velocity Chart + 4-Col Top Businesses */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* 8-Col Scan Velocity Dual Curve Chart */}
+                <div
+                  className={`lg:col-span-8 rounded-2xl p-5 sm:p-6 border flex flex-col justify-between ${
+                    isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                      <h2
+                        className={`font-display text-base font-bold ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        Scan Velocity
+                      </h2>
+                      <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        5-day QR scans vs Google review redirects across all locations
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#4F46E5]" />
+                        <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>QR Scans</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#EC4899]" />
+                        <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Redirects</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const pts = fiveDayPlatformSeries;
+                    const W = 600;
+                    const H = 190;
+                    const padX = 28;
+                    const padY = 24;
+                    const usableW = W - padX * 2;
+                    const usableH = H - padY * 2;
+                    const safeMax = Math.max(1, maxFiveDayVal);
+
+                    const toCoords = (vals: number[]) =>
+                      vals.map((v, i) => ({
+                        x: padX + (pts.length > 1 ? (i / (pts.length - 1)) * usableW : usableW / 2),
+                        y: padY + usableH - (v / safeMax) * usableH,
+                        v,
+                      }));
+
+                    const buildSmoothPath = (coords: { x: number; y: number }[]) => {
+                      if (coords.length === 0) return '';
+                      if (coords.length === 1) return `M ${coords[0].x} ${coords[0].y}`;
+                      let d = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
+                      for (let i = 0; i < coords.length - 1; i += 1) {
+                        const p0 = coords[i];
+                        const p1 = coords[i + 1];
+                        const cx = ((p0.x + p1.x) / 2).toFixed(1);
+                        d += ` C ${cx} ${p0.y.toFixed(1)}, ${cx} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+                      }
+                      return d;
+                    };
+
+                    const scanCoords = toCoords(pts.map((p) => p.scans));
+                    const redirCoords = toCoords(pts.map((p) => p.redirects));
+                    const scanPath = buildSmoothPath(scanCoords);
+                    const scanAreaPath = `${scanPath} L ${scanCoords[scanCoords.length - 1].x.toFixed(1)} ${(H - padY).toFixed(1)} L ${scanCoords[0].x.toFixed(1)} ${(H - padY).toFixed(1)} Z`;
+                    const redirPath = buildSmoothPath(redirCoords);
+                    const peakIdx = pts.reduce(
+                      (best, cur, idx) => (cur.scans > pts[best].scans ? idx : best),
+                      0,
+                    );
+                    const peakCoord = scanCoords[peakIdx];
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="relative w-full">
+                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-48 overflow-visible">
+                            <defs>
+                              <linearGradient id="rfAdminScanFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#4F46E5" stopOpacity={isDark ? '0.32' : '0.18'} />
+                                <stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
+                              </linearGradient>
+                            </defs>
+                            {[0.25, 0.5, 0.75, 1].map((frac) => {
+                              const gy = padY + usableH * (1 - frac);
+                              return (
+                                <line
+                                  key={frac}
+                                  x1={padX}
+                                  y1={gy}
+                                  x2={W - padX}
+                                  y2={gy}
+                                  stroke={isDark ? '#262B3D' : '#F1F5F9'}
+                                  strokeDasharray="4 4"
+                                  strokeWidth="1"
+                                />
+                              );
+                            })}
+                            <path d={scanAreaPath} fill="url(#rfAdminScanFill)" />
+                            <path
+                              d={scanPath}
+                              fill="none"
+                              stroke="#4F46E5"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                            />
+                            <path
+                              d={redirPath}
+                              fill="none"
+                              stroke="#EC4899"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                            />
+                            {scanCoords.map((c, idx) => (
+                              <circle
+                                key={`s-${pts[idx].key}`}
+                                cx={c.x}
+                                cy={c.y}
+                                r={idx === peakIdx ? 5.5 : 3.5}
+                                fill={idx === peakIdx ? '#FFFFFF' : '#4F46E5'}
+                                stroke="#4F46E5"
+                                strokeWidth={idx === peakIdx ? 3 : 0}
+                              />
+                            ))}
+                            {redirCoords.map((c, idx) => (
+                              <circle
+                                key={`r-${pts[idx].key}`}
+                                cx={c.x}
+                                cy={c.y}
+                                r="3"
+                                fill="#EC4899"
+                              />
+                            ))}
+                            {peakCoord && (
+                              <g transform={`translate(${Math.min(W - 88, Math.max(48, peakCoord.x)).toFixed(1)}, ${Math.max(14, peakCoord.y - 16).toFixed(1)})`}>
+                                <rect
+                                  x="-36"
+                                  y="-14"
+                                  width="72"
+                                  height="22"
+                                  rx="6"
+                                  fill={isDark ? '#252B42' : '#1E1B4B'}
+                                />
+                                <text
+                                  x="0"
+                                  y="1"
+                                  textAnchor="middle"
+                                  fontSize="10"
+                                  fontWeight="700"
+                                  fill="#FFFFFF"
+                                >
+                                  {pts[peakIdx].scans} scans
+                                </text>
+                              </g>
+                            )}
+                          </svg>
                         </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {col.items.map((biz) => {
-                            const st = statsMap[biz.id];
-                            const isFeatured = featuredBizId === biz.id;
-                            return (
-                              <div
-                                key={biz.id}
-                                onMouseEnter={() => setFeaturedBizId(biz.id)}
-                                onMouseLeave={() => setFeaturedBizId(null)}
-                                onClick={() => {
-                                  setSelectedBizId(biz.id);
-                                  setDetailTab('access');
-                                }}
-                                className={`rounded-2xl p-4 border transition-colors cursor-pointer space-y-3 ${
-                                  isFeatured
-                                    ? 'bg-[#141416] text-white border-[#141416] shadow-lg'
-                                    : 'bg-white text-[#141416] border-slate-200/90 hover:border-slate-300'
+                        <div className="flex items-center justify-between px-4">
+                          {pts.map((d) => (
+                            <div key={d.key} className="text-center">
+                              <p
+                                className={`text-[11px] font-medium ${
+                                  isDark ? 'text-slate-400' : 'text-slate-500'
                                 }`}
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex items-center gap-2.5 min-w-0">
+                                {d.label}
+                              </p>
+                              <p
+                                className={`text-[10px] tabular-nums ${
+                                  isDark ? 'text-slate-500' : 'text-slate-400'
+                                }`}
+                              >
+                                {d.scans}/{d.redirects}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 4-Col Top Businesses List */}
+                <div
+                  className={`lg:col-span-4 rounded-2xl p-5 sm:p-6 border flex flex-col justify-between ${
+                    isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-4">
+                    <h2
+                      className={`font-display text-base font-bold ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      Top Businesses
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDirectoryView('table');
+                        directoryTableRef.current?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className={`text-xs font-semibold cursor-pointer ${
+                        isDark ? 'text-indigo-300 hover:text-indigo-200' : 'text-[#4F46E5] hover:underline'
+                      }`}
+                    >
+                      See all
+                    </button>
+                  </div>
+
+                  {topBusinesses.length === 0 ? (
+                    <div className="py-10 text-center text-xs text-slate-400">
+                      No businesses yet
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {topBusinesses.map((biz, idx) => {
+                        const st = statsMap[biz.id];
+                        return (
+                          <button
+                            key={biz.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedBizId(biz.id);
+                              setDetailTab('access');
+                            }}
+                            className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-colors text-left cursor-pointer ${
+                              isDark
+                                ? 'border-transparent hover:bg-[#1C2030]'
+                                : 'border-transparent hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span
+                                className={`w-5 text-xs font-bold tabular-nums shrink-0 ${
+                                  isDark ? 'text-slate-500' : 'text-slate-400'
+                                }`}
+                              >
+                                {idx + 1}
+                              </span>
+                              <BusinessLogo
+                                src={biz.logoDataUrl}
+                                name={biz.name}
+                                primaryColor={biz.branding.primaryColor}
+                                sizeClass="w-9 h-9 rounded-xl"
+                              />
+                              <div className="min-w-0">
+                                <p
+                                  className={`text-xs font-semibold truncate ${
+                                    isDark ? 'text-white' : 'text-slate-900'
+                                  }`}
+                                >
+                                  {biz.name}
+                                </p>
+                                <p
+                                  className={`text-[11px] truncate ${
+                                    isDark ? 'text-slate-400' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {biz.category}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p
+                                className={`text-xs font-bold tabular-nums ${
+                                  isDark ? 'text-white' : 'text-slate-900'
+                                }`}
+                              >
+                                {st?.scans ?? 0} scans
+                              </p>
+                              <p
+                                className={`text-[10px] tabular-nums ${
+                                  isDark ? 'text-emerald-300' : 'text-emerald-600'
+                                }`}
+                              >
+                                {st?.redirects ?? 0} posts
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 3: 7-Col Businesses List / Board + 5-Col Draft Tone Mix Donut */}
+              <div ref={directoryTableRef} className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+                {/* 7-Col Businesses Directory */}
+                <div
+                  className={`xl:col-span-8 rounded-2xl border overflow-hidden ${
+                    isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
+                  }`}
+                >
+                  <div
+                    className={`px-5 py-4 border-b flex flex-wrap items-center justify-between gap-3 ${
+                      isDark ? 'border-[#262B3D]' : 'border-slate-100'
+                    }`}
+                  >
+                    <div>
+                      <h2
+                        className={`font-display text-base font-bold ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        Businesses Directory
+                      </h2>
+                      <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        Showing {filteredBusinesses.length} of {businesses.length} locations
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div
+                        className={`inline-flex items-center gap-1 p-1 rounded-xl ${
+                          isDark ? 'bg-[#0F121C]' : 'bg-slate-100'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setDirectoryView('table')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                            directoryView === 'table' || directoryView === 'board'
+                              ? directoryView === 'table'
+                                ? isDark
+                                  ? 'bg-[#252B42] text-white'
+                                  : 'bg-white text-slate-900 shadow-xs'
+                                : isDark
+                                  ? 'text-slate-400 hover:text-white'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              : ''
+                          }`}
+                        >
+                          Table
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDirectoryView('board')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                            directoryView === 'board'
+                              ? isDark
+                                ? 'bg-[#252B42] text-white'
+                                : 'bg-white text-slate-900 shadow-xs'
+                              : isDark
+                                ? 'text-slate-400 hover:text-white'
+                                : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Board
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {filteredBusinesses.length === 0 ? (
+                    <div className="p-10 text-center space-y-3">
+                      <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                        {businesses.length === 0
+                          ? 'No businesses registered yet'
+                          : 'No businesses match your search filter'}
+                      </p>
+                      {businesses.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={onOpenNewBusiness}
+                          className="px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer"
+                        >
+                          Create First Business
+                        </button>
+                      )}
+                    </div>
+                  ) : directoryView === 'board' ? (
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {boardColumns.map((col) => (
+                        <div key={col.id} className="space-y-2.5">
+                          <div className="flex items-center justify-between px-1">
+                            <h3 className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              {col.title}
+                            </h3>
+                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold ${isDark ? 'bg-[#1C2030] text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                              {col.items.length}
+                            </span>
+                          </div>
+                          {col.items.length === 0 ? (
+                            <div className={`rounded-xl border border-dashed p-4 text-center text-xs ${isDark ? 'border-[#262B3D] text-slate-500' : 'border-slate-200 text-slate-400'}`}>
+                              No businesses in this tier
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5">
+                              {col.items.map((biz) => {
+                                const st = statsMap[biz.id];
+                                return (
+                                  <button
+                                    key={biz.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBizId(biz.id);
+                                      setDetailTab('access');
+                                    }}
+                                    className={`w-full text-left rounded-xl p-3.5 border transition-colors cursor-pointer space-y-2 ${
+                                      isDark
+                                        ? 'bg-[#1C2030] border-[#262B3D] hover:border-indigo-500/50'
+                                        : 'bg-slate-50/70 border-slate-200/80 hover:border-indigo-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <BusinessLogo
+                                          src={biz.logoDataUrl}
+                                          name={biz.name}
+                                          primaryColor={biz.branding.primaryColor}
+                                          sizeClass="w-8 h-8 rounded-lg"
+                                        />
+                                        <div className="min-w-0">
+                                          <p className={`text-xs font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                                            {biz.name}
+                                          </p>
+                                          <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                            {biz.clientEmail || 'Unassigned'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <span className={`text-[11px] font-mono tabular-nums shrink-0 ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                                        {st?.scans ?? 0} scans
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr
+                            className={`border-b text-[11px] font-semibold uppercase tracking-wider ${
+                              isDark
+                                ? 'border-[#262B3D] bg-[#1A1E2E] text-slate-400'
+                                : 'border-slate-100 bg-slate-50/80 text-slate-500'
+                            }`}
+                          >
+                            <th className="py-3 px-5">Business</th>
+                            <th className="py-3 px-4">Client Access</th>
+                            <th className="py-3 px-4">QR Status</th>
+                            <th className="py-3 px-4 text-right">Scans / Posts</th>
+                            <th className="py-3 px-5 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y text-xs ${isDark ? 'divide-[#262B3D]' : 'divide-slate-100'}`}>
+                          {filteredBusinesses.map((biz) => {
+                            const st = statsMap[biz.id];
+                            return (
+                              <tr
+                                key={biz.id}
+                                className={isDark ? 'hover:bg-[#1C2030]/70' : 'hover:bg-slate-50/80'}
+                              >
+                                <td className="py-3.5 px-5">
+                                  <div className="flex items-center gap-3">
                                     <BusinessLogo
                                       src={biz.logoDataUrl}
                                       name={biz.name}
                                       primaryColor={biz.branding.primaryColor}
-                                      sizeClass="w-8 h-8 rounded-lg"
+                                      sizeClass="w-8 h-8"
                                     />
                                     <div className="min-w-0">
-                                      <p className="font-display text-sm font-semibold truncate">
+                                      <p className={`font-semibold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
                                         {biz.name}
                                       </p>
-                                      <p
-                                        className={`text-[11px] truncate ${
-                                          isFeatured ? 'text-white/65' : 'text-slate-500'
-                                        }`}
-                                      >
-                                        {biz.category}
+                                      <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                        {biz.category} · <span className="font-mono">/review/{biz.slug}</span>
                                       </p>
                                     </div>
                                   </div>
-                                  <MoreVertical
-                                    className={`w-4 h-4 shrink-0 ${
-                                      isFeatured ? 'text-white/60' : 'text-slate-400'
-                                    }`}
-                                  />
-                                </div>
-
-                                <div
-                                  className={`space-y-1 text-[11px] ${
-                                    isFeatured ? 'text-white/75' : 'text-slate-500'
-                                  }`}
-                                >
-                                  <p className="font-mono truncate">/review/{biz.slug}</p>
-                                  <p className="truncate">
-                                    {biz.clientEmail || 'Client Gmail unassigned'}
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <p className={`font-mono text-[11px] truncate max-w-[180px] ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                                    {biz.clientEmail || 'Unassigned'}
                                   </p>
-                                </div>
-
-                                <div
-                                  className={`pt-2.5 border-t flex items-center justify-between gap-2 text-[11px] ${
-                                    isFeatured ? 'border-white/15' : 'border-slate-100'
-                                  }`}
-                                >
+                                  <p className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    {biz.clientAccessLevel === 'read_only'
+                                      ? 'Read-Only'
+                                      : biz.clientAccessLevel === 'qr_and_questions'
+                                        ? 'QR & Questions'
+                                        : 'Full Self-Service'}
+                                  </p>
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
                                   <span
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium ${
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
                                       biz.qrConfig.isActive
-                                        ? isFeatured
-                                          ? 'bg-emerald-500/20 text-emerald-300'
+                                        ? isDark
+                                          ? 'bg-emerald-500/15 text-emerald-300'
                                           : 'bg-emerald-50 text-emerald-700'
-                                        : isFeatured
-                                        ? 'bg-amber-500/20 text-amber-300'
-                                        : 'bg-amber-50 text-amber-700'
+                                        : isDark
+                                          ? 'bg-amber-500/15 text-amber-300'
+                                          : 'bg-amber-50 text-amber-700'
                                     }`}
                                   >
-                                    {biz.qrConfig.isActive ? 'QR Active' : 'Paused'}
+                                    {biz.qrConfig.isActive ? (
+                                      <>
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>Active</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <PauseCircle className="w-3 h-3" />
+                                        <span>Paused</span>
+                                      </>
+                                    )}
                                   </span>
-
-                                  <span
-                                    className={`font-mono tabular-nums ${
-                                      isFeatured ? 'text-white/80' : 'text-slate-600'
+                                </td>
+                                <td className={`py-3.5 px-4 text-right font-mono tabular-nums ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+                                  {st?.scans ?? 0} <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>/</span> {st?.redirects ?? 0}
+                                </td>
+                                <td className="py-3.5 px-5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBizId(biz.id);
+                                      setDetailTab('access');
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl font-semibold text-xs cursor-pointer whitespace-nowrap border transition-colors ${
+                                      isDark
+                                        ? 'border-[#2C334A] bg-[#1C2030] hover:bg-[#252B42] text-white'
+                                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                                     }`}
                                   >
-                                    {st?.scans ?? 0} scans · {st?.redirects ?? 0} posts
-                                  </span>
-                                </div>
-                              </div>
+                                    Manage
+                                  </button>
+                                </td>
+                              </tr>
                             );
                           })}
-                        </div>
-                      )}
+                        </tbody>
+                      </table>
                     </div>
-                  ))}
+                  )}
                 </div>
-              ) : (
-                /* Classic Table View */
-                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
-                          <th className="py-3 px-6">Business</th>
-                          <th className="py-3 px-4">Assigned Client Email</th>
-                          <th className="py-3 px-4">Client Tier</th>
-                          <th className="py-3 px-4">QR Status</th>
-                          <th className="py-3 px-4 text-right">Scans</th>
-                          <th className="py-3 px-4 text-right">Redirects</th>
-                          <th className="py-3 px-6 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs">
-                        {filteredBusinesses.map((biz) => {
-                          const st = statsMap[biz.id];
-                          return (
-                            <tr key={biz.id} className="hover:bg-slate-50/70">
-                              <td className="py-3.5 px-6">
-                                <div className="flex items-center gap-3">
-                                  <BusinessLogo
-                                    src={biz.logoDataUrl}
-                                    name={biz.name}
-                                    primaryColor={biz.branding.primaryColor}
-                                    sizeClass="w-8 h-8"
-                                  />
-                                  <div>
-                                    <p className="font-semibold text-slate-900">{biz.name}</p>
-                                    <p className="text-slate-500">
-                                      {biz.category} ·{' '}
-                                      <span className="font-mono">/review/{biz.slug}</span>
-                                    </p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-4 font-mono text-slate-700">
-                                {biz.clientEmail || 'Unassigned'}
-                              </td>
-                              <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
-                                {biz.clientAccessLevel === 'read_only'
-                                  ? 'Read-Only'
-                                  : biz.clientAccessLevel === 'qr_and_questions'
-                                    ? 'QR & Questions'
-                                    : 'Full Self-Service'}
-                              </td>
-                              <td className="py-3.5 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
-                                  {biz.qrConfig.isActive ? (
-                                    <>
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                      <span>Active</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
-                                      <span>Paused</span>
-                                    </>
-                                  )}
-                                </span>
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-900">
-                                {st?.scans ?? 0}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-900">
-                                {st?.redirects ?? 0}
-                              </td>
-                              <td className="py-3.5 px-6 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedBizId(biz.id);
-                                    setDetailTab('access');
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-800 cursor-pointer whitespace-nowrap"
-                                >
-                                  Manage
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+
+                {/* 5-Col Audience / Draft Tone Mix Donut Chart (Screenshot 3 Bottom Right) */}
+                <div
+                  className={`xl:col-span-4 rounded-2xl p-5 sm:p-6 border space-y-5 ${
+                    isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2
+                        className={`font-display text-base font-bold ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        }`}
+                      >
+                        Draft Tone Mix
+                      </h2>
+                      <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        AI output style share
+                      </p>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                        isDark ? 'bg-[#1C2030] text-indigo-300' : 'bg-[#EEF2FF] text-[#4F46E5]'
+                      }`}
+                    >
+                      Live
+                    </span>
+                  </div>
+
+                  {/* SVG Ring Donut Chart */}
+                  <div className="flex items-center justify-center py-2">
+                    <div className="relative w-44 h-44 flex items-center justify-center">
+                      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+                        <circle
+                          cx="60"
+                          cy="60"
+                          r="44"
+                          fill="none"
+                          stroke={isDark ? '#22273A' : '#F1F5F9'}
+                          strokeWidth="14"
+                        />
+                        {(() => {
+                          const C = 2 * Math.PI * 44;
+                          let offset = 0;
+                          const safeTotal = Math.max(1, toneMixStats.total);
+                          return toneMixStats.items.map((item) => {
+                            const frac = item.count / safeTotal;
+                            const len = frac * C;
+                            const dashArray = `${Math.max(0, len - 2)} ${C}`;
+                            const dashOffset = -offset;
+                            offset += len;
+                            return (
+                              <circle
+                                key={item.key}
+                                cx="60"
+                                cy="60"
+                                r="44"
+                                fill="none"
+                                stroke={item.color}
+                                strokeWidth="14"
+                                strokeDasharray={dashArray}
+                                strokeDashoffset={dashOffset}
+                                strokeLinecap="round"
+                              />
+                            );
+                          });
+                        })()}
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                        <span
+                          className={`font-display text-2xl font-bold tabular-nums ${
+                            isDark ? 'text-white' : 'text-slate-900'
+                          }`}
+                        >
+                          {aggregateStats.totalDrafts}
+                        </span>
+                        <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Total Drafts
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {toneMixStats.items.map((item) => (
+                      <div key={item.key} className="flex items-center justify-between text-xs">
+                        <span className="inline-flex items-center gap-2 font-medium">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>
+                            {item.label}
+                          </span>
+                        </span>
+                        <span
+                          className={`font-semibold tabular-nums ${
+                            isDark ? 'text-white' : 'text-slate-900'
+                          }`}
+                        >
+                          {item.pct}%
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           ) : section === 'stand_requests' ? (
             <div className="space-y-6">

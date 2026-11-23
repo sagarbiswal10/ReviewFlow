@@ -1,13 +1,13 @@
 import type { FeedbackQuestion, FormTemplateId } from '../types';
 
-export type TemplateCategoryFilter = 'all' | 'new' | 'light' | 'dark' | 'compact';
+export type TemplateCategoryFilter = 'all' | '3d' | 'new' | 'light' | 'dark' | 'compact';
 
 export interface FormTemplateDefinition {
   id: FormTemplateId;
   name: string;
   subtitle: string;
   description: string;
-  toneTag: 'Light' | 'Dark' | 'Editorial' | 'Compact';
+  toneTag: '3D' | 'Light' | 'Dark' | 'Editorial' | 'Compact';
   bestFor: string;
   isNew: boolean;
   accentHex: string;
@@ -15,6 +15,54 @@ export interface FormTemplateDefinition {
 }
 
 export const FORM_TEMPLATES: FormTemplateDefinition[] = [
+  {
+    id: 'spatial_glass_3d',
+    name: 'Spatial Glass · 3D Liquid Prism',
+    subtitle: 'Floating 3D perspective glass cards with iridescent prism glow & tilt depth',
+    description:
+      'Turns your feedback flow into an interactive 3D frosted-glass stage with specular rim lighting, tilting cards, and luminous pill selections.',
+    toneTag: '3D',
+    bestFor: 'Tech-Forward Salons, Boutiques, Flagships & Studios',
+    isNew: true,
+    accentHex: '#6366F1',
+    surfaceHex: '#EEF2FF',
+  },
+  {
+    id: 'neo_brutal_3d',
+    name: 'Pop 3D · Tactile Brutalist',
+    subtitle: 'Editorial warm paper with 3D press-down blocks, hot pink & cobalt shadows',
+    description:
+      'Bold tactile 3D cards with solid offset shadows and springy press-down answer tiles that feel physically clickable on mobile.',
+    toneTag: '3D',
+    bestFor: 'Cafes, Creative Studios, Streetwear & Modern Salons',
+    isNew: true,
+    accentHex: '#FF3D8B',
+    surfaceHex: '#F3F1EC',
+  },
+  {
+    id: 'obsidian_cyber_3d',
+    name: 'Obsidian Vault · 3D Neon Deck',
+    subtitle: 'Deep matte dark 3D grid horizon with neon cyan/magenta rim-lit tiles',
+    description:
+      'A high-contrast 3D night-mode experience with floating neon-rimmed question cards, glowing answer chips, and cyber depth.',
+    toneTag: '3D',
+    bestFor: 'Lounges, Gyms, Gaming Cafes, Auto Detailing & Nightlife',
+    isNew: true,
+    accentHex: '#06B6D4',
+    surfaceHex: '#09090E',
+  },
+  {
+    id: 'clay_soft_3d',
+    name: 'Cloud Clay · 3D Tactile Puff',
+    subtitle: 'Squishy 3D claymorphic cushions with soft pastel highlights & bounce',
+    description:
+      'Playful inflated 3D clay cards with inner specular highlights and soft-squish answer buttons guests love tapping.',
+    toneTag: '3D',
+    bestFor: 'Spas, Bakeries, Dessert Bars, Kids & Wellness Studios',
+    isNew: true,
+    accentHex: '#EC4899',
+    surfaceHex: '#FDF2F8',
+  },
   {
     id: 'emoji_checklist_light',
     name: 'Pulse Light · Emoji & Checklist',

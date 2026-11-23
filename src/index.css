@@ -270,27 +270,107 @@
 }
 
 /* ==========================================
-   BUSINESS MANAGEMENT CONSOLE (BIZLINK UI)
+   BUSINESS MANAGEMENT CONSOLE (ADMIN LIGHT & DARK)
    ========================================== */
 
-.admin-bizlink-canvas {
-  background-color: #ffffff;
-  color: #141416;
+.admin-panel-light {
+  background-color: #f4f6fa;
+  color: #111827;
 }
 
-.admin-bizlink-canvas .spatial-card-3d,
-.admin-bizlink-canvas .spatial-card-3d:hover {
+.admin-panel-dark {
+  background-color: #0b0d14;
+  color: #f1f5f9;
+}
+
+.admin-panel-light .spatial-card-3d,
+.admin-panel-light .spatial-card-3d:hover,
+.admin-panel-dark .spatial-card-3d,
+.admin-panel-dark .spatial-card-3d:hover {
   transform: none !important;
   will-change: auto;
   transition: border-color 150ms ease, background-color 150ms ease;
 }
 
-.admin-bizlink-canvas .liquid-glass {
+.admin-panel-light .liquid-glass {
   background: #ffffff;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.admin-panel-dark .liquid-glass,
+.admin-panel-dark .liquid-glass-well,
+.admin-panel-dark .liquid-glass-tint {
+  background: #151824 !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #262b3d !important;
+  box-shadow: none !important;
+  color: #f1f5f9;
+}
+
+.admin-panel-dark .admin-embedded-stage .bg-white,
+.admin-panel-dark .admin-embedded-stage .bg-white\/95,
+.admin-panel-dark .admin-embedded-stage .bg-white\/90 {
+  background-color: #151824 !important;
+  color: #f1f5f9;
+}
+
+.admin-panel-dark .admin-embedded-stage .bg-slate-50,
+.admin-panel-dark .admin-embedded-stage .bg-slate-50\/80,
+.admin-panel-dark .admin-embedded-stage .bg-slate-100,
+.admin-panel-dark .admin-embedded-stage .bg-gray-50 {
+  background-color: #1c2030 !important;
+}
+
+.admin-panel-dark .admin-embedded-stage .text-slate-900,
+.admin-panel-dark .admin-embedded-stage .text-slate-800,
+.admin-panel-dark .admin-embedded-stage .text-gray-900,
+.admin-panel-dark .admin-embedded-stage .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+.admin-panel-dark .admin-embedded-stage .text-slate-700,
+.admin-panel-dark .admin-embedded-stage .text-slate-600,
+.admin-panel-dark .admin-embedded-stage .text-gray-700,
+.admin-panel-dark .admin-embedded-stage .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.admin-panel-dark .admin-embedded-stage .text-slate-500,
+.admin-panel-dark .admin-embedded-stage .text-slate-400,
+.admin-panel-dark .admin-embedded-stage .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+.admin-panel-dark .admin-embedded-stage .border-slate-200,
+.admin-panel-dark .admin-embedded-stage .border-slate-200\/80,
+.admin-panel-dark .admin-embedded-stage .border-slate-100,
+.admin-panel-dark .admin-embedded-stage .border-gray-200 {
+  border-color: #262b3d !important;
+}
+
+.admin-panel-dark .admin-embedded-stage input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+.admin-panel-dark .admin-embedded-stage textarea,
+.admin-panel-dark .admin-embedded-stage select {
+  background-color: #0f121c !important;
+  color: #f1f5f9 !important;
+  border-color: #2c334a !important;
+}
+
+/* 3D Form Template Surface Textures */
+.neo-brutal-dots {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.14) 1.25px, transparent 1.25px);
+  background-size: 20px 20px;
+}
+
+.cyber-3d-grid {
+  background-image:
+    linear-gradient(to right, rgba(34, 211, 238, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.08) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .spatial-canvas {

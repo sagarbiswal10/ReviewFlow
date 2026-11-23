@@ -20,6 +20,7 @@ interface TemplatesTabProps {
 
 const FILTER_OPTIONS: { id: TemplateCategoryFilter; label: string }[] = [
   { id: 'all', label: 'All Templates' },
+  { id: '3d', label: '3D Spatial' },
   { id: 'new', label: 'New' },
   { id: 'light', label: 'Light' },
   { id: 'dark', label: 'Dark' },
@@ -77,6 +78,7 @@ export function TemplatesTab({
   const visibleTemplates = useMemo(() => {
     return FORM_TEMPLATES.filter((tpl) => {
       if (filter === 'all') return true;
+      if (filter === '3d') return tpl.toneTag === '3D';
       if (filter === 'new') return tpl.isNew;
       if (filter === 'light') return tpl.toneTag === 'Light';
       if (filter === 'dark') return tpl.toneTag === 'Dark';
@@ -321,6 +323,172 @@ export function TemplatesTab({
                     idx === 0
                       ? 'text-white font-medium'
                       : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  {opt}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (tpl.id === 'spatial_glass_3d') {
+      return (
+        <div
+          className="rounded-2xl p-3.5 relative overflow-hidden border border-indigo-200/80 space-y-2"
+          style={{
+            background:
+              'radial-gradient(circle at 18% 15%, rgba(99,102,241,0.22), transparent 55%), radial-gradient(circle at 85% 80%, rgba(56,189,248,0.24), transparent 55%), linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%)',
+          }}
+        >
+          <div className="rounded-xl bg-white/80 backdrop-blur-md border border-white shadow-[0_12px_24px_-10px_rgba(79,70,229,0.28),inset_0_1px_0_rgba(255,255,255,0.9)] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-slate-900 truncate">{business.name}</p>
+              <span className="px-1.5 py-0.5 rounded-full bg-indigo-600/10 text-indigo-700 text-[8px] font-bold uppercase tracking-wider shrink-0">
+                3D Prism
+              </span>
+            </div>
+            <p className="text-[10px] font-semibold text-slate-800 truncate">
+              {sampleChecklistPrompt}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {sampleChecklistOptions.slice(0, 4).map((opt, idx) => (
+                <div
+                  key={opt}
+                  style={
+                    idx === 0
+                      ? {
+                          background: `linear-gradient(135deg, ${brandAccent}, #6366F1)`,
+                          boxShadow: '0 6px 12px -4px rgba(79,70,229,0.4)',
+                        }
+                      : undefined
+                  }
+                  className={`px-2 py-1 rounded-lg text-[9px] truncate border ${
+                    idx === 0
+                      ? 'text-white font-semibold border-transparent'
+                      : 'bg-white/90 border-indigo-100 text-slate-700 shadow-xs'
+                  }`}
+                >
+                  {opt}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (tpl.id === 'neo_brutal_3d') {
+      return (
+        <div className="rounded-2xl p-3.5 bg-[#FFFBEB] border-2 border-slate-900 space-y-2">
+          <div className="rounded-xl bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#0F172A] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-extrabold text-slate-900 truncate uppercase tracking-tight">
+                {business.name}
+              </p>
+              <span className="px-1.5 py-0.5 bg-[#FDE047] border border-slate-900 text-[8px] font-black text-slate-900 shrink-0 shadow-[2px_2px_0px_#0F172A]">
+                3D BLOCK
+              </span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-800 truncate">
+              {sampleChecklistPrompt}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {sampleChecklistOptions.slice(0, 3).map((opt, idx) => (
+                <span
+                  key={opt}
+                  className={`px-2 py-0.5 text-[9px] font-bold border-2 border-slate-900 truncate max-w-[115px] ${
+                    idx === 0
+                      ? 'bg-[#FB923C] text-slate-950 shadow-[2px_2px_0px_#0F172A]'
+                      : 'bg-white text-slate-800 shadow-[2px_2px_0px_#0F172A]'
+                  }`}
+                >
+                  {opt}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (tpl.id === 'obsidian_cyber_3d') {
+      return (
+        <div
+          className="rounded-2xl p-3.5 bg-[#070913] border border-cyan-500/30 text-slate-100 space-y-2 relative overflow-hidden"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 80% 15%, rgba(34,211,238,0.18), transparent 55%), radial-gradient(circle at 15% 85%, rgba(168,85,247,0.2), transparent 55%)',
+          }}
+        >
+          <div className="rounded-xl bg-[#0F172A]/90 border border-cyan-400/30 shadow-[0_10px_25px_-8px_rgba(34,211,238,0.35)] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-white truncate">{business.name}</p>
+              <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-[8px] font-bold shrink-0">
+                CYBER 3D
+              </span>
+            </div>
+            <p className="text-[10px] font-medium text-cyan-100/90 truncate">
+              {sampleChecklistPrompt}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {sampleChecklistOptions.slice(0, 4).map((opt, idx) => (
+                <div
+                  key={opt}
+                  className={`px-2 py-1 rounded-lg text-[9px] truncate border ${
+                    idx === 0
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-semibold shadow-[0_0_12px_rgba(34,211,238,0.35)]'
+                      : 'bg-slate-900/90 border-slate-700/80 text-slate-300'
+                  }`}
+                >
+                  {opt}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (tpl.id === 'clay_soft_3d') {
+      return (
+        <div className="rounded-2xl p-3.5 bg-[#FFF1EE] border border-rose-200/70 space-y-2">
+          <div
+            className="rounded-2xl bg-white p-3 space-y-2 border border-rose-100"
+            style={{
+              boxShadow:
+                '10px 10px 20px rgba(244,63,94,0.12), -6px -6px 14px rgba(255,255,255,0.9), inset 0 -3px 6px rgba(244,63,94,0.08)',
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-rose-950 truncate">{business.name}</p>
+              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[8px] font-bold shrink-0">
+                3D Clay
+              </span>
+            </div>
+            <p className="text-[10px] font-semibold text-slate-700 truncate">
+              {sampleChecklistPrompt}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {sampleChecklistOptions.slice(0, 3).map((opt, idx) => (
+                <span
+                  key={opt}
+                  style={
+                    idx === 0
+                      ? {
+                          backgroundColor: '#F43F5E',
+                          boxShadow:
+                            '0 6px 12px -2px rgba(244,63,94,0.4), inset 0 -2px 4px rgba(0,0,0,0.15)',
+                        }
+                      : {
+                          boxShadow:
+                            '4px 4px 8px rgba(15,23,42,0.06), inset 0 -2px 4px rgba(15,23,42,0.04)',
+                        }
+                  }
+                  className={`px-2.5 py-1 rounded-xl text-[9px] font-semibold truncate max-w-[110px] ${
+                    idx === 0 ? 'text-white' : 'bg-[#FFF7F5] text-slate-700'
                   }`}
                 >
                   {opt}
