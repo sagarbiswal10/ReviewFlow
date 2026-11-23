@@ -7,10 +7,13 @@ import {
 import { createCategoryQuestions } from '../src/data/categoryPresets.ts';
 import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
-test('TC-QUAL-01: Hinglish accepts natural Roman-script Indian Hinglish and rejects Devanagari', () => {
-  const goodHinglish = validateReviewQuality({
+import fs from 'node:fs';
+import path from 'node:path';
+
+test('TC-QUAL-01: Hinglish accepts pure Roman Hindi and rejects Devanagari or English vocabulary', () => {
+  const goodRomanHindi = validateReviewQuality({
     reviewText:
-      'Food accha tha aur service bhi kaafi quick thi. Ambience okay tha, but overall experience acha raha. Dobara visit karna pasand karunga.',
+      'Khana bahut accha tha aur sewa bhi jaldi mil gayi. Wahan ka mahaul theek-thaak tha lekin kul milakar anubhav accha raha. Dobara zaroor aayenge.',
     language: 'hinglish',
     businessName: 'Spice Villa',
     category: 'Restaurants',
@@ -21,12 +24,24 @@ test('TC-QUAL-01: Hinglish accepts natural Roman-script Indian Hinglish and reje
       { question: 'Return visit', answers: ['Yes'] },
     ],
   });
-  assert.equal(goodHinglish.passed, true);
-  assert.equal(goodHinglish.scriptCompliant, true);
-  assert.ok(goodHinglish.score >= 85);
+  assert.equal(goodRomanHindi.passed, true);
+  assert.equal(goodRomanHindi.scriptCompliant, true);
+  assert.ok(goodRomanHindi.score >= 85);
+
+  const mixedEnglishInRomanHindi = validateReviewQuality({
+    reviewText:
+      'Andar aane ka kaam check-in se easily ho gaya aur staff ne help ki. Overall stay accha raha.',
+    language: 'hinglish',
+    businessName: 'Hotel Surya',
+    category: 'Hotels',
+    responses: [{ question: 'Check-in', answers: ['Smooth'] }],
+  });
+  assert.equal(mixedEnglishInRomanHindi.passed, false);
+  assert.equal(mixedEnglishInRomanHindi.scriptCompliant, false);
+  assert.ok(mixedEnglishInRomanHindi.issues.some((i) => i.type === 'script_mismatch'));
 
   const devanagariInHinglish = validateReviewQuality({
-    reviewText: 'Food अच्छा था aur service भी quick थी।',
+    reviewText: 'Khana अच्छा था aur sewa भी jaldi थी।',
     language: 'hinglish',
     businessName: 'Spice Villa',
     category: 'Restaurants',
@@ -173,7 +188,8 @@ test('TC-QUAL-08: Flags stiff corporate vocabulary, promotional fluff, hashtags,
   assert.equal(stiffReport.passed, false);
 
   const naturalMixed = validateReviewQuality({
-    reviewText: 'Thoda wait karna pada, but food kaafi accha tha aur staff ka behaviour accha laga.',
+    reviewText:
+      'Thoda intezar karna pada lekin khana kaafi accha tha aur wahan ke logon ka bartaav accha laga.',
     language: 'hinglish',
     businessName: 'Spice Garden',
     category: 'Restaurants',
@@ -228,20 +244,32 @@ test('TC-QUAL-10: Hinglish V2 detects excessive punctuation, choppy robotic chec
   assert.equal(choppyRobotic.passed, false);
 });
 
-test('TC-QUAL-11: Hinglish V2 validates universal categories beyond restaurants (auto service, clinics, retail, custom fields)', () => {
-  const autoServiceHinglish = validateReviewQuality({
+test('TC-QUAL-11: Roman Hindi validates universal categories without English vocabulary', () => {
+  const hotelRomanHindi = validateReviewQuality({
     reviewText:
-      'Car repair bina kisi dikkat ke time par ho gaya aur staff ne sab kuch clearly samjhaya. Price thoda zyada laga but quality kaafi acchi thi.',
+      'Andar aane ka kaam aasani se ho gaya tha aur madad bhi mil gayi. Lekin baaki logon ka bartaav accha nahi laga. Sach kahun toh poora anubhav kuch khaas nahi raha.',
     language: 'hinglish',
-    businessName: 'Apex Motors',
-    category: 'Automobile Services',
+    businessName: 'Surya Palace',
+    category: 'Hotels',
     responses: [
-      { question: 'Repair Quality', answers: ['Good'] },
-      { question: 'Communication', answers: ['Clear Explanation'] },
-      { question: 'Pricing', answers: ['Slightly Expensive'] },
+      { question: 'Check-in', answers: ['Smooth'] },
+      { question: 'Concierge', answers: ['Helpful'] },
+      { question: 'Other staff', answers: ['Poor'] },
     ],
   });
-  assert.equal(autoServiceHinglish.passed, true);
-  assert.equal(autoServiceHinglish.scriptCompliant, true);
-  assert.equal(autoServiceHinglish.clicheCount, 0);
+  assert.equal(hotelRomanHindi.passed, true);
+  assert.equal(hotelRomanHindi.scriptCompliant, true);
+  assert.equal(hotelRomanHindi.clicheCount, 0);
+});
+
+test('TC-QUAL-12: CustomerReviewFlow removes Hinglish sub-label, blocks back-to-form navigation, and caps generations at 5', () => {
+  const flowSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf-8',
+  );
+  assert.equal(flowSource.includes('Roman Hindi+Eng'), false);
+  assert.equal(flowSource.includes('Edit answers'), false);
+  assert.equal(flowSource.includes('Back to Feedback Form'), false);
+  assert.equal(flowSource.includes('Start Fresh'), false);
+  assert.ok(flowSource.includes('MAX_USER_REVIEW_GENERATIONS = 5'));
 });

@@ -7,7 +7,6 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
-  RotateCcw,
   Sparkles,
   Trash2,
 } from 'lucide-react';
@@ -45,6 +44,8 @@ interface CustomerReviewFlowProps {
 
 type FlowStep = 'feedback' | 'draft';
 
+const MAX_USER_REVIEW_GENERATIONS = 5;
+
 const LANGUAGE_OPTIONS: {
   id: ReviewLanguage;
   nativeLabel: string;
@@ -53,14 +54,97 @@ const LANGUAGE_OPTIONS: {
   { id: 'en', nativeLabel: 'English', englishLabel: 'English' },
   { id: 'hi', nativeLabel: 'हिंदी', englishLabel: 'Hindi' },
   { id: 'mr', nativeLabel: 'मराठी', englishLabel: 'Marathi' },
-  { id: 'hinglish', nativeLabel: 'Hinglish', englishLabel: 'Roman Hindi+Eng' },
+  { id: 'hinglish', nativeLabel: 'Hinglish', englishLabel: '' },
 ];
 
 function getLanguageDisplayName(lang: ReviewLanguage): string {
   if (lang === 'hi') return 'हिंदी (Hindi)';
   if (lang === 'mr') return 'मराठी (Marathi)';
-  if (lang === 'hinglish') return 'Hinglish (Roman)';
+  if (lang === 'hinglish') return 'Hinglish';
   return 'English';
+}
+
+interface PersistedCustomerFlowState {
+  step: FlowStep;
+  generationCount: number;
+  draftText: string;
+  currentDraftId: string;
+  feedbackSubmissionId: string;
+  selectedLanguage: ReviewLanguage;
+  draftDeleted: boolean;
+  copied: boolean;
+  openedGoogle: boolean;
+  variationSeed: number;
+  previousDrafts: string[];
+  initialGeneratedText: string;
+  savedResponses: FeedbackSubmissionResponse[];
+  savedAdditionalComments: string;
+}
+
+function getFlowStorageKey(businessId: string): string {
+  return `reviewflow_user_flow_v1_${businessId}`;
+}
+
+function getOrCreateVisitorId(isPreview: boolean): string {
+  if (typeof window === 'undefined' || isPreview) {
+    return `preview_${Math.random().toString(36).slice(2, 10)}`;
+  }
+  const key = 'reviewflow_visitor_id_v1';
+  try {
+    let existing = window.localStorage.getItem(key) || '';
+    if (!existing) {
+      existing = `vis_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      window.localStorage.setItem(key, existing);
+    }
+    return existing;
+  } catch {
+    return `vis_${Date.now().toString(36)}`;
+  }
+}
+
+function readPersistedFlowState(businessId: string): PersistedCustomerFlowState | null {
+  if (typeof window === 'undefined' || !businessId) return null;
+  try {
+    const raw = window.localStorage.getItem(getFlowStorageKey(businessId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedCustomerFlowState>;
+    const count =
+      typeof parsed.generationCount === 'number' && Number.isFinite(parsed.generationCount)
+        ? Math.max(0, Math.min(MAX_USER_REVIEW_GENERATIONS, Math.floor(parsed.generationCount)))
+        : 0;
+    const lang: ReviewLanguage =
+      parsed.selectedLanguage === 'hi' ||
+      parsed.selectedLanguage === 'mr' ||
+      parsed.selectedLanguage === 'hinglish'
+        ? parsed.selectedLanguage
+        : 'en';
+    return {
+      step: parsed.step === 'draft' ? 'draft' : 'feedback',
+      generationCount: count,
+      draftText: typeof parsed.draftText === 'string' ? parsed.draftText : '',
+      currentDraftId: typeof parsed.currentDraftId === 'string' ? parsed.currentDraftId : '',
+      feedbackSubmissionId:
+        typeof parsed.feedbackSubmissionId === 'string' ? parsed.feedbackSubmissionId : '',
+      selectedLanguage: lang,
+      draftDeleted: Boolean(parsed.draftDeleted),
+      copied: Boolean(parsed.copied),
+      openedGoogle: Boolean(parsed.openedGoogle),
+      variationSeed:
+        typeof parsed.variationSeed === 'number' && Number.isFinite(parsed.variationSeed)
+          ? Math.max(1, Math.round(parsed.variationSeed))
+          : 1,
+      previousDrafts: Array.isArray(parsed.previousDrafts)
+        ? parsed.previousDrafts.filter((d): d is string => typeof d === 'string').slice(-5)
+        : [],
+      initialGeneratedText:
+        typeof parsed.initialGeneratedText === 'string' ? parsed.initialGeneratedText : '',
+      savedResponses: Array.isArray(parsed.savedResponses) ? parsed.savedResponses : [],
+      savedAdditionalComments:
+        typeof parsed.savedAdditionalComments === 'string' ? parsed.savedAdditionalComments : '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function CustomerReviewFlow({
@@ -69,31 +153,56 @@ export function CustomerReviewFlow({
   tokenMismatch = false,
   onExit,
 }: CustomerReviewFlowProps) {
-  const [step, setStep] = useState<FlowStep>('feedback');
+  const persistedInitial = useMemo(
+    () => (isPreview ? null : readPersistedFlowState(profile.businessId)),
+    [isPreview, profile.businessId],
+  );
+  const visitorId = useMemo(() => getOrCreateVisitorId(isPreview), [isPreview]);
+
+  const [step, setStep] = useState<FlowStep>(persistedInitial?.step || 'feedback');
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [textInputs, setTextInputs] = useState<Record<string, string>>({});
-  const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>('en');
+  const [savedResponses, setSavedResponses] = useState<FeedbackSubmissionResponse[]>(
+    persistedInitial?.savedResponses || [],
+  );
+  const [savedAdditionalComments, setSavedAdditionalComments] = useState<string>(
+    persistedInitial?.savedAdditionalComments || '',
+  );
+  const [generationCount, setGenerationCount] = useState<number>(
+    persistedInitial?.generationCount || 0,
+  );
+  const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>(
+    persistedInitial?.selectedLanguage || 'en',
+  );
   const [selectedStyle] = useState<ReviewStyle>(
     profile.branding?.defaultReviewStyle || 'short',
   );
 
-  const [draftText, setDraftText] = useState('');
-  const [currentDraftId, setCurrentDraftId] = useState('');
-  const [feedbackSubmissionId, setFeedbackSubmissionId] = useState('');
-  const [draftStatus, setDraftStatus] = useState<ReviewDraftStatus>('Generated');
+  const [draftText, setDraftText] = useState(persistedInitial?.draftText || '');
+  const [currentDraftId, setCurrentDraftId] = useState(persistedInitial?.currentDraftId || '');
+  const [feedbackSubmissionId, setFeedbackSubmissionId] = useState(
+    persistedInitial?.feedbackSubmissionId || '',
+  );
+  const [draftStatus, setDraftStatus] = useState<ReviewDraftStatus>(
+    persistedInitial?.draftDeleted ? 'Deleted' : persistedInitial?.copied ? 'Copied' : 'Generated',
+  );
   const [isEditing, setIsEditing] = useState(false);
-  const [draftDeleted, setDraftDeleted] = useState(false);
+  const [draftDeleted, setDraftDeleted] = useState(Boolean(persistedInitial?.draftDeleted));
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [openedGoogle, setOpenedGoogle] = useState(false);
-  const [variationSeed, setVariationSeed] = useState(1);
-  const [previousDrafts, setPreviousDrafts] = useState<string[]>([]);
-  const [initialGeneratedText, setInitialGeneratedText] = useState('');
+  const [copied, setCopied] = useState(Boolean(persistedInitial?.copied));
+  const [openedGoogle, setOpenedGoogle] = useState(Boolean(persistedInitial?.openedGoogle));
+  const [variationSeed, setVariationSeed] = useState(persistedInitial?.variationSeed || 1);
+  const [previousDrafts, setPreviousDrafts] = useState<string[]>(
+    persistedInitial?.previousDrafts || [],
+  );
+  const [initialGeneratedText, setInitialGeneratedText] = useState(
+    persistedInitial?.initialGeneratedText || '',
+  );
   const [lastQualityReport, setLastQualityReport] = useState<ReviewQualityReport | null>(null);
   const [consentOptIn, setConsentOptIn] = useState(false);
   const [consentSaved, setConsentSaved] = useState(false);
@@ -103,6 +212,9 @@ export function CustomerReviewFlow({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const editPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consentedDraftIdsRef = useRef<Set<string>>(new Set());
+
+  const remainingGenerations = Math.max(0, MAX_USER_REVIEW_GENERATIONS - generationCount);
+  const hasReachedGenerationLimit = generationCount >= MAX_USER_REVIEW_GENERATIONS;
 
   const primaryColor = profile.branding?.primaryColor || '#0F766E';
   const secondaryColor = profile.branding?.secondaryColor || '#0F172A';
@@ -140,6 +252,63 @@ export function CustomerReviewFlow({
       });
     }
   }, [isPreview, profile, standContext]);
+
+  useEffect(() => {
+    if (isPreview || typeof window === 'undefined') return;
+    try {
+      const payload: PersistedCustomerFlowState = {
+        step,
+        generationCount,
+        draftText,
+        currentDraftId,
+        feedbackSubmissionId,
+        selectedLanguage,
+        draftDeleted,
+        copied,
+        openedGoogle,
+        variationSeed,
+        previousDrafts,
+        initialGeneratedText,
+        savedResponses,
+        savedAdditionalComments,
+      };
+      window.localStorage.setItem(getFlowStorageKey(profile.businessId), JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [
+    copied,
+    currentDraftId,
+    draftDeleted,
+    draftText,
+    feedbackSubmissionId,
+    generationCount,
+    initialGeneratedText,
+    isPreview,
+    openedGoogle,
+    previousDrafts,
+    profile.businessId,
+    savedAdditionalComments,
+    savedResponses,
+    selectedLanguage,
+    step,
+    variationSeed,
+  ]);
+
+  useEffect(() => {
+    if (isPreview || typeof window === 'undefined') return;
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key !== getFlowStorageKey(profile.businessId) || !e.newValue) return;
+      const updated = readPersistedFlowState(profile.businessId);
+      if (!updated) return;
+      setGenerationCount((prev) => Math.max(prev, updated.generationCount));
+      if (updated.step === 'draft') {
+        setStep('draft');
+      }
+    };
+    window.addEventListener('storage', handleStorageSync);
+    return () => window.removeEventListener('storage', handleStorageSync);
+  }, [isPreview, profile.businessId]);
 
   useEffect(() => {
     return () => {
@@ -201,6 +370,9 @@ export function CustomerReviewFlow({
       .filter(Boolean)
       .join(' ');
 
+    if (structuredResponses.length === 0 && !additionalComments && (savedResponses.length > 0 || savedAdditionalComments)) {
+      return { responses: savedResponses, additionalComments: savedAdditionalComments };
+    }
     return { responses: structuredResponses, additionalComments };
   };
 
@@ -247,6 +419,13 @@ export function CustomerReviewFlow({
     seed: number,
     submissionIdOverride?: string,
   ) => {
+    if (generationCount >= MAX_USER_REVIEW_GENERATIONS) {
+      setGenerateError(
+        `You have reached the maximum limit of ${MAX_USER_REVIEW_GENERATIONS} generated reviews for this visit. You can still edit, copy, and post your current review.`,
+      );
+      return;
+    }
+
     setIsGenerating(true);
     setGenerateError(null);
     setCopied(false);
@@ -255,6 +434,8 @@ export function CustomerReviewFlow({
 
     try {
       const { responses, additionalComments } = buildStructuredPayload();
+      setSavedResponses(responses);
+      setSavedAdditionalComments(additionalComments);
       const activeSubmissionId = submissionIdOverride || (await ensureFeedbackSubmission());
 
       if (profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) {
@@ -267,6 +448,7 @@ export function CustomerReviewFlow({
         setDraftText(fallback);
         setDraftStatus('Generated');
         setDraftDeleted(false);
+        setGenerationCount((prev) => Math.min(MAX_USER_REVIEW_GENERATIONS, prev + 1));
         setStep('draft');
         if (!isPreview) {
           const newDraftId = await createReviewDraftRecord({
@@ -290,6 +472,8 @@ export function CustomerReviewFlow({
       const res = await apiFetch('/api/generate-review', {
         method: 'POST',
         body: JSON.stringify({
+          businessId: profile.businessId,
+          visitorId,
           businessName: profile.name,
           category: profile.category,
           responses,
@@ -322,6 +506,14 @@ export function CustomerReviewFlow({
       } catch {
         throw new Error(
           `Review draft service returned a non-JSON response (HTTP ${res.status}).`,
+        );
+      }
+
+      if (res.status === 429) {
+        setGenerationCount(MAX_USER_REVIEW_GENERATIONS);
+        throw new Error(
+          data.error ||
+            `You have reached the maximum limit of ${MAX_USER_REVIEW_GENERATIONS} review generations for this visit.`,
         );
       }
 
@@ -362,6 +554,7 @@ export function CustomerReviewFlow({
       setLastQualityReport(computedQuality);
       setConsentSaved(false);
       setPreviousDrafts((prev) => [...prev, generatedText].slice(-5));
+      setGenerationCount((prev) => Math.min(MAX_USER_REVIEW_GENERATIONS, prev + 1));
       setDraftStatus('Generated');
       setDraftDeleted(false);
       setStep('draft');
@@ -437,6 +630,12 @@ export function CustomerReviewFlow({
   const handleGenerateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isGenerating) return;
+    if (hasReachedGenerationLimit) {
+      setGenerateError(
+        `You have reached the maximum limit of ${MAX_USER_REVIEW_GENERATIONS} review generations for this visit.`,
+      );
+      return;
+    }
     setValidationError(null);
     setGenerateError(null);
 
@@ -465,6 +664,8 @@ export function CustomerReviewFlow({
     setIsGenerating(true);
     try {
       const { responses, additionalComments } = buildStructuredPayload();
+      setSavedResponses(responses);
+      setSavedAdditionalComments(additionalComments);
       let submissionId = '';
       if (!isPreview) {
         submissionId = await saveFeedbackSubmission({
@@ -492,7 +693,7 @@ export function CustomerReviewFlow({
   };
 
   const handleLanguageChangeOnPreview = async (nextLang: ReviewLanguage) => {
-    if (isGenerating) return;
+    if (isGenerating || hasReachedGenerationLimit) return;
     if (nextLang === selectedLanguage && !draftDeleted && draftText) return;
     setSelectedLanguage(nextLang);
     const nextSeed = variationSeed + 1;
@@ -501,7 +702,7 @@ export function CustomerReviewFlow({
   };
 
   const handleRegenerate = async () => {
-    if (isGenerating) return;
+    if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
     await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId);
@@ -652,28 +853,10 @@ export function CustomerReviewFlow({
   };
 
   const handleGenerateAfterDelete = async () => {
+    if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
     await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId);
-  };
-
-  const handleStartNewFeedback = () => {
-    setAnswers({});
-    setTextInputs({});
-    setDraftText('');
-    setCurrentDraftId('');
-    setFeedbackSubmissionId('');
-    setPreviousDrafts([]);
-    setInitialGeneratedText('');
-    setLastQualityReport(null);
-    setConsentSaved(false);
-    setDraftDeleted(false);
-    setCopied(false);
-    setOpenedGoogle(false);
-    setIsEditing(false);
-    setGenerateError(null);
-    setValidationError(null);
-    setStep('feedback');
   };
 
   const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
@@ -867,7 +1050,7 @@ export function CustomerReviewFlow({
                       >
                         {lang.nativeLabel}
                       </span>
-                      {lang.id !== 'en' && (
+                      {lang.id !== 'en' && lang.id !== 'hinglish' && lang.englishLabel && (
                         <span className="text-[11px] text-slate-500 font-normal mt-0.5">
                           {lang.englishLabel}
                         </span>
@@ -915,7 +1098,7 @@ export function CustomerReviewFlow({
 
         {step === 'draft' && (
           <div className="space-y-5">
-            {/* Top context bar */}
+            {/* Top context bar (one-way single flow — no back to feedback form) */}
             <div className="flex items-center justify-between gap-3 px-1">
               <div>
                 <h1 className="text-xl sm:text-2xl font-display font-bold text-slate-900">
@@ -923,29 +1106,23 @@ export function CustomerReviewFlow({
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                   {draftDeleted
-                    ? 'Your feedback answers are still saved below.'
+                    ? 'Your feedback answers are saved for regenerating within your visit limit.'
                     : 'Review, edit, or switch language before copying.'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditing(false);
-                  setFeedbackSubmissionId('');
-                  setStep('feedback');
-                }}
-                className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 underline underline-offset-4 cursor-pointer whitespace-nowrap"
-              >
-                Edit answers
-              </button>
+              <span className="text-xs font-medium text-slate-500 tabular-nums whitespace-nowrap">
+                {generationCount} / {MAX_USER_REVIEW_GENERATIONS} used
+              </span>
             </div>
 
             {draftDeleted ? (
-              /* Clean Post-Deletion State — Allows instant regeneration without refilling form */
+              /* Clean Post-Deletion State — Regenerates within remaining 5-generation cap */
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
                 <div className="space-y-1.5">
                   <p className="text-sm text-slate-700 leading-relaxed">
-                    You deleted that draft. Pick a language below to generate a fresh review using your saved feedback.
+                    {hasReachedGenerationLimit
+                      ? `You have reached the maximum limit of ${MAX_USER_REVIEW_GENERATIONS} review generations for this visit.`
+                      : 'You deleted that draft. Pick a language below to generate a fresh review using your submitted feedback.'}
                   </p>
                 </div>
 
@@ -958,7 +1135,7 @@ export function CustomerReviewFlow({
                         <button
                           key={lang.id}
                           type="button"
-                          disabled={isGenerating}
+                          disabled={isGenerating || hasReachedGenerationLimit}
                           onClick={() => setSelectedLanguage(lang.id)}
                           style={
                             active
@@ -969,7 +1146,7 @@ export function CustomerReviewFlow({
                                 }
                               : undefined
                           }
-                          className={`min-h-[46px] px-3 py-2 rounded-xl border text-center transition-colors cursor-pointer ${
+                          className={`min-h-[46px] px-3 py-2 rounded-xl border text-center transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                             active
                               ? 'font-semibold'
                               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -996,29 +1173,24 @@ export function CustomerReviewFlow({
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button
                     type="button"
-                    disabled={isGenerating}
+                    disabled={isGenerating || hasReachedGenerationLimit}
                     onClick={handleGenerateAfterDelete}
                     style={{ backgroundColor: primaryColor }}
-                    className="flex-1 min-h-[48px] px-5 py-3 rounded-xl text-white font-semibold text-sm sm:text-base hover:opacity-95 transition-opacity flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    className="flex-1 min-h-[48px] px-5 py-3 rounded-xl text-white font-semibold text-sm sm:text-base hover:opacity-95 transition-opacity flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isGenerating ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Generating new review...</span>
                       </>
+                    ) : hasReachedGenerationLimit ? (
+                      <span>Generation Limit Reached (5/5)</span>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        <span>Generate New Review</span>
+                        <span>Generate New Review ({remainingGenerations} left)</span>
                       </>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStep('feedback')}
-                    className="min-h-[48px] px-5 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium text-sm hover:bg-slate-50 transition-colors cursor-pointer"
-                  >
-                    Back to Feedback Form
                   </button>
                 </div>
               </div>
@@ -1043,15 +1215,17 @@ export function CustomerReviewFlow({
                   >
                     {LANGUAGE_OPTIONS.map((lang) => {
                       const active = selectedLanguage === lang.id;
+                      const disabledBtn =
+                        isGenerating || (hasReachedGenerationLimit && !active);
                       return (
                         <button
                           key={lang.id}
                           type="button"
                           role="radio"
                           aria-checked={active}
-                          disabled={isGenerating}
+                          disabled={disabledBtn}
                           onClick={() => handleLanguageChangeOnPreview(lang.id)}
-                          className={`min-h-[40px] px-3 py-2 rounded-lg text-sm transition-all cursor-pointer disabled:opacity-60 ${
+                          className={`min-h-[40px] px-3 py-2 rounded-lg text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                             active
                               ? 'bg-white text-slate-900 font-semibold shadow-xs'
                               : 'text-slate-600 hover:text-slate-900'
@@ -1191,12 +1365,17 @@ export function CustomerReviewFlow({
 
                   <button
                     type="button"
-                    disabled={isGenerating}
+                    disabled={isGenerating || hasReachedGenerationLimit}
                     onClick={handleRegenerate}
-                    className="min-h-[42px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title={
+                      hasReachedGenerationLimit
+                        ? `Maximum ${MAX_USER_REVIEW_GENERATIONS} review generations reached`
+                        : `${remainingGenerations} generation(s) remaining`
+                    }
+                    className="min-h-[42px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isGenerating ? 'animate-spin' : ''}`} />
-                    <span>Regenerate</span>
+                    <span>{hasReachedGenerationLimit ? 'Limit (5/5)' : 'Regenerate'}</span>
                   </button>
 
                   <button
@@ -1209,6 +1388,12 @@ export function CustomerReviewFlow({
                     <span>Delete</span>
                   </button>
                 </div>
+
+                {hasReachedGenerationLimit && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+                    You have reached the maximum of {MAX_USER_REVIEW_GENERATIONS} review generations for this visit. You can still edit your text, copy it, and post on Google.
+                  </div>
+                )}
 
                 {/* Phase 5: Anonymized Quality Improvement Opt-In */}
                 <label className="pt-2 border-t border-slate-100 flex items-start gap-2.5 text-xs text-slate-600 cursor-pointer select-none">
@@ -1229,20 +1414,6 @@ export function CustomerReviewFlow({
                     {consentSaved ? ' — Saved, thank you!' : ' (optional, no personal info stored).'}
                   </span>
                 </label>
-
-                {openedGoogle && (
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                    <span>Need to write a different review?</span>
-                    <button
-                      type="button"
-                      onClick={handleStartNewFeedback}
-                      className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Start Fresh</span>
-                    </button>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1263,7 +1434,9 @@ export function CustomerReviewFlow({
                 Are you sure you want to delete this generated review?
               </h2>
               <p className="text-xs text-slate-500 leading-relaxed">
-                This only removes the draft. Your feedback answers will remain saved so you can generate a new review anytime.
+                {hasReachedGenerationLimit
+                  ? `You have used all ${MAX_USER_REVIEW_GENERATIONS} review generations for this visit. Deleting this draft will not unlock additional generations.`
+                  : 'This only removes the draft. Your feedback answers remain saved so you can regenerate within your visit limit.'}
               </p>
             </div>
             <div className="flex items-center justify-end gap-2.5">

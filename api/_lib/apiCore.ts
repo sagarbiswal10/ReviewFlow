@@ -19,6 +19,8 @@ export interface FewShotExampleInput {
 }
 
 export interface GenerateReviewBody {
+  businessId?: string;
+  visitorId?: string;
   businessName: string;
   category: string;
   seoKeywords?: string[];
@@ -831,6 +833,9 @@ export async function processGenerateReview(
       .map((item) => `- ${item.question}: ${item.answers.join(', ')}`)
       .join('\n');
 
+    const businessId = typeof body.businessId === 'string' ? body.businessId.trim().slice(0, 128) : '';
+    const visitorId = typeof body.visitorId === 'string' ? body.visitorId.trim().slice(0, 128) : '';
+
     if (!formattedResponses && !additionalComments) {
       return {
         status: 400,
@@ -841,12 +846,29 @@ export async function processGenerateReview(
       };
     }
 
+    if (businessId && visitorId) {
+      const withinUserQuota = checkRateLimit(
+        `visitor:${businessId}:${visitorId}`,
+        5,
+        24 * 60 * 60 * 1000,
+      );
+      if (!withinUserQuota) {
+        return {
+          status: 429,
+          data: {
+            error:
+              'You have reached the maximum limit of 5 review generations for this visit. You can still edit, copy, and post your current review.',
+          },
+        };
+      }
+    }
+
     const styleGuidance: Record<ReviewStyle, string> =
       language === 'hinglish'
         ? {
-            short: 'Prefer 2 concise conversational sentences (or 1-2 if answers are brief). Never pad length or force an intro/conclusion.',
-            detailed: 'Write 2-4 natural Hinglish sentences combining related feedback points without filler words or forced recommendations.',
-            professional: 'Keep the tone polite, clear, and conversational (2-4 sentences) while still sounding like an ordinary Indian customer on their phone.',
+            short: 'Normally generate 2 concise sentences in natural Roman Hindi (do not force extra length or repeat details).',
+            detailed: 'Write 2-4 natural Roman Hindi sentences using only information present in the customer\'s answers.',
+            professional: 'Keep the tone polite, clear, and conversational in 2-4 everyday Roman Hindi sentences.',
           }
         : {
             short: 'Keep it concise and natural (around 2-3 everyday sentences).',
@@ -875,7 +897,7 @@ export async function processGenerateReview(
         'Target Language: Hindi (हिंदी, Devanagari script ONLY).',
         'Write the ENTIRE review in natural, everyday spoken Hindi using Devanagari script (हिंदी).',
         'Use conversational, commonly spoken Hindi — NOT stiff, bookish, or overly formal Sanskritized translations.',
-        'Do NOT mix full English sentences or write Hindi in Roman script here (Roman Hinglish has its own separate option).',
+        'Do NOT mix full English sentences or write Hindi in Roman script here (Roman Hindi has its own separate option).',
         'Good natural Hindi example: "यहाँ का खाना काफी अच्छा था और स्टाफ भी बहुत अच्छा था। बस सर्विस में थोड़ा समय लगा। बाकी मेरा अनुभव अच्छा रहा।"',
       ].join('\n'),
       mr: [
@@ -886,37 +908,38 @@ export async function processGenerateReview(
         'Good natural Marathi example: "इथलं जेवण खूप छान होतं आणि स्टाफसुद्धा खूप मदत करणारा होता. फक्त सर्व्हिसला थोडा वेळ लागला. बाकी अनुभव चांगला होता."',
       ].join('\n'),
       hinglish: [
-        'SYSTEM PROMPT VERSION 2.0 – UNIVERSAL NATURAL HINGLISH REVIEW GENERATION ENGINE',
-        '1. ROLE & OBJECTIVE: You are ReviewFlow\'s natural Indian Hinglish review-writing assistant. Transform structured questionnaire responses into a simple, natural, expressive Hinglish review that an ordinary Indian customer would type on their phone. Never sound like AI, a content writer, marketing copy, a corporate article, or a translated checklist.',
-        '2. UNIVERSAL BUSINESS & DYNAMIC FIELD UNDERSTANDING:',
-        '   - Adapt dynamically to ANY supplied business category (restaurants, hotels, salons, clinics/hospitals, gyms, auto service, retail, education, real estate, travel, repair, customer support, professional services, or custom categories) and ANY custom questionnaire fields.',
-        '   - Never assume every business has food, rooms, hospitality, or staff; adapt vocabulary strictly to the actual category and supplied labels.',
-        '3. ROMAN HINGLISH STYLE:',
-        '   - Write exclusively in Hinglish using Roman English characters — STRICTLY ZERO Devanagari script.',
-        '   - Mix simple everyday Hindi and commonly spoken English naturally without word-for-word translation or stiff textbook Hindi.',
-        '   - Keep familiar English words naturally (food, staff, room, service, price, quality, location, delivery, experience).',
-        '4. SIMPLE VOCABULARY PREFERENCES (fit context naturally, not forced replacements):',
-        '   - Excellent -> Mast | Exceptional -> Ekdum mast | Delicious -> Bahut tasty',
-        '   - Disappointing -> Utna accha nahi laga | Satisfactory -> Theek-thaak | Average experience -> Bas theek tha',
-        '   - Convenient -> Easy tha | Hassle-free -> Bina kisi dikkat ke | Assistance -> Help | Hospitality -> Staff ka behaviour',
-        '   - Improvement required -> Thoda aur accha ho sakta tha | Highly recommended -> Dobara zaroor aayenge',
-        '   - Remarkable -> Kaafi accha | Extremely satisfied -> Bahut khush hua | Unforgettable -> Kabhi nahi bhoolenge',
-        '5. 6-LEVEL SENTIMENT CLASSIFICATION & NATURAL EXPRESSIONS:',
-        '   - Classify overall experience accurately into one of: very_positive | positive | neutral | mixed | negative | very_negative.',
-        '   - Preserve individual field differences (e.g., positive food + neutral ambience + negative price -> mixed review, NEVER turned all-positive).',
-        '   - Sentiment expression inspiration ONLY (NEVER copy as fixed templates; use words like "bhai", "yaar", "mast", "maza aa gaya", "kya hi bolein" selectively, never manufacture unfelt emotions):',
-        '     * very_positive: "Mast tha bhai maza aa gaya.", "Ekdum mast experience tha.", "Sach mein bahut accha laga.", "Dil khush ho gaya.", "Sab kuch ekdum sahi tha."',
-        '     * positive: "Kaafi accha tha.", "Sab badhiya raha.", "Kaafi pasand aaya.", "Staff ka behaviour bhi accha laga.", "Dobara aana pasand karunga."',
-        '     * neutral: "Theek-thaak tha.", "Bas chal gaya.", "Kuch khaas nahi tha.", "Utna bhi special nahi laga.", "Theek tha but thoda aur accha ho sakta tha.", "Na zyada accha na zyada bura."',
-        '     * negative: "Utna accha nahi laga.", "Honestly maza nahi aaya.", "Thoda disappointing tha.", "Socha tha usse better hoga.", "Baaki kya hi bolein thoda aur accha ho sakta tha."',
-        '     * very_negative: "Honestly experience accha nahi raha.", "Kaafi bura experience tha.", "Bilkul maza nahi aaya.", "Expectations se kaafi kam tha." (Only say "Dobara jaane ka mann nahi karega" when supported by feedback).',
-        '6. NATURAL SENTENCE CONSTRUCTION & FLOW:',
-        '   - Combine related answers into smooth conversational flow instead of chopping each answer into separate robotic sentences ("Food was good. Service was good. Ambience was average.").',
-        '   - Example flow ONLY (do not repeat verbatim): "Food accha tha aur service bhi jaldi mil gayi. Ambience utna khaas nahi tha but baaki sab theek raha."',
-        '7. MINIMAL PUNCTUATION (no typos):',
-        '   - Avoid unnecessary commas (prefer "Baaki kya hi bolein thoda aur accha ho sakta tha." over comma-heavy pauses), avoid semicolons, unnecessary quotes, repeated exclamation marks (!!), and ellipses (...).',
-        '   - Never deliberately insert spelling mistakes or broken grammar.',
-        '8. LENGTH & REPETITION CONTROL: Write 2-4 natural sentences (shorter if answers are brief). Never repeat openings/endings ("Overall experience was amazing", "Highly recommended", "Must visit", "Best place ever", "Everything was perfect") or mirror previous drafts.',
+        'REVIEWFLOW – NATURAL ROMAN HINDI REVIEW GENERATION PROMPT',
+        '1. ROLE & MOST IMPORTANT RULE: You are a natural Hindi-language review writer for ReviewFlow. Convert customer questionnaire answers into a natural, simple, conversational Hindi review written using English letters (Roman Hindi). DO NOT USE ENGLISH VOCABULARY in the generated review — use Hindi words written in English letters ONLY.',
+        '2. STRICT LANGUAGE RULES:',
+        '   - Write ONLY in everyday Hindi using English letters (Roman script). ZERO Devanagari script.',
+        '   - DO NOT use English vocabulary, even if commonly used in India (e.g. do NOT write "food", "staff", "service", "ambience", "experience", "overall", "good", "average", "price", "room", "stay", "check-in", "helpful", "clean", "nice").',
+        '   - Business names, personal names, and unavoidable official names may remain unchanged.',
+        '   - Never use formal, literary, or dictionary-style Hindi; avoid word-for-word translation; never copy English words just because the questionnaire contains them.',
+        '3. ENGLISH-TO-HINDI VOCABULARY PREFERENCES (choose what sounds natural, not forced):',
+        '   - Honestly -> Sach kahun toh | Overall -> Kul milakar | Experience -> Anubhav / Tajurba',
+        '   - Staff -> Wahan ke log / Karmchari | Service -> Sewa / Madad | Behaviour -> Bartaav',
+        '   - Food -> Khana | Quality -> Gunvatta / Khane ka swaad | Ambience -> Wahan ka mahaul | Location -> Jagah',
+        '   - Price -> Daam | Value for money -> Daam ke hisaab se accha | Cleanliness -> Safai | Hygiene -> Saaf-safai',
+        '   - Booking -> Pehle se jagah pakki karna | Check-in -> Andar aane ki prakriya | Check-out -> Bahar jaane ki prakriya',
+        '   - Room -> Kamra | Stay -> Wahan rehna | Facilities -> Suvidhayein | Support -> Madad | Helpful -> Madad karne wale',
+        '   - Comfortable -> Aaramdayak | Convenient -> Aasaan | Satisfied -> Khush | Disappointed -> Niraash',
+        '   - Amazing -> Bahut badhiya | Excellent -> Bahut accha | Average -> Theek-thaak | Poor -> Kharab | Recommended -> Jaane layak | Definitely -> Pakka | Worth it -> Paise vasool',
+        '4. SENTIMENT-BASED EXPRESSIONS (examples ONLY — never force or repeat, never exaggerate):',
+        '   - very_positive: "Ekdum badhiya tha.", "Bahut maza aaya.", "Dil khush ho gaya.", "Sach mein bahut accha laga.", "Poora paisa vasool tha."',
+        '   - positive: "Kaafi accha laga.", "Sab kuch badhiya tha.", "Kaafi khush hue.", "Dobara zaroor aayenge."',
+        '   - neutral: "Theek-thaak tha.", "Bas chal gaya.", "Kuch khaas nahi tha.", "Jaisa socha tha waisa hi tha."',
+        '   - mixed: "Kuch cheezein acchi thi lekin kuch aur behtar ho sakti thi.", "Shuruaat acchi thi lekin baad mein utna maza nahi aaya.", "Kul milakar anubhav mila-jula raha."',
+        '   - negative: "Utna accha nahi laga.", "Sach kahun toh kuch khaas nahi tha.", "Kaafi bura laga.", "Isse behtar ummeed thi.", "Dobara aane ka mann nahi karega."',
+        '   - very_negative: "Bahut hi kharab anubhav raha.", "Bilkul accha nahi laga.", "Kaafi niraash hue.", "Jaisa socha tha usse bilkul alag nikla."',
+        '5. UNIVERSAL BUSINESS UNDERSTANDING & NO QUESTIONNAIRE LABEL COPYING:',
+        '   - Understand any business category dynamically without copying English field labels. Example:',
+        '     BAD: "Check-in easily ho gaya tha aur concierge ne help ki. Overall stay kuch khaas nahi raha."',
+        '     GOOD: "Andar aane ka kaam aasani se ho gaya tha aur madad bhi mil gayi. Lekin baaki logon ka bartaav accha nahi laga. Sach kahun toh poora anubhav kuch khaas nahi raha."',
+        '6. FACTUAL ACCURACY & NO GENERALIZING:',
+        '   - Never generalize one person\'s helpful or poor behaviour to the entire team. Preserve positive and negative points accurately without inventing anything.',
+        '7. SENTENCE FLOW, PUNCTUATION & FINAL ENGLISH VOCABULARY CHECK:',
+        '   - Keep punctuation minimal (prefer "Sach kahun toh poora anubhav kuch khaas nahi raha." over unnecessary commas); avoid repeated exclamation marks and unrequested emojis. Use 2-4 concise sentences.',
+        '   - Before returning JSON, check EVERY word of the review: if any English word slipped in, rewrite that sentence in natural Roman Hindi and confirm validation.english_vocabulary_found = false.',
       ].join('\n'),
     };
 
@@ -926,7 +949,7 @@ export async function processGenerateReview(
         : language === 'mr'
           ? 'Marathi (मराठी)'
           : language === 'hinglish'
-            ? 'Hinglish (Roman Hindi + English)'
+            ? 'Hinglish (Natural Roman Hindi)'
             : 'English';
 
     const calibrationBlock =
@@ -964,17 +987,15 @@ export async function processGenerateReview(
 
     const systemInstruction = [
       'You are ReviewFlow\'s authentic customer review-writing assistant.',
-      'Return ONLY valid JSON strictly matching this format: {"review": string, "language": string, "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "validation": {"facts_preserved": boolean, "sentiment_preserved": boolean, "unsupported_claims": boolean}, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[]}.',
+      'Return ONLY valid JSON strictly matching this format: {"review": string, "language": string, "script": "roman" | "devanagari", "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "validation": {"english_vocabulary_found": boolean, "facts_preserved": boolean, "sentiment_preserved": boolean, "unsupported_claims": boolean}, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[]}.',
       languageRules[language],
-      'Strict Authenticity, Grounding & 11-Point Final Validation Rules:',
+      'Strict Authenticity, Grounding & Final Validation Rules:',
       '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment. NEVER invent products/services purchased, food items ordered, staff names, conversations, discounts/offers, facilities, specific incidents, or unmentioned intentions.',
       '2. Preserve exact customer meaning and sentiment across all 6 levels (very_positive, positive, neutral, mixed, negative, very_negative). If answers are mixed or average, preserve both positive and negative points accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
-      '3. If answers are incomplete or brief, write a shorter concise review instead of filling gaps with assumptions. Do not force a recommendation, intro, or positive closing.',
+      '3. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and readable; 2-4 natural sentences.',
       '4. NEVER use generic AI clichés or promotional language ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever").',
-      '5. Combine related answers into flowing conversational sentences rather than repeating choppy one-answer sentences. Keep punctuation minimal and readable.',
-      '6. No quotation marks wrapping the review, no bullet points, no titles/headings, no explanations outside JSON, no hashtags, no emojis (unless supplied by customer), and never claim the review is "human-written".',
-      '7. Before returning JSON, verify all internal quality checks: natural target script & simple spoken words, conversational non-robotic flow, minimal punctuation, accurate sentiment & category fit, all facts preserved (facts_preserved=true, sentiment_preserved=true, unsupported_claims=false), concise length, no template repetition.',
-      '8. In groundedFacts, list exact facts from the customer feedback you used. In keywordsUsed, list 0-3 short natural phrases directly from the feedback.',
+      '5. No quotation marks wrapping the review, no bullet points, no titles/headings, no explanations outside JSON, no hashtags, no emojis (unless supplied by customer), and never claim the review is "human-written".',
+      '6. In groundedFacts, list exact facts from the customer feedback you used. In keywordsUsed, list 0-3 short natural phrases directly from the feedback.',
     ].join('\n');
 
     const reviewResponseSchema = {
@@ -982,6 +1003,7 @@ export async function processGenerateReview(
       properties: {
         review: { type: Type.STRING },
         language: { type: Type.STRING },
+        script: { type: Type.STRING, enum: ['roman', 'devanagari'] },
         sentiment: {
           type: Type.STRING,
           enum: ['very_positive', 'positive', 'neutral', 'mixed', 'negative', 'very_negative'],
@@ -989,11 +1011,17 @@ export async function processGenerateReview(
         validation: {
           type: Type.OBJECT,
           properties: {
+            english_vocabulary_found: { type: Type.BOOLEAN },
             facts_preserved: { type: Type.BOOLEAN },
             sentiment_preserved: { type: Type.BOOLEAN },
             unsupported_claims: { type: Type.BOOLEAN },
           },
-          required: ['facts_preserved', 'sentiment_preserved', 'unsupported_claims'],
+          required: [
+            'english_vocabulary_found',
+            'facts_preserved',
+            'sentiment_preserved',
+            'unsupported_claims',
+          ],
         },
         groundedFacts: {
           type: Type.ARRAY,
@@ -1008,6 +1036,7 @@ export async function processGenerateReview(
       required: [
         'review',
         'language',
+        'script',
         'sentiment',
         'validation',
         'groundedFacts',
@@ -1073,12 +1102,14 @@ export async function processGenerateReview(
       detailed?: string;
       professional?: string;
       language?: string;
+      script?: string;
       sentiment?: string;
       sentimentDetected?: string;
       groundedFacts?: unknown;
       styleApplied?: string;
       keywordsUsed?: unknown;
       validation?: {
+        english_vocabulary_found?: boolean;
         facts_preserved?: boolean;
         sentiment_preserved?: boolean;
         unsupported_claims?: boolean;
@@ -1092,11 +1123,16 @@ export async function processGenerateReview(
       };
     }
 
+    const defaultScript: 'roman' | 'devanagari' =
+      language === 'hi' || language === 'mr' ? 'devanagari' : 'roman';
+
     const parseReviewPayload = (rawText: string): {
       reviewText: string;
       keywordsUsed: string[];
+      script: 'roman' | 'devanagari';
       sentiment: ReviewSentimentLevel;
       validation: {
+        english_vocabulary_found: boolean;
         facts_preserved: boolean;
         sentiment_preserved: boolean;
         unsupported_claims: boolean;
@@ -1116,10 +1152,12 @@ export async function processGenerateReview(
     } => {
       let parsedText = '';
       let parsedKeywords: string[] = [];
+      let script: 'roman' | 'devanagari' = defaultScript;
       let sentiment: ReviewSentimentLevel = 'positive';
       let groundedFacts: string[] = [];
       let styleApplied: string = style;
       let validation = {
+        english_vocabulary_found: false,
         facts_preserved: true,
         sentiment_preserved: true,
         unsupported_claims: false,
@@ -1139,6 +1177,9 @@ export async function processGenerateReview(
           parsedText =
             (typeof parsed.review === 'string' ? parsed.review.trim() : '') ||
             (typeof chosen === 'string' ? chosen.trim() : '');
+          if (parsed.script === 'roman' || parsed.script === 'devanagari') {
+            script = parsed.script;
+          }
           if (Array.isArray(parsed.keywordsUsed)) {
             parsedKeywords = parsed.keywordsUsed
               .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
@@ -1160,6 +1201,7 @@ export async function processGenerateReview(
           }
           if (parsed.validation && typeof parsed.validation === 'object') {
             validation = {
+              english_vocabulary_found: Boolean(parsed.validation.english_vocabulary_found ?? false),
               facts_preserved: Boolean(parsed.validation.facts_preserved ?? true),
               sentiment_preserved: Boolean(parsed.validation.sentiment_preserved ?? true),
               unsupported_claims: Boolean(parsed.validation.unsupported_claims ?? false),
@@ -1168,17 +1210,17 @@ export async function processGenerateReview(
           if (parsed.selfCheck && typeof parsed.selfCheck === 'object') {
             selfCheck = {
               noInventedClaims: Boolean(parsed.selfCheck.noInventedClaims ?? !validation.unsupported_claims),
-              scriptCompliant: Boolean(parsed.selfCheck.scriptCompliant ?? true),
+              scriptCompliant: Boolean(parsed.selfCheck.scriptCompliant ?? !validation.english_vocabulary_found),
               conversationalTone: Boolean(parsed.selfCheck.conversationalTone ?? true),
-              simpleVocabulary: Boolean(parsed.selfCheck.simpleVocabulary ?? true),
+              simpleVocabulary: Boolean(parsed.selfCheck.simpleVocabulary ?? !validation.english_vocabulary_found),
               accurateSentiment: Boolean(parsed.selfCheck.accurateSentiment ?? validation.sentiment_preserved),
             };
           } else {
             selfCheck = {
               noInventedClaims: !validation.unsupported_claims && validation.facts_preserved,
-              scriptCompliant: true,
+              scriptCompliant: !validation.english_vocabulary_found,
               conversationalTone: true,
-              simpleVocabulary: true,
+              simpleVocabulary: !validation.english_vocabulary_found,
               accurateSentiment: validation.sentiment_preserved,
             };
           }
@@ -1190,6 +1232,7 @@ export async function processGenerateReview(
       return {
         reviewText: parsedText,
         keywordsUsed: parsedKeywords,
+        script,
         sentiment,
         validation,
         structuredMeta: {
@@ -1201,7 +1244,7 @@ export async function processGenerateReview(
       };
     };
 
-    let { reviewText, keywordsUsed, sentiment, validation, structuredMeta } = parseReviewPayload(
+    let { reviewText, keywordsUsed, script, sentiment, validation, structuredMeta } = parseReviewPayload(
       genResult.text,
     );
     let totalInputTokens = genResult.inputTokens;
@@ -1232,6 +1275,7 @@ export async function processGenerateReview(
       (i) => i.type === 'formatting_violation',
     );
     const needsModelValidationRepair =
+      (language === 'hinglish' && validation.english_vocabulary_found) ||
       !validation.facts_preserved ||
       !validation.sentiment_preserved ||
       validation.unsupported_claims;
@@ -1246,6 +1290,9 @@ export async function processGenerateReview(
         ...qualityReport.issues.map(
           (i) => `- [${i.type}] ${i.message}${i.evidence ? ` (Evidence: "${i.evidence}")` : ''}`,
         ),
+        language === 'hinglish' && validation.english_vocabulary_found
+          ? '- [validation] Replace all English vocabulary with everyday Hindi words in English letters.'
+          : '',
         !validation.facts_preserved
           ? '- [validation] Ensure all supplied customer facts are accurately preserved.'
           : '',
@@ -1296,6 +1343,7 @@ export async function processGenerateReview(
             if (repairedParsed.keywordsUsed.length > 0) {
               keywordsUsed = repairedParsed.keywordsUsed;
             }
+            script = repairedParsed.script;
             sentiment = repairedParsed.sentiment;
             validation = repairedParsed.validation;
             structuredMeta = repairedParsed.structuredMeta;
@@ -1312,6 +1360,7 @@ export async function processGenerateReview(
       data: {
         review: reviewText,
         language,
+        script,
         sentiment,
         validation,
         drafts: { [style]: reviewText },

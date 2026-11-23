@@ -121,3 +121,22 @@ test('TC-API-07: processGbpProxy validates OAuth token, GBP resource paths, and 
   });
   assert.equal(unknownAction.status, 400);
 });
+
+test('TC-API-08: processGenerateReview enforces max 5 continuous generations per visitorId and businessId', async () => {
+  const bizId = `biz_limit_${Date.now()}`;
+  const visitorId = `vis_limit_${Date.now()}`;
+  for (let i = 0; i < 5; i += 1) {
+    assert.equal(checkRateLimit(`visitor:${bizId}:${visitorId}`, 5, 24 * 60 * 60 * 1000), true);
+  }
+  const blocked = await processGenerateReview({
+    businessId: bizId,
+    visitorId,
+    businessName: 'Spice Villa',
+    category: 'Restaurants',
+    responses: [{ question: 'Food', answers: ['Good'] }],
+    style: 'short',
+    language: 'hinglish',
+  });
+  assert.equal(blocked.status, 429);
+  assert.ok(String(blocked.data.error || '').includes('5'));
+});

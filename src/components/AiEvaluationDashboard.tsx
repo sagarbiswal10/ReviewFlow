@@ -45,7 +45,7 @@ const LANGUAGE_META: Array<{
   { id: 'en', label: 'English', scriptRule: 'Everyday English (Roman)' },
   { id: 'hi', label: 'हिंदी (Hindi)', scriptRule: 'Spoken Hindi (Devanagari)' },
   { id: 'mr', label: 'मराठी (Marathi)', scriptRule: 'Spoken Marathi (Devanagari)' },
-  { id: 'hinglish', label: 'Hinglish', scriptRule: 'Conversational Roman Hindi + Eng' },
+  { id: 'hinglish', label: 'Hinglish', scriptRule: 'Pure Roman Hindi (no English)' },
 ];
 
 interface BenchmarkCase {
@@ -62,7 +62,7 @@ const BENCHMARK_CASES: BenchmarkCase[] = [
   {
     id: 'bench-hinglish',
     language: 'hinglish',
-    title: 'Hinglish Mixed Dining Feedback',
+    title: 'Hinglish (Roman Hindi) Mixed Feedback',
     businessName: 'Spice Garden Kitchen',
     category: 'Restaurants',
     responses: [
