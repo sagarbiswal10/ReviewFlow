@@ -3,6 +3,8 @@ import type { User } from 'firebase/auth';
 import {
   Activity,
   ArrowLeft,
+  ArrowRight,
+  ArrowUpDown,
   Bot,
   Building2,
   Check,
@@ -15,10 +17,12 @@ import {
   KeyRound,
   Layers,
   LayoutGrid,
+  ListFilter,
   Loader2,
   LogOut,
   Mail,
   Menu,
+  MoreVertical,
   Palette,
   PauseCircle,
   Plus,
@@ -131,6 +135,38 @@ function formatTime(createdAt: unknown): string {
   return 'Recent';
 }
 
+function getEventTimestampMs(ts: unknown): number {
+  if (!ts) return 0;
+  if (typeof ts === 'number') return Number.isFinite(ts) ? ts : 0;
+  if (ts instanceof Date) return Number.isFinite(ts.getTime()) ? ts.getTime() : 0;
+  if (typeof ts === 'object' && ts !== null) {
+    const c = ts as { toMillis?: () => number; toDate?: () => Date; seconds?: unknown; _seconds?: unknown };
+    if (typeof c.toMillis === 'function') {
+      try {
+        return c.toMillis();
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof c.toDate === 'function') {
+      try {
+        return c.toDate().getTime();
+      } catch {
+        // ignore
+      }
+    }
+    const sec = c.seconds ?? c._seconds;
+    if (sec !== undefined && sec !== null && Number.isFinite(Number(sec))) {
+      return Number(sec) * 1000;
+    }
+  }
+  if (typeof ts === 'string') {
+    const ms = Date.parse(ts);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  return 0;
+}
+
 export function ManagementConsoleView({
   user,
   businesses,
@@ -146,6 +182,9 @@ export function ManagementConsoleView({
   const [detailTab, setDetailTab] = useState<BusinessDetailTab>('access');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
+  const [directoryView, setDirectoryView] = useState<'board' | 'table'>('board');
+  const [sortBy, setSortBy] = useState<'scans' | 'name' | 'redirects'>('scans');
+  const [featuredBizId, setFeaturedBizId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const hasPasswordAuth = hasPasswordProvider(user.providerData);
@@ -319,7 +358,7 @@ export function ManagementConsoleView({
 
   const filteredBusinesses = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return businesses.filter((biz) => {
+    const list = businesses.filter((biz) => {
       if (statusFilter === 'active' && !biz.qrConfig.isActive) return false;
       if (statusFilter === 'paused' && biz.qrConfig.isActive) return false;
       if (!q) return true;
@@ -330,7 +369,81 @@ export function ManagementConsoleView({
         biz.clientEmail.toLowerCase().includes(q)
       );
     });
-  }, [businesses, searchQuery, statusFilter]);
+    return [...list].sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      const sa = statsMap[a.id];
+      const sb = statsMap[b.id];
+      if (sortBy === 'redirects') {
+        return (sb?.redirects ?? 0) - (sa?.redirects ?? 0);
+      }
+      return (sb?.scans ?? 0) - (sa?.scans ?? 0);
+    });
+  }, [businesses, searchQuery, statusFilter, sortBy, statsMap]);
+
+  const platformConversionRate = useMemo(() => {
+    if (aggregateStats.totalScans <= 0) return 0;
+    return Math.min(
+      100,
+      Math.round((aggregateStats.totalRedirects / aggregateStats.totalScans) * 100),
+    );
+  }, [aggregateStats.totalScans, aggregateStats.totalRedirects]);
+
+  const fiveDayPlatformSeries = useMemo(() => {
+    const days: { key: string; label: string; scans: number; redirects: number }[] = [];
+    const now = new Date();
+    for (let i = 4; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const label = d.toLocaleDateString(undefined, { weekday: 'short' });
+      days.push({ key, label, scans: 0, redirects: 0 });
+    }
+    const map = new Map(days.map((d) => [d.key, d]));
+    for (const ev of events) {
+      const ms = getEventTimestampMs(ev.createdAt);
+      if (!ms) continue;
+      const d = new Date(ms);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const bucket = map.get(key);
+      if (!bucket) continue;
+      if (ev.eventType === 'scan') bucket.scans += 1;
+      else if (ev.eventType === 'copy_redirect') bucket.redirects += 1;
+    }
+    return days;
+  }, [events]);
+
+  const maxFiveDayVal = useMemo(() => {
+    let m = 1;
+    for (const d of fiveDayPlatformSeries) {
+      m = Math.max(m, d.scans, d.redirects);
+    }
+    return m;
+  }, [fiveDayPlatformSeries]);
+
+  const boardColumns = useMemo(() => {
+    const fullSelf: Business[] = [];
+    const qrAndQuestions: Business[] = [];
+    const readOnly: Business[] = [];
+    const pausedOrUnassigned: Business[] = [];
+
+    for (const biz of filteredBusinesses) {
+      if (!biz.qrConfig.isActive || !biz.clientEmail) {
+        pausedOrUnassigned.push(biz);
+      } else if (biz.clientAccessLevel === 'full') {
+        fullSelf.push(biz);
+      } else if (biz.clientAccessLevel === 'qr_and_questions') {
+        qrAndQuestions.push(biz);
+      } else {
+        readOnly.push(biz);
+      }
+    }
+
+    return [
+      { id: 'full', title: 'Full Self-Service', items: fullSelf },
+      { id: 'qr_questions', title: 'QR & Questions', items: qrAndQuestions },
+      { id: 'read_only', title: 'Read-Only', items: readOnly },
+      { id: 'paused', title: 'Paused / Unassigned', items: pausedOrUnassigned },
+    ];
+  }, [filteredBusinesses]);
 
   const bizNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -645,220 +758,243 @@ export function ManagementConsoleView({
     : null;
 
   const sidebarContent = (
-    <div className="flex flex-col h-full liquid-glass-nav border-r border-white/75">
-      <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
-        <span className="font-display text-lg font-bold tracking-tight text-slate-900">
-          ReviewFlow
-        </span>
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
-          aria-label="Close menu"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-        <p className="text-[11px] font-semibold text-teal-800">Business Management</p>
-        <p className="text-xs text-slate-600 mt-0.5 tabular-nums">
-          {businesses.length} {businesses.length === 1 ? 'business' : 'businesses'} managed
-        </p>
-      </div>
-
-      <nav className="flex-1 p-3 space-y-1">
-        <button
-          type="button"
-          onClick={() => {
-            setSection('directory');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'directory'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Building2 className="w-4 h-4 shrink-0" />
-          <span>All Businesses</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('stand_requests');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center justify-between gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'stand_requests'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <span className="inline-flex items-center gap-3">
-            <Layers className="w-4 h-4 shrink-0" />
-            <span>QR Stand Requests</span>
-          </span>
-          {pendingStandRequestsCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500 text-white tabular-nums">
-              {pendingStandRequestsCount}
+    <div className="flex flex-col h-full bg-white border-r border-slate-200/80 justify-between">
+      <div>
+        <div className="h-16 px-5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-lg font-bold tracking-tight text-[#141416]">
+              ReviewFlow
             </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('ai_usage');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'ai_usage'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Coins className="w-4 h-4 shrink-0" />
-          <span>AI Usage &amp; Costs</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('ai_eval');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'ai_eval'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <FlaskConical className="w-4 h-4 shrink-0" />
-          <span>AI Quality &amp; Eval</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('weekly_reports');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'weekly_reports'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <FileBarChart2 className="w-4 h-4 shrink-0" />
-          <span>Weekly Reports</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('clients');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'clients'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Mail className="w-4 h-4 shrink-0" />
-          <span>Client Portal Access</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('activity');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'activity'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Activity className="w-4 h-4 shrink-0" />
-          <span>Global Activity</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSection('team');
-            setSelectedBizId(null);
-            setMobileMenuOpen(false);
-          }}
-          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
-            section === 'team'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Shield className="w-4 h-4 shrink-0" />
-          <span>Team Admins</span>
-        </button>
-      </nav>
-
-      <div className="p-4 border-t border-slate-200 space-y-2.5">
-        <button
-          type="button"
-          onClick={onSwitchToPortal}
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Eye className="w-3.5 h-3.5" />
-          <span>View Client Portal</span>
-        </button>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-900 truncate">
-            {user.displayName || 'Manager'}
-          </p>
-          <p className="text-xs text-slate-500 truncate">{user.email}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
+
+        <nav className="px-3 pt-2 space-y-1">
+          <button
+            type="button"
+            onClick={() => {
+              setSection('directory');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center justify-between gap-2 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'directory' && !selectedBiz
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <span className="inline-flex items-center gap-3">
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span>All Businesses</span>
+            </span>
+            <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+              {businesses.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('stand_requests');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center justify-between gap-2 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'stand_requests'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <span className="inline-flex items-center gap-3">
+              <Layers className="w-4 h-4 shrink-0" />
+              <span>QR Stand Requests</span>
+            </span>
+            {pendingStandRequestsCount > 0 && (
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#141416] text-white tabular-nums">
+                {pendingStandRequestsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('activity');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'activity'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <Activity className="w-4 h-4 shrink-0" />
+            <span>Global Activity</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('clients');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'clients'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <Mail className="w-4 h-4 shrink-0" />
+            <span>Client Portal Access</span>
+          </button>
+        </nav>
+
+        <div className="px-3 pt-5 mt-5 border-t border-slate-100 space-y-1">
+          <p className="px-3.5 text-[11px] font-medium text-slate-400 mb-1.5">
+            Governance &amp; AI
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('ai_usage');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'ai_usage'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <Coins className="w-4 h-4 shrink-0" />
+            <span>AI Usage &amp; Costs</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('ai_eval');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'ai_eval'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <FlaskConical className="w-4 h-4 shrink-0" />
+            <span>AI Quality &amp; Eval</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('weekly_reports');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'weekly_reports'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <FileBarChart2 className="w-4 h-4 shrink-0" />
+            <span>Weekly Reports</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSection('team');
+              setSelectedBizId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+              section === 'team'
+                ? 'bg-[#F3F4EC] text-[#141416] font-semibold'
+                : 'text-slate-600 hover:text-[#141416] hover:bg-slate-50'
+            }`}
+          >
+            <Shield className="w-4 h-4 shrink-0" />
+            <span>Team Admins</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom Team & Account Section */}
+      <div className="p-4 border-t border-slate-100 space-y-2.5">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[11px] font-medium text-slate-400">Workspace</span>
+          <button
+            type="button"
+            onClick={onSwitchToPortal}
+            className="text-[11px] font-semibold text-[#141416] hover:underline inline-flex items-center gap-1 cursor-pointer"
+          >
+            <Eye className="w-3 h-3" />
+            <span>Client Portal</span>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-1 py-1">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-[#141416] text-white flex items-center justify-center text-xs font-bold shrink-0">
+              {(user.email || 'M').slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#141416] truncate">
+                {user.displayName || 'Manager'}
+              </p>
+              <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSignOut}
+            title="Sign Out"
+            aria-label="Sign Out"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-[#141416] hover:bg-slate-100 cursor-pointer shrink-0"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+
         {onLinkEmailPassword && (
           <button
             type="button"
             onClick={() => setAccountSecurityOpen(true)}
-            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <KeyRound className="w-3.5 h-3.5 text-[#005c55]" />
+            <KeyRound className="w-3 h-3" />
             <span>{hasPasswordAuth ? 'Sign-In Methods' : 'Set Password'}</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sign Out</span>
-        </button>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen spatial-canvas text-slate-900 flex">
-      <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
+    <div className="min-h-screen admin-bizlink-canvas flex">
+      <aside className="hidden lg:block w-60 shrink-0 sticky top-0 h-screen overflow-y-auto">
         {sidebarContent}
       </aside>
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/35 backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="relative w-72 max-w-[85vw] h-full z-10">{sidebarContent}</div>
@@ -866,8 +1002,8 @@ export function ManagementConsoleView({
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs px-4 sm:px-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 sm:px-7 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -876,25 +1012,23 @@ export function ManagementConsoleView({
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="text-slate-500 truncate">Business Management</span>
-              <span className="text-slate-300" aria-hidden="true">/</span>
-              {selectedBiz ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedBizId(null)}
-                    className="text-slate-500 hover:text-slate-900 truncate cursor-pointer"
-                  >
-                    All Businesses
-                  </button>
-                  <span className="text-slate-300" aria-hidden="true">/</span>
-                  <span className="font-semibold text-slate-900 truncate">{selectedBiz.name}</span>
-                </>
-              ) : (
-                <span className="font-semibold text-slate-900 truncate">
-                  {section === 'directory'
-                    ? 'All Businesses'
+
+            {selectedBiz || section !== 'directory' ? (
+              <div className="flex items-center gap-2 text-sm min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSection('directory');
+                    setSelectedBizId(null);
+                  }}
+                  className="text-slate-500 hover:text-[#141416] truncate cursor-pointer"
+                >
+                  All Businesses
+                </button>
+                <span className="text-slate-300" aria-hidden="true">/</span>
+                <span className="font-semibold text-[#141416] truncate">
+                  {selectedBiz
+                    ? selectedBiz.name
                     : section === 'stand_requests'
                       ? 'QR Stand Requests'
                       : section === 'ai_usage'
@@ -909,33 +1043,66 @@ export function ManagementConsoleView({
                                 ? 'Global Activity'
                                 : 'Team Admins'}
                 </span>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search business, slug, or client email..."
+                  className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-[#141416] placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-slate-300"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {!selectedBiz && section === 'directory' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSortBy((prev) =>
+                      prev === 'scans' ? 'name' : prev === 'name' ? 'redirects' : 'scans',
+                    )
+                  }
+                  className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#141416] hover:bg-slate-100 cursor-pointer"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <span>
+                    Sort: {sortBy === 'scans' ? 'Scans' : sortBy === 'name' ? 'Name' : 'Redirects'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter((prev) =>
+                      prev === 'all' ? 'active' : prev === 'active' ? 'paused' : 'all',
+                    )
+                  }
+                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#141416] hover:bg-slate-100 cursor-pointer"
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                  <span className="capitalize">Filter: {statusFilter}</span>
+                </button>
+              </>
+            )}
+
             <button
               type="button"
               onClick={onOpenNewBusiness}
-              className="px-3.5 sm:px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#141416] hover:bg-black text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Business</span>
             </button>
-            <button
-              type="button"
-              onClick={onSignOut}
-              title="Sign Out"
-              aria-label="Sign Out"
-              className="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-7 max-w-[1400px] w-full mx-auto space-y-6">
           {/* Selected Business Management Workspace */}
           {selectedBiz ? (
             <div className="space-y-6">
@@ -1238,91 +1405,289 @@ export function ManagementConsoleView({
               )}
             </div>
           ) : section === 'directory' ? (
-            <>
-              {/* Cross-Business Aggregate KPIs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
-                  <p className="text-xs font-medium text-slate-500">Total Businesses</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {aggregateStats.totalBusinesses}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {aggregateStats.activeQrCount} active QR codes
-                  </p>
+            <div className="space-y-6">
+              {/* Warm Stone-Sage Executive Overview Strip (BizLink aesthetic, real ReviewFlow telemetry) */}
+              <div className="rounded-3xl bg-[#F3F4EC] border border-[#E5E6DC] p-6 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-7 items-center">
+                {/* Left: 5-Day Paired Bar Chart (Scans striped vs Google Redirects solid) */}
+                <div className="lg:col-span-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-display text-sm font-semibold text-[#141416]">
+                      Platform Activity
+                    </h2>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Last 5 days
+                    </span>
+                  </div>
+
+                  <div className="h-28 flex items-end justify-between gap-3 pt-2">
+                    {fiveDayPlatformSeries.map((day) => {
+                      const scanH = Math.max(8, Math.round((day.scans / maxFiveDayVal) * 76));
+                      const redirH = Math.max(6, Math.round((day.redirects / maxFiveDayVal) * 76));
+                      return (
+                        <div key={day.key} className="flex-1 flex flex-col items-center gap-1.5">
+                          <div className="flex items-end gap-1 h-20">
+                            <div
+                              title={`${day.label}: ${day.scans} scans`}
+                              className="w-3 rounded-t-sm"
+                              style={{
+                                height: `${scanH}px`,
+                                backgroundImage:
+                                  'repeating-linear-gradient(-45deg, #d6d8ce, #d6d8ce 2px, #e8eae0 2px, #e8eae0 4px)',
+                              }}
+                            />
+                            <div
+                              title={`${day.label}: ${day.redirects} Google redirects`}
+                              className="w-3 rounded-t-sm bg-[#141416]"
+                              style={{ height: `${redirH}px` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500">{day.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
-                  <p className="text-xs font-medium text-slate-500">Platform QR Scans</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {aggregateStats.totalScans}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">Across all client storefronts</p>
+
+                {/* Center: Radial Segmented Semicircle Gauge */}
+                <div className="lg:col-span-4 flex flex-col items-center justify-center">
+                  <div className="relative w-48 h-28 flex flex-col items-center justify-end">
+                    <svg viewBox="0 0 200 110" className="w-full h-full overflow-visible" aria-hidden="true">
+                      {Array.from({ length: 28 }).map((_, idx) => {
+                        const angle = Math.PI + (idx / 27) * Math.PI;
+                        const x1 = 100 + Math.cos(angle) * 66;
+                        const y1 = 100 + Math.sin(angle) * 66;
+                        const x2 = 100 + Math.cos(angle) * 86;
+                        const y2 = 100 + Math.sin(angle) * 86;
+                        const filled = (idx / 27) * 100 <= platformConversionRate;
+                        return (
+                          <line
+                            key={idx}
+                            x1={x1.toFixed(1)}
+                            y1={y1.toFixed(1)}
+                            x2={x2.toFixed(1)}
+                            y2={y2.toFixed(1)}
+                            stroke={filled ? '#141416' : '#D4D6CC'}
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                          />
+                        );
+                      })}
+                    </svg>
+                    <div className="absolute bottom-1 text-center">
+                      <p className="font-display text-2xl sm:text-3xl font-bold text-[#141416] tabular-nums leading-none">
+                        {platformConversionRate}%
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1">Scan-to-Google Rate</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
-                  <p className="text-xs font-medium text-slate-500">AI Drafts Generated</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {aggregateStats.totalDrafts}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">Personalized customer drafts</p>
-                </div>
-                <div className="liquid-glass spatial-card-3d rounded-2xl p-5">
-                  <p className="text-xs font-medium text-slate-500">Google Redirects</p>
-                  <p className="mt-2 font-display text-3xl font-bold text-slate-900 tabular-nums">
-                    {aggregateStats.totalRedirects}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">Completed copy &amp; handoff</p>
+
+                {/* Right: 2 Clean KPI Columns */}
+                <div className="lg:col-span-4 grid grid-cols-2 gap-6">
+                  <button
+                    type="button"
+                    onClick={() => setSection('clients')}
+                    className="text-left group cursor-pointer flex flex-col justify-between gap-4"
+                  >
+                    <p className="font-display text-3xl sm:text-4xl font-semibold text-[#141416] tabular-nums">
+                      {aggregateStats.totalBusinesses}
+                    </p>
+                    <div className="flex items-end justify-between gap-2">
+                      <span className="text-xs text-slate-600 leading-snug">
+                        Managed
+                        <br />
+                        businesses ({aggregateStats.activeQrCount} active)
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-[#141416] shrink-0" />
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSection('activity')}
+                    className="text-left group cursor-pointer flex flex-col justify-between gap-4"
+                  >
+                    <p className="font-display text-3xl sm:text-4xl font-semibold text-[#141416] tabular-nums">
+                      {aggregateStats.totalDrafts}
+                    </p>
+                    <div className="flex items-end justify-between gap-2">
+                      <span className="text-xs text-slate-600 leading-snug">
+                        AI drafts
+                        <br />
+                        ({aggregateStats.totalScans} scans)
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-[#141416] shrink-0" />
+                    </div>
+                  </button>
                 </div>
               </div>
 
-              {/* Filter Toolbar & All-Businesses Table */}
-              <div className="liquid-glass rounded-2xl overflow-hidden">
-                <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="relative flex-1 max-w-sm">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search business, slug, or client email..."
-                      className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-teal-700/20"
-                    />
-                  </div>
+              {/* View Mode Switcher Row */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-500 tabular-nums">
+                  Showing <strong className="text-[#141416]">{filteredBusinesses.length}</strong> of{' '}
+                  {businesses.length} businesses · {aggregateStats.totalRedirects} total Google
+                  redirects
+                </p>
 
-                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg self-start sm:self-auto">
-                    {(['all', 'active', 'paused'] as const).map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => setStatusFilter(f)}
-                        className={`px-3 py-1 rounded-md text-xs font-medium capitalize cursor-pointer ${
-                          statusFilter === f
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
+                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setDirectoryView('board')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                      directoryView === 'board'
+                        ? 'bg-white text-[#141416] shadow-xs'
+                        : 'text-slate-600 hover:text-[#141416]'
+                    }`}
+                  >
+                    Board
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDirectoryView('table')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                      directoryView === 'table'
+                        ? 'bg-white text-[#141416] shadow-xs'
+                        : 'text-slate-600 hover:text-[#141416]'
+                    }`}
+                  >
+                    Table
+                  </button>
                 </div>
+              </div>
 
-                {filteredBusinesses.length === 0 ? (
-                  <div className="p-10 text-center space-y-3">
-                    <p className="text-sm font-semibold text-slate-900">
-                      {businesses.length === 0
-                        ? 'No businesses registered yet'
-                        : 'No businesses match your search filter'}
-                    </p>
-                    {businesses.length === 0 && (
-                      <button
-                        type="button"
-                        onClick={onOpenNewBusiness}
-                        className="px-4 py-2 rounded-xl bg-teal-700 text-white text-xs font-semibold cursor-pointer"
-                      >
-                        Create First Business
-                      </button>
-                    )}
-                  </div>
-                ) : (
+              {filteredBusinesses.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center space-y-3">
+                  <p className="text-sm font-semibold text-[#141416]">
+                    {businesses.length === 0
+                      ? 'No businesses registered yet'
+                      : 'No businesses match your search filter'}
+                  </p>
+                  {businesses.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={onOpenNewBusiness}
+                      className="px-4 py-2 rounded-xl bg-[#141416] text-white text-xs font-semibold cursor-pointer"
+                    >
+                      Create First Business
+                    </button>
+                  )}
+                </div>
+              ) : directoryView === 'board' ? (
+                /* 4-Column BizLink Governance Board */
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+                  {boardColumns.map((col) => (
+                    <div key={col.id} className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <h3 className="font-display text-base font-semibold text-[#141416]">
+                          {col.title}
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-md border border-slate-200 bg-white text-[11px] font-mono font-semibold text-slate-600 tabular-nums">
+                          {col.items.length}
+                        </span>
+                      </div>
+
+                      {col.items.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
+                          No businesses in this tier
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {col.items.map((biz) => {
+                            const st = statsMap[biz.id];
+                            const isFeatured = featuredBizId === biz.id;
+                            return (
+                              <div
+                                key={biz.id}
+                                onMouseEnter={() => setFeaturedBizId(biz.id)}
+                                onMouseLeave={() => setFeaturedBizId(null)}
+                                onClick={() => {
+                                  setSelectedBizId(biz.id);
+                                  setDetailTab('access');
+                                }}
+                                className={`rounded-2xl p-4 border transition-colors cursor-pointer space-y-3 ${
+                                  isFeatured
+                                    ? 'bg-[#141416] text-white border-[#141416] shadow-lg'
+                                    : 'bg-white text-[#141416] border-slate-200/90 hover:border-slate-300'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <BusinessLogo
+                                      src={biz.logoDataUrl}
+                                      name={biz.name}
+                                      primaryColor={biz.branding.primaryColor}
+                                      sizeClass="w-8 h-8 rounded-lg"
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="font-display text-sm font-semibold truncate">
+                                        {biz.name}
+                                      </p>
+                                      <p
+                                        className={`text-[11px] truncate ${
+                                          isFeatured ? 'text-white/65' : 'text-slate-500'
+                                        }`}
+                                      >
+                                        {biz.category}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <MoreVertical
+                                    className={`w-4 h-4 shrink-0 ${
+                                      isFeatured ? 'text-white/60' : 'text-slate-400'
+                                    }`}
+                                  />
+                                </div>
+
+                                <div
+                                  className={`space-y-1 text-[11px] ${
+                                    isFeatured ? 'text-white/75' : 'text-slate-500'
+                                  }`}
+                                >
+                                  <p className="font-mono truncate">/review/{biz.slug}</p>
+                                  <p className="truncate">
+                                    {biz.clientEmail || 'Client Gmail unassigned'}
+                                  </p>
+                                </div>
+
+                                <div
+                                  className={`pt-2.5 border-t flex items-center justify-between gap-2 text-[11px] ${
+                                    isFeatured ? 'border-white/15' : 'border-slate-100'
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium ${
+                                      biz.qrConfig.isActive
+                                        ? isFeatured
+                                          ? 'bg-emerald-500/20 text-emerald-300'
+                                          : 'bg-emerald-50 text-emerald-700'
+                                        : isFeatured
+                                        ? 'bg-amber-500/20 text-amber-300'
+                                        : 'bg-amber-50 text-amber-700'
+                                    }`}
+                                  >
+                                    {biz.qrConfig.isActive ? 'QR Active' : 'Paused'}
+                                  </span>
+
+                                  <span
+                                    className={`font-mono tabular-nums ${
+                                      isFeatured ? 'text-white/80' : 'text-slate-600'
+                                    }`}
+                                  >
+                                    {st?.scans ?? 0} scans · {st?.redirects ?? 0} posts
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* Classic Table View */
+                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
@@ -1352,7 +1717,8 @@ export function ManagementConsoleView({
                                   <div>
                                     <p className="font-semibold text-slate-900">{biz.name}</p>
                                     <p className="text-slate-500">
-                                      {biz.category} · <span className="font-mono">/review/{biz.slug}</span>
+                                      {biz.category} ·{' '}
+                                      <span className="font-mono">/review/{biz.slug}</span>
                                     </p>
                                   </div>
                                 </div>
@@ -1406,9 +1772,9 @@ export function ManagementConsoleView({
                       </tbody>
                     </table>
                   </div>
-                )}
-              </div>
-            </>
+                </div>
+              )}
+            </div>
           ) : section === 'stand_requests' ? (
             <div className="space-y-6">
               <div className="liquid-glass rounded-2xl p-6 space-y-4">
