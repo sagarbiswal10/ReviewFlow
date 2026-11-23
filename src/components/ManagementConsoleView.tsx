@@ -11,6 +11,7 @@ import {
   Download,
   Eye,
   FileBarChart2,
+  FlaskConical,
   KeyRound,
   Layers,
   Loader2,
@@ -37,9 +38,11 @@ import type {
   Business,
   BusinessStats,
   ClientAccessLevel,
+  ConsentedExample,
   EnabledFeatures,
   PublicProfile,
   QrStandRequest,
+  ReviewEvaluation,
   ReviewEvent,
   WeeklyReport,
 } from '../types';
@@ -61,12 +64,15 @@ import {
   isMondayToday,
   reviewQrStandRequest,
   subscribeToAllAiUsage,
+  subscribeToAllConsentedExamples,
   subscribeToAllQrStandRequests,
+  subscribeToAllReviewEvaluations,
   subscribeToAllWeeklyReports,
 } from '../services/platformFeaturesService';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 import { hasPasswordProvider } from '../utils/urlAndAuth';
 import { AccountSecurityModal } from './AccountSecurityModal';
+import { AiEvaluationDashboard } from './AiEvaluationDashboard';
 import { BusinessLogo } from './BusinessLogo';
 import { OverviewTab } from './OverviewTab';
 import { QrStudioTab } from './QrStudioTab';
@@ -81,6 +87,7 @@ type AdminSection =
   | 'directory'
   | 'stand_requests'
   | 'ai_usage'
+  | 'ai_eval'
   | 'weekly_reports'
   | 'clients'
   | 'activity'
@@ -174,6 +181,8 @@ export function ManagementConsoleView({
   const [requestBanner, setRequestBanner] = useState<string | null>(null);
 
   const [globalAiLogs, setGlobalAiLogs] = useState<AiUsageLog[]>([]);
+  const [globalEvaluations, setGlobalEvaluations] = useState<ReviewEvaluation[]>([]);
+  const [globalConsentedExamples, setGlobalConsentedExamples] = useState<ConsentedExample[]>([]);
   const [globalReports, setGlobalReports] = useState<WeeklyReport[]>([]);
   const [isBatchGeneratingReports, setIsBatchGeneratingReports] = useState(false);
   const [batchReportNotice, setBatchReportNotice] = useState<string | null>(null);
@@ -213,6 +222,14 @@ export function ManagementConsoleView({
       (items) => setGlobalAiLogs(items),
       (err) => console.error('AI usage subscription error:', err),
     );
+    const unsubEvaluations = subscribeToAllReviewEvaluations(
+      (items) => setGlobalEvaluations(items),
+      (err) => console.error('AI evaluation subscription error:', err),
+    );
+    const unsubConsented = subscribeToAllConsentedExamples(
+      (items) => setGlobalConsentedExamples(items),
+      (err) => console.error('Consented examples subscription error:', err),
+    );
     const unsubWeekly = subscribeToAllWeeklyReports(
       (items) => setGlobalReports(items),
       (err) => setBatchReportNotice(err?.message || 'Unable to load weekly reports.'),
@@ -222,6 +239,8 @@ export function ManagementConsoleView({
       unsubEmails();
       unsubStandReqs();
       unsubAiLogs();
+      unsubEvaluations();
+      unsubConsented();
       unsubWeekly();
     };
   }, []);
@@ -700,6 +719,23 @@ export function ManagementConsoleView({
         <button
           type="button"
           onClick={() => {
+            setSection('ai_eval');
+            setSelectedBizId(null);
+            setMobileMenuOpen(false);
+          }}
+          className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 whitespace-nowrap shrink-0 cursor-pointer ${
+            section === 'ai_eval'
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <FlaskConical className="w-4 h-4 shrink-0" />
+          <span>AI Quality &amp; Eval</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
             setSection('weekly_reports');
             setSelectedBizId(null);
             setMobileMenuOpen(false);
@@ -853,13 +889,15 @@ export function ManagementConsoleView({
                       ? 'QR Stand Requests'
                       : section === 'ai_usage'
                         ? 'AI Usage & Costs'
-                        : section === 'weekly_reports'
-                          ? 'Weekly Reports'
-                          : section === 'clients'
-                            ? 'Client Portal Access'
-                            : section === 'activity'
-                              ? 'Global Activity'
-                              : 'Team Admins'}
+                        : section === 'ai_eval'
+                          ? 'AI Quality & Eval'
+                          : section === 'weekly_reports'
+                            ? 'Weekly Reports'
+                            : section === 'clients'
+                              ? 'Client Portal Access'
+                              : section === 'activity'
+                                ? 'Global Activity'
+                                : 'Team Admins'}
                 </span>
               )}
             </div>
@@ -1563,6 +1601,13 @@ export function ManagementConsoleView({
                 </div>
               </div>
             </div>
+          ) : section === 'ai_eval' ? (
+            <AiEvaluationDashboard
+              evaluations={globalEvaluations}
+              consentedExamples={globalConsentedExamples}
+              businesses={businesses}
+              adminUid={user.uid}
+            />
           ) : section === 'weekly_reports' ? (
             <div className="space-y-6">
               <div className="liquid-glass rounded-2xl p-6 space-y-4">
@@ -1941,7 +1986,7 @@ export function ManagementConsoleView({
                             {ev.reviewStyle || '—'}
                             {ev.language && (
                               <span lang={ev.language} className="ml-1.5 text-[11px] text-[#005c55] font-semibold">
-                                ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'EN'})
+                                ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : ev.language === 'hinglish' ? 'Hinglish' : 'EN'})
                               </span>
                             )}
                           </td>

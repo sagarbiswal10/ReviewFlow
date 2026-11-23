@@ -1154,7 +1154,10 @@ export async function recordReviewEvent(
   const standName = clampString(details.standName ?? '', 120);
   const sessionId = clampString(details.sessionId ?? '', 128);
   const language: ReviewLanguage | undefined =
-    details.language === 'hi' || details.language === 'mr' || details.language === 'en'
+    details.language === 'hi' ||
+    details.language === 'mr' ||
+    details.language === 'hinglish' ||
+    details.language === 'en'
       ? details.language
       : undefined;
 

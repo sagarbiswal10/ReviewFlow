@@ -1794,6 +1794,7 @@ export function ClientPortalView({
                         <span>English ({reviewDrafts.filter((d) => d.language === 'en').length})</span>
                         <span lang="hi">हिंदी ({reviewDrafts.filter((d) => d.language === 'hi').length})</span>
                         <span lang="mr">मराठी ({reviewDrafts.filter((d) => d.language === 'mr').length})</span>
+                        <span>Hinglish ({reviewDrafts.filter((d) => d.language === 'hinglish').length})</span>
                       </div>
                     </div>
                   )}
@@ -1869,7 +1870,7 @@ export function ClientPortalView({
                               <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
                                 {ev.language && (
                                   <span lang={ev.language} className="font-semibold text-slate-800">
-                                    Language: {ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'English'}
+                                    Language: {ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : ev.language === 'hinglish' ? 'Hinglish' : 'English'}
                                   </span>
                                 )}
                                 {ev.reviewStyle && (

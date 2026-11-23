@@ -16,6 +16,7 @@ import type {
   PublicProfile,
   ReviewDraftStatus,
   ReviewLanguage,
+  ReviewQualityReport,
   ReviewStyle,
 } from '../types';
 import {
@@ -25,7 +26,13 @@ import {
   saveFeedbackSubmission,
   updateReviewDraftLifecycle,
 } from '../services/businessService';
+import {
+  fetchApprovedExamplesForPrompt,
+  saveConsentedExample,
+  saveReviewEvaluation,
+} from '../services/platformFeaturesService';
 import { apiFetch, formatApiError } from '../utils/apiClient';
+import { validateReviewQuality } from '../utils/reviewQuality';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { BusinessLogo } from './BusinessLogo';
 
@@ -46,11 +53,13 @@ const LANGUAGE_OPTIONS: {
   { id: 'en', nativeLabel: 'English', englishLabel: 'English' },
   { id: 'hi', nativeLabel: 'हिंदी', englishLabel: 'Hindi' },
   { id: 'mr', nativeLabel: 'मराठी', englishLabel: 'Marathi' },
+  { id: 'hinglish', nativeLabel: 'Hinglish', englishLabel: 'Roman Hindi+Eng' },
 ];
 
 function getLanguageDisplayName(lang: ReviewLanguage): string {
   if (lang === 'hi') return 'हिंदी (Hindi)';
   if (lang === 'mr') return 'मराठी (Marathi)';
+  if (lang === 'hinglish') return 'Hinglish (Roman)';
   return 'English';
 }
 
@@ -83,11 +92,17 @@ export function CustomerReviewFlow({
   const [copied, setCopied] = useState(false);
   const [openedGoogle, setOpenedGoogle] = useState(false);
   const [variationSeed, setVariationSeed] = useState(1);
+  const [previousDrafts, setPreviousDrafts] = useState<string[]>([]);
+  const [initialGeneratedText, setInitialGeneratedText] = useState('');
+  const [lastQualityReport, setLastQualityReport] = useState<ReviewQualityReport | null>(null);
+  const [consentOptIn, setConsentOptIn] = useState(false);
+  const [consentSaved, setConsentSaved] = useState(false);
 
   const scanLoggedRef = useRef(false);
   const formStartedLoggedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const editPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consentedDraftIdsRef = useRef<Set<string>>(new Set());
 
   const primaryColor = profile.branding?.primaryColor || '#0F766E';
   const secondaryColor = profile.branding?.secondaryColor || '#0F172A';
@@ -268,6 +283,10 @@ export function CustomerReviewFlow({
         return;
       }
 
+      const fewShotExamples = isPreview
+        ? []
+        : await fetchApprovedExamplesForPrompt(languageToUse, profile.category);
+
       const res = await apiFetch('/api/generate-review', {
         method: 'POST',
         body: JSON.stringify({
@@ -278,6 +297,8 @@ export function CustomerReviewFlow({
           style: selectedStyle,
           language: languageToUse,
           variationSeed: seed,
+          previousDrafts: previousDrafts.slice(-4),
+          fewShotExamples,
         }),
       });
 
@@ -285,6 +306,7 @@ export function CustomerReviewFlow({
       let data: {
         review?: string;
         language?: ReviewLanguage;
+        qualityReport?: ReviewQualityReport;
         aiTelemetry?: {
           provider?: string;
           modelId?: string;
@@ -323,7 +345,23 @@ export function CustomerReviewFlow({
       }
 
       const generatedText = data.review.trim();
+      const computedQuality =
+        data.qualityReport ||
+        validateReviewQuality({
+          reviewText: generatedText,
+          language: languageToUse,
+          businessName: profile.name,
+          category: profile.category,
+          responses,
+          additionalComments,
+          previousDrafts: previousDrafts.slice(-4),
+        });
+
       setDraftText(generatedText);
+      setInitialGeneratedText(generatedText);
+      setLastQualityReport(computedQuality);
+      setConsentSaved(false);
+      setPreviousDrafts((prev) => [...prev, generatedText].slice(-5));
       setDraftStatus('Generated');
       setDraftDeleted(false);
       setStep('draft');
@@ -349,6 +387,27 @@ export function CustomerReviewFlow({
           standCode: standContext.standCode,
           standName: standContext.standName,
           sessionId: standContext.sessionId,
+        });
+
+        const responsesSummary = responses
+          .map((r) => `${r.question}: ${r.answers.join(', ')}`)
+          .join(' | ');
+
+        saveReviewEvaluation({
+          businessId: profile.businessId,
+          businessName: profile.name,
+          ownerId: profile.ownerId,
+          clientUid: profile.clientUid,
+          slug: profile.slug,
+          category: profile.category,
+          language: languageToUse,
+          reviewStyle: selectedStyle,
+          draftId: newDraftId,
+          source: 'live_customer',
+          modelId: data.aiTelemetry?.modelId || 'gemini-3.1-flash-lite',
+          qualityReport: computedQuality,
+          responsesSummary,
+          generatedReview: generatedText,
         });
 
         if (data.aiTelemetry) {
@@ -495,6 +554,30 @@ export function CustomerReviewFlow({
     }
   };
 
+  const persistConsentedExampleIfOptedIn = async (finalReviewText: string) => {
+    if (isPreview || !consentOptIn || !currentDraftId || !finalReviewText.trim()) return;
+    if (consentedDraftIdsRef.current.has(currentDraftId)) return;
+    consentedDraftIdsRef.current.add(currentDraftId);
+    const { responses, additionalComments } = buildStructuredPayload();
+    const responsesSummary = responses
+      .map((r) => `${r.question}: ${r.answers.join(', ')}`)
+      .join(' | ');
+    await saveConsentedExample({
+      businessId: profile.businessId,
+      ownerId: profile.ownerId,
+      slug: profile.slug,
+      category: profile.category,
+      language: selectedLanguage,
+      reviewStyle: selectedStyle,
+      responsesSummary,
+      additionalComments,
+      generatedReview: initialGeneratedText || finalReviewText,
+      finalReview: finalReviewText.trim(),
+      qualityScore: lastQualityReport?.score ?? 90,
+    });
+    setConsentSaved(true);
+  };
+
   const handleCopyReview = async () => {
     if (!draftText.trim()) return;
     if (editPersistTimeoutRef.current) {
@@ -522,6 +605,7 @@ export function CustomerReviewFlow({
         status: 'Copied',
         reviewText: draftText,
       });
+      await persistConsentedExampleIfOptedIn(draftText);
     }
   };
 
@@ -579,6 +663,10 @@ export function CustomerReviewFlow({
     setDraftText('');
     setCurrentDraftId('');
     setFeedbackSubmissionId('');
+    setPreviousDrafts([]);
+    setInitialGeneratedText('');
+    setLastQualityReport(null);
+    setConsentSaved(false);
     setDraftDeleted(false);
     setCopied(false);
     setOpenedGoogle(false);
@@ -747,7 +835,7 @@ export function CustomerReviewFlow({
               <div
                 role="radiogroup"
                 aria-label="Review Language"
-                className="grid grid-cols-3 gap-2.5"
+                className="grid grid-cols-2 sm:grid-cols-4 gap-2.5"
               >
                 {LANGUAGE_OPTIONS.map((lang) => {
                   const active = selectedLanguage === lang.id;
@@ -863,7 +951,7 @@ export function CustomerReviewFlow({
 
                 <div>
                   <p className="text-xs font-medium text-slate-500 mb-2.5">Select Language</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {LANGUAGE_OPTIONS.map((lang) => {
                       const active = selectedLanguage === lang.id;
                       return (
@@ -951,7 +1039,7 @@ export function CustomerReviewFlow({
                   <div
                     role="radiogroup"
                     aria-label="Change Review Language"
-                    className="grid grid-cols-3 gap-2 bg-slate-100/80 p-1 rounded-xl"
+                    className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100/80 p-1 rounded-xl"
                   >
                     {LANGUAGE_OPTIONS.map((lang) => {
                       const active = selectedLanguage === lang.id;
@@ -1121,6 +1209,26 @@ export function CustomerReviewFlow({
                     <span>Delete</span>
                   </button>
                 </div>
+
+                {/* Phase 5: Anonymized Quality Improvement Opt-In */}
+                <label className="pt-2 border-t border-slate-100 flex items-start gap-2.5 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={consentOptIn}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      setConsentOptIn(next);
+                      if (next && copied && draftText.trim()) {
+                        await persistConsentedExampleIfOptedIn(draftText);
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-teal-700 shrink-0"
+                  />
+                  <span>
+                    Allow anonymized feedback &amp; this final phrasing to help improve review quality
+                    {consentSaved ? ' — Saved, thank you!' : ' (optional, no personal info stored).'}
+                  </span>
+                </label>
 
                 {openedGoogle && (
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">

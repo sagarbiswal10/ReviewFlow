@@ -285,7 +285,7 @@ service cloud.firestore {
         data.eventType in ['scan', 'form_start', 'generate', 'copy_redirect'] &&
         data.reviewStyle is string && data.reviewStyle.size() <= 40 &&
         data.sentiment is string && data.sentiment.size() <= 40 &&
-        (!('language' in data) || data.language in ['en', 'hi', 'mr']) &&
+        (!('language' in data) || data.language in ['en', 'hi', 'mr', 'hinglish']) &&
         data.selectedHighlights is list && data.selectedHighlights.size() <= 15 &&
         (data.selectedHighlights.size() == 0 || data.selectedHighlights[0] is string) &&
         (!('standId' in data) || (data.standId is string && data.standId.size() <= 128)) &&
@@ -342,7 +342,7 @@ service cloud.firestore {
         isValidSlug(data.slug) &&
         isValidId(data.feedbackSubmissionId) &&
         data.reviewText is string && data.reviewText.size() >= 1 && data.reviewText.size() <= 4000 &&
-        data.language in ['en', 'hi', 'mr'] &&
+        data.language in ['en', 'hi', 'mr', 'hinglish'] &&
         data.reviewStyle in ['short', 'detailed', 'professional'] &&
         data.variationSeed is int && data.variationSeed >= 1 && data.variationSeed <= 1000 &&
         data.sessionId is string && data.sessionId.size() >= 1 && data.sessionId.size() <= 128 &&
@@ -350,6 +350,80 @@ service cloud.firestore {
         data.generatedAt is timestamp &&
         (!('copiedAt' in data) || data.copiedAt is timestamp) &&
         (!('deletedAt' in data) || data.deletedAt is timestamp) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReviewEvaluation(data) {
+      return data.keys().hasAll([
+          'evalId', 'businessId', 'businessName', 'ownerId', 'slug', 'category',
+          'language', 'reviewStyle', 'source', 'modelId', 'score', 'passed',
+          'inventedClaimCount', 'contradictionCount', 'repetitionCount',
+          'scriptCompliant', 'clicheCount', 'groundedFactCount', 'autoRepaired',
+          'issues', 'responsesSummary', 'generatedReview', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'evalId', 'businessId', 'businessName', 'ownerId', 'clientUid', 'slug', 'category',
+          'language', 'reviewStyle', 'draftId', 'source', 'modelId', 'score', 'passed',
+          'inventedClaimCount', 'contradictionCount', 'repetitionCount',
+          'scriptCompliant', 'clicheCount', 'groundedFactCount', 'autoRepaired',
+          'issues', 'responsesSummary', 'generatedReview', 'createdAt'
+        ]) &&
+        isValidId(data.evalId) &&
+        isValidId(data.businessId) &&
+        data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 120 &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('clientUid' in data) || (data.clientUid is string && data.clientUid.size() <= 128)) &&
+        isValidSlug(data.slug) &&
+        isValidCategory(data.category) &&
+        data.language in ['en', 'hi', 'mr', 'hinglish'] &&
+        data.reviewStyle in ['short', 'detailed', 'professional'] &&
+        (!('draftId' in data) || (data.draftId is string && data.draftId.size() <= 128)) &&
+        data.source in ['live_customer', 'admin_benchmark'] &&
+        data.modelId is string && data.modelId.size() <= 80 &&
+        data.score is int && data.score >= 0 && data.score <= 100 &&
+        data.passed is bool &&
+        data.inventedClaimCount is int && data.inventedClaimCount >= 0 && data.inventedClaimCount <= 100 &&
+        data.contradictionCount is int && data.contradictionCount >= 0 && data.contradictionCount <= 100 &&
+        data.repetitionCount is int && data.repetitionCount >= 0 && data.repetitionCount <= 100 &&
+        data.scriptCompliant is bool &&
+        data.clicheCount is int && data.clicheCount >= 0 && data.clicheCount <= 100 &&
+        data.groundedFactCount is int && data.groundedFactCount >= 0 && data.groundedFactCount <= 100 &&
+        data.autoRepaired is bool &&
+        data.issues is list && data.issues.size() <= 15 &&
+        (data.issues.size() == 0 || data.issues[0] is map) &&
+        data.responsesSummary is string && data.responsesSummary.size() <= 2000 &&
+        data.generatedReview is string && data.generatedReview.size() <= 4000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidConsentedExample(data) {
+      return data.keys().hasAll([
+          'exampleId', 'businessId', 'ownerId', 'slug', 'category',
+          'language', 'reviewStyle', 'responsesSummary', 'additionalComments',
+          'generatedReview', 'finalReview', 'qualityScore', 'consentGiven',
+          'curationStatus', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'exampleId', 'businessId', 'ownerId', 'slug', 'category',
+          'language', 'reviewStyle', 'responsesSummary', 'additionalComments',
+          'generatedReview', 'finalReview', 'qualityScore', 'consentGiven',
+          'curationStatus', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.exampleId) &&
+        isValidId(data.businessId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        isValidSlug(data.slug) &&
+        isValidCategory(data.category) &&
+        data.language in ['en', 'hi', 'mr', 'hinglish'] &&
+        data.reviewStyle in ['short', 'detailed', 'professional'] &&
+        data.responsesSummary is string && data.responsesSummary.size() <= 2000 &&
+        data.additionalComments is string && data.additionalComments.size() <= 2000 &&
+        data.generatedReview is string && data.generatedReview.size() >= 1 && data.generatedReview.size() <= 4000 &&
+        data.finalReview is string && data.finalReview.size() >= 1 && data.finalReview.size() <= 4000 &&
+        data.qualityScore is int && data.qualityScore >= 0 && data.qualityScore <= 100 &&
+        data.consentGiven == true &&
+        data.curationStatus in ['pending', 'approved', 'archived'] &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -1283,6 +1357,86 @@ service cloud.firestore {
           )
         );
       allow delete: if isAdmin() && isValidId(draftId);
+    }
+
+    // 15. AI Quality Validation & Evaluation Telemetry (Phase 3 & 4)
+    match /reviewEvaluations/{evalId} {
+      allow get: if isVerifiedUser() && isValidId(evalId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerId == request.auth.uid ||
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+        ))
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+      );
+      allow create: if isValidId(evalId) &&
+        isValidReviewEvaluation(incoming()) &&
+        incoming().evalId == evalId &&
+        incoming().createdAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().source == 'live_customer' &&
+            exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+            (
+              !('clientUid' in incoming()) ||
+              incoming().clientUid == '' ||
+              (
+                'clientUid' in get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data &&
+                incoming().clientUid == get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.clientUid
+              )
+            )
+          )
+        );
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(evalId);
+    }
+
+    // 16. Anonymized Consented Training & Calibration Examples (Phase 5)
+    match /consentedExamples/{exampleId} {
+      allow get: if isValidId(exampleId) && (
+        isAdmin() ||
+        (resource != null && resource.data.curationStatus == 'approved') ||
+        (isVerifiedUser() && resource != null && existing().ownerId == request.auth.uid)
+      );
+      allow list: if isAdmin() ||
+        resource.data.curationStatus == 'approved' ||
+        (isVerifiedUser() && resource.data.ownerId == request.auth.uid);
+      allow create: if isValidId(exampleId) &&
+        isValidConsentedExample(incoming()) &&
+        incoming().exampleId == exampleId &&
+        incoming().consentGiven == true &&
+        incoming().curationStatus == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            exists(/databases/$(database)/documents/publicProfiles/$(incoming().slug)) &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
+            get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId
+          )
+        );
+      allow update: if isAdmin() &&
+        isValidId(exampleId) &&
+        isValidConsentedExample(incoming()) &&
+        incoming().exampleId == existing().exampleId &&
+        incoming().businessId == existing().businessId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'finalReview', 'curationStatus', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(exampleId);
     }
   }
 }

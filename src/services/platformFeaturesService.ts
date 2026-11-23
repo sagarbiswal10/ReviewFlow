@@ -28,12 +28,19 @@ import {
 import type {
   AiUsageLog,
   Business,
+  BusinessCategory,
+  ConsentedExample,
+  CurationStatus,
   GbpConnection,
   GbpReplyStatus,
   GbpReview,
   QrStand,
   QrStandRequest,
+  ReviewEvaluation,
   ReviewEvent,
+  ReviewLanguage,
+  ReviewQualityReport,
+  ReviewStyle,
   WeeklyModelUsageItem,
   WeeklyReport,
 } from '../types';
@@ -1378,5 +1385,212 @@ export async function markWeeklyReportDispatched(
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `weeklyReports/${report.id}`);
+  }
+}
+
+function generateSecureFeatureId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function saveReviewEvaluation(input: {
+  businessId: string;
+  businessName: string;
+  ownerId: string;
+  clientUid?: string;
+  slug: string;
+  category: BusinessCategory;
+  language: ReviewLanguage;
+  reviewStyle: ReviewStyle;
+  draftId?: string;
+  source: 'live_customer' | 'admin_benchmark';
+  modelId: string;
+  qualityReport: ReviewQualityReport;
+  responsesSummary: string;
+  generatedReview: string;
+}): Promise<string> {
+  const evalId = generateSecureFeatureId('eval');
+  if (!input.businessId || !input.ownerId || input.ownerId === 'demo') {
+    return evalId;
+  }
+
+  const payload = {
+    evalId,
+    businessId: clampString(input.businessId, 128),
+    businessName: clampString(input.businessName, 120) || 'Business',
+    ownerId: clampString(input.ownerId, 128),
+    ...(input.clientUid ? { clientUid: clampString(input.clientUid, 128) } : {}),
+    slug: sanitizeSlug(input.slug || 'business'),
+    category: input.category,
+    language: input.language,
+    reviewStyle: input.reviewStyle,
+    ...(input.draftId ? { draftId: clampString(input.draftId, 128) } : {}),
+    source: input.source,
+    modelId: clampString(input.modelId, 80) || 'gemini-3.1-flash-lite',
+    score: Math.min(100, Math.max(0, Math.round(input.qualityReport.score))),
+    passed: Boolean(input.qualityReport.passed),
+    inventedClaimCount: Math.max(0, Math.round(input.qualityReport.inventedClaimCount)),
+    contradictionCount: Math.max(0, Math.round(input.qualityReport.contradictionCount)),
+    repetitionCount: Math.max(0, Math.round(input.qualityReport.repetitionCount)),
+    scriptCompliant: Boolean(input.qualityReport.scriptCompliant),
+    clicheCount: Math.max(0, Math.round(input.qualityReport.clicheCount)),
+    groundedFactCount: Math.max(0, Math.round(input.qualityReport.groundedFactCount)),
+    autoRepaired: Boolean(input.qualityReport.autoRepaired),
+    issues: (input.qualityReport.issues || []).slice(0, 15).map((issue) => ({
+      type: issue.type,
+      severity: issue.severity,
+      message: clampString(issue.message, 240),
+      ...(issue.evidence ? { evidence: clampString(issue.evidence, 120) } : {}),
+    })),
+    responsesSummary: clampString(input.responsesSummary, 2000),
+    generatedReview: clampString(input.generatedReview, 4000),
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'reviewEvaluations', evalId), payload);
+  } catch {
+    // Non-blocking evaluation log
+  }
+  return evalId;
+}
+
+export function subscribeToAllReviewEvaluations(
+  onData: (evaluations: ReviewEvaluation[]) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'reviewEvaluations'), limit(400)),
+    (snapshot) => {
+      const list = snapshot.docs
+        .map((d) => ({ ...(d.data() as Omit<ReviewEvaluation, 'id'>), id: d.id }))
+        .sort((a, b) => getTimestampMs(b.createdAt) - getTimestampMs(a.createdAt));
+      onData(list);
+    },
+    (err) => {
+      if (onError) onError(err);
+    },
+  );
+}
+
+export async function saveConsentedExample(input: {
+  businessId: string;
+  ownerId: string;
+  slug: string;
+  category: BusinessCategory;
+  language: ReviewLanguage;
+  reviewStyle: ReviewStyle;
+  responsesSummary: string;
+  additionalComments: string;
+  generatedReview: string;
+  finalReview: string;
+  qualityScore: number;
+}): Promise<string> {
+  const exampleId = generateSecureFeatureId('ex');
+  if (!input.businessId || !input.ownerId || input.ownerId === 'demo') {
+    return exampleId;
+  }
+  const cleanGenerated = clampString(input.generatedReview, 4000);
+  const cleanFinal = clampString(input.finalReview || input.generatedReview, 4000);
+  if (!cleanGenerated || !cleanFinal) return exampleId;
+
+  const now = serverTimestamp();
+  const payload = {
+    exampleId,
+    businessId: clampString(input.businessId, 128),
+    ownerId: clampString(input.ownerId, 128),
+    slug: sanitizeSlug(input.slug || 'business'),
+    category: input.category,
+    language: input.language,
+    reviewStyle: input.reviewStyle,
+    responsesSummary: clampString(input.responsesSummary, 2000),
+    additionalComments: clampString(input.additionalComments, 2000),
+    generatedReview: cleanGenerated,
+    finalReview: cleanFinal,
+    qualityScore: Math.min(100, Math.max(0, Math.round(input.qualityScore))),
+    consentGiven: true,
+    curationStatus: 'pending' as CurationStatus,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await setDoc(doc(db, 'consentedExamples', exampleId), payload);
+  } catch {
+    // Non-blocking consented example capture
+  }
+  return exampleId;
+}
+
+export function subscribeToAllConsentedExamples(
+  onData: (examples: ConsentedExample[]) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'consentedExamples'), limit(400)),
+    (snapshot) => {
+      const list = snapshot.docs
+        .map((d) => ({ ...(d.data() as Omit<ConsentedExample, 'id'>), id: d.id }))
+        .sort((a, b) => getTimestampMs(b.createdAt) - getTimestampMs(a.createdAt));
+      onData(list);
+    },
+    (err) => {
+      if (onError) onError(err);
+    },
+  );
+}
+
+export async function updateConsentedExampleStatus(input: {
+  exampleId: string;
+  curationStatus: CurationStatus;
+  finalReview: string;
+}): Promise<void> {
+  const cleanReview = clampString(input.finalReview, 4000);
+  if (!cleanReview) {
+    throw new Error('Final review text cannot be empty.');
+  }
+  try {
+    await updateDoc(doc(db, 'consentedExamples', input.exampleId), {
+      curationStatus: input.curationStatus,
+      finalReview: cleanReview,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `consentedExamples/${input.exampleId}`);
+  }
+}
+
+export async function fetchApprovedExamplesForPrompt(
+  language: ReviewLanguage,
+  category?: string,
+): Promise<Array<{ responsesSummary: string; finalReview: string }>> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'consentedExamples'),
+        where('curationStatus', '==', 'approved'),
+        limit(30),
+      ),
+    );
+    const matches = snap.docs
+      .map((d) => d.data() as Partial<ConsentedExample>)
+      .filter(
+        (ex) =>
+          ex.language === language &&
+          Boolean(ex.responsesSummary) &&
+          Boolean(ex.finalReview),
+      );
+    const sameCategory = category
+      ? matches.filter((ex) => ex.category === category)
+      : [];
+    const prioritized = [...sameCategory, ...matches.filter((ex) => !sameCategory.includes(ex))];
+    return prioritized.slice(0, 3).map((ex) => ({
+      responsesSummary: String(ex.responsesSummary || ''),
+      finalReview: String(ex.finalReview || ''),
+    }));
+  } catch {
+    return [];
   }
 }

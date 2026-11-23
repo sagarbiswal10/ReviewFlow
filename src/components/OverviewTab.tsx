@@ -267,7 +267,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
                           {ev.reviewStyle || '—'}
                           {ev.language && (
                             <span lang={ev.language} className="ml-1.5 text-[11px] text-[#005c55] font-semibold">
-                              ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : 'EN'})
+                              ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : ev.language === 'hinglish' ? 'Hinglish' : 'EN'})
                             </span>
                           )}
                         </td>

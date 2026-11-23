@@ -2,14 +2,20 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { validateReviewQuality, type QualityReviewLanguage, type ReviewQualityReport } from './reviewQualityCore.js';
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
-export type ReviewLanguage = 'en' | 'hi' | 'mr';
+export type ReviewLanguage = QualityReviewLanguage;
 
 export interface QuestionResponseInput {
   question: string;
   answers: string[];
+}
+
+export interface FewShotExampleInput {
+  responsesSummary: string;
+  finalReview: string;
 }
 
 export interface GenerateReviewBody {
@@ -21,6 +27,8 @@ export interface GenerateReviewBody {
   style: ReviewStyle;
   language?: ReviewLanguage;
   variationSeed?: number;
+  previousDrafts?: string[];
+  fewShotExamples?: FewShotExampleInput[];
 }
 
 export interface GenerateSeoKeywordsBody {
@@ -781,12 +789,32 @@ export async function processGenerateReview(
         ? body.style
         : 'short';
     const language: ReviewLanguage =
-      body.language === 'hi' || body.language === 'mr' ? body.language : 'en';
+      body.language === 'hi' || body.language === 'mr' || body.language === 'hinglish'
+        ? body.language
+        : 'en';
     const responses = Array.isArray(body.responses) ? body.responses : [];
     const variationSeed =
       typeof body.variationSeed === 'number' && Number.isFinite(body.variationSeed)
         ? Math.max(1, Math.round(body.variationSeed))
         : 1;
+    const previousDrafts = Array.isArray(body.previousDrafts)
+      ? body.previousDrafts
+          .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+          .map((d) => d.trim().slice(0, 1200))
+          .slice(0, 5)
+      : [];
+    const fewShotExamples = Array.isArray(body.fewShotExamples)
+      ? body.fewShotExamples
+          .filter(
+            (ex): ex is FewShotExampleInput =>
+              Boolean(ex) &&
+              typeof ex.responsesSummary === 'string' &&
+              ex.responsesSummary.trim().length > 0 &&
+              typeof ex.finalReview === 'string' &&
+              ex.finalReview.trim().length > 0,
+          )
+          .slice(0, 3)
+      : [];
 
     if (!businessName) {
       return { status: 400, data: { error: 'Business name is required.' } };
@@ -832,7 +860,7 @@ export async function processGenerateReview(
     const languageRules: Record<ReviewLanguage, string> = {
       en: [
         'Target Language: English.',
-        'Write entirely in natural, everyday conversational English.',
+        'Write entirely in natural, everyday conversational English (Roman script only).',
         'Good natural example: "The food was really good, and the staff were friendly. The only thing was that the service took a little longer than expected. Overall, I had a nice experience."',
         'Bad AI-sounding style to AVOID: "I had an absolutely amazing experience at this wonderful restaurant. The food was exceptional, and the staff provided outstanding hospitality."',
       ].join('\n'),
@@ -840,47 +868,147 @@ export async function processGenerateReview(
         'Target Language: Hindi (हिंदी, Devanagari script ONLY).',
         'Write the ENTIRE review in natural, everyday spoken Hindi using Devanagari script (हिंदी).',
         'Use conversational, commonly spoken Hindi — NOT stiff, bookish, or overly formal Sanskritized translations.',
-        'Do NOT mix English sentences or Roman script unless the customer explicitly requested Hinglish or mixed output.',
+        'Do NOT mix full English sentences or write Hindi in Roman script here (Roman Hinglish has its own separate option).',
         'Good natural Hindi example: "यहाँ का खाना काफी अच्छा था और स्टाफ भी बहुत अच्छा था। बस सर्विस में थोड़ा समय लगा। बाकी मेरा अनुभव अच्छा रहा।"',
       ].join('\n'),
       mr: [
         'Target Language: Marathi (मराठी, Devanagari script ONLY).',
         'Write the ENTIRE review in natural, everyday spoken Marathi using Devanagari script (मराठी).',
         'Use conversational, commonly spoken Marathi — NOT literal word-for-word or stiff formal translations.',
-        'Do NOT mix English sentences or Roman script unless the customer explicitly requested mixed output.',
+        'Do NOT mix English sentences or Roman script unless a single unavoidable service noun is needed.',
         'Good natural Marathi example: "इथलं जेवण खूप छान होतं आणि स्टाफसुद्धा खूप मदत करणारा होता. फक्त सर्व्हिसला थोडा वेळ लागला. बाकी अनुभव चांगला होता."',
+      ].join('\n'),
+      hinglish: [
+        'Target Language: Hinglish (Conversational Indian Hinglish in Roman English script ONLY).',
+        '1. Generate the review using a natural combination of everyday Hindi and English.',
+        '2. Use Roman English characters ONLY — STRICTLY ZERO Devanagari characters (e.g. write "accha", NEVER "अच्छा").',
+        '3. Preserve commonly used Hindi expressions such as "kaafi accha", "bahut badhiya", "dobara zaroor aayenge", "accha tha", "overall experience acha raha".',
+        '4. Use commonly spoken English words such as food, service, ambience, staff, and experience where natural.',
+        '5. Avoid translating every English word into Hindi.',
+        '6. Avoid overly formal Hindi and unnatural textbook constructions.',
+        '7. Maintain natural conversational Indian Hinglish.',
+        '8. Preserve the customer\'s actual sentiment and questionnaire answers.',
+        '9. Do not insert slang, grammatical errors, or exaggerated praise artificially.',
+        '10. Do not invent experiences or business details.',
+        'Good natural Hinglish example (for Food: Good, Service: Quick, Ambience: Average, Return visit: Yes): "Food accha tha aur service bhi kaafi quick thi. Ambience okay tha, but overall experience acha raha. Dobara visit karna pasand karunga."',
       ].join('\n'),
     };
 
+    const languageLabel =
+      language === 'hi'
+        ? 'Hindi (हिंदी)'
+        : language === 'mr'
+          ? 'Marathi (मराठी)'
+          : language === 'hinglish'
+            ? 'Hinglish (Roman Hindi + English)'
+            : 'English';
+
+    const calibrationBlock =
+      fewShotExamples.length > 0
+        ? [
+            'Curated Style Exemplars (learn natural tone & brevity ONLY; NEVER copy facts from them):',
+            ...fewShotExamples.map(
+              (ex, idx) =>
+                `Example ${idx + 1} Feedback: ${ex.responsesSummary}\nExample ${idx + 1} Natural Review: "${ex.finalReview}"`,
+            ),
+          ].join('\n')
+        : '';
+
+    const previousDraftsBlock =
+      previousDrafts.length > 0
+        ? [
+            'Previous Drafts Already Shown (write fresh sentence structure so it does NOT repeat these word-for-word):',
+            ...previousDrafts.map((d, idx) => `- Draft ${idx + 1}: "${d}"`),
+          ].join('\n')
+        : '';
+
     const prompt = [
       `Business Context: ${businessName}${category ? ` (${category})` : ''}`,
-      `Requested Language: ${language === 'hi' ? 'Hindi (हिंदी)' : language === 'mr' ? 'Marathi (मराठी)' : 'English'}`,
+      `Requested Language: ${languageLabel}`,
       `Length/Flow Preference: ${styleGuidance[style]}`,
       `Draft Variation #${variationSeed}: ${selectedAngle}`,
       'Customer Feedback (use ONLY this information):',
       formattedResponses || '(No multiple-choice selections)',
       additionalComments ? `Customer Written Note: "${additionalComments}"` : '',
+      calibrationBlock,
+      previousDraftsBlock,
     ]
       .filter(Boolean)
-      .join('\n');
+      .join('\n\n');
 
     const systemInstruction = [
       'You help a real customer put their own feedback into a natural, personal, everyday Google review.',
-      'Return valid JSON matching {"review":"...","keywordsUsed":["..."]}.',
+      'Return valid JSON strictly matching this schema: {"review": string, "language": string, "sentimentDetected": string, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[], "selfCheck": {"noInventedClaims": boolean, "scriptCompliant": boolean, "conversationalTone": boolean}}.',
       languageRules[language],
-      'Strict Authenticity Rules:',
+      'Strict Authenticity & Grounding Rules:',
       '1. Use ONLY the customer\'s actual answers, selected options, and written note. NEVER invent services, dishes, staff names, prices, claims, or details the customer never mentioned.',
-      '2. Preserve the customer\'s exact meaning and sentiment. If they gave mixed, average, or critical feedback (like slow service or an issue), state it plainly and honestly — do NOT hide negatives or turn mild praise into hype.',
-      '3. NEVER use generic AI phrases, marketing fluff, or excessive adjectives (ban words like "amazing experience", "exceptional", "outstanding hospitality", "exceeded all expectations", "hidden gem", "top-notch", "must-visit", "wonderful", "seamless").',
-      '4. Vary sentence length and structure naturally so different drafts do not sound templated or identical.',
-      '5. Do not force business names or marketing keywords if they make the review sound unnatural or scripted. No quotation marks around the review, no bullet points, no hashtags, no emojis.',
-      '6. In keywordsUsed, list only 0-3 short exact phrases directly drawn from what the customer actually mentioned (empty array [] is fine).',
+      '2. Preserve the customer\'s exact meaning and sentiment. If they gave mixed, average, or critical feedback (like slow service or okay ambience), state it plainly and honestly — do NOT hide negatives or claim everything was perfect.',
+      '3. If the customer said "No" or "Maybe" to returning, NEVER promise they will definitely come back.',
+      '4. NEVER use generic AI phrases, marketing fluff, or excessive adjectives (ban words like "amazing experience", "exceptional", "outstanding hospitality", "exceeded all expectations", "hidden gem", "top-notch", "must-visit", "wonderful", "seamless experience", "everything was perfect").',
+      '5. Vary sentence length and structure naturally so different drafts do not repeat sentences or sound templated.',
+      '6. Do not force business names or marketing keywords if they make the review sound unnatural or scripted. No quotation marks around the review, no bullet points, no hashtags, no emojis.',
+      '7. In groundedFacts, list the exact facts from the customer feedback you included. In keywordsUsed, list 0-3 short exact phrases directly drawn from what the customer mentioned.',
     ].join('\n');
 
-    let genResult: GeminiGenerationResult;
-    if (AI_PROVIDER === 'openai') {
-      genResult = await callOpenAIJson(systemInstruction, prompt);
-    } else {
+    const reviewResponseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        review: { type: Type.STRING },
+        language: { type: Type.STRING },
+        sentimentDetected: { type: Type.STRING },
+        groundedFacts: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        styleApplied: { type: Type.STRING },
+        keywordsUsed: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        selfCheck: {
+          type: Type.OBJECT,
+          properties: {
+            noInventedClaims: { type: Type.BOOLEAN },
+            scriptCompliant: { type: Type.BOOLEAN },
+            conversationalTone: { type: Type.BOOLEAN },
+          },
+          required: ['noInventedClaims', 'scriptCompliant', 'conversationalTone'],
+        },
+      },
+      required: [
+        'review',
+        'language',
+        'sentimentDetected',
+        'groundedFacts',
+        'styleApplied',
+        'keywordsUsed',
+        'selfCheck',
+      ],
+    };
+
+    const runModelCall = async (
+      callSystem: string,
+      callPrompt: string,
+    ): Promise<GeminiGenerationResult> => {
+      if (AI_PROVIDER === 'openai') {
+        return callOpenAIJson(callSystem, callPrompt);
+      }
+      const geminiKey = getGeminiApiKey();
+      if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
+        throw new Error('GEMINI_API_KEY is not configured on the server.');
+      }
+      return generateGeminiContentWithFallback(
+        callPrompt,
+        {
+          systemInstruction: callSystem,
+          responseMimeType: 'application/json',
+          responseSchema: reviewResponseSchema,
+        },
+        2,
+      );
+    };
+
+    if (AI_PROVIDER !== 'openai') {
       const geminiKey = getGeminiApiKey();
       if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
         return {
@@ -888,60 +1016,175 @@ export async function processGenerateReview(
           data: { error: 'GEMINI_API_KEY is not configured on the server.' },
         };
       }
-
-      genResult = await generateGeminiContentWithFallback(
-        prompt,
-        {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              review: { type: Type.STRING },
-              keywordsUsed: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-            },
-            required: ['review', 'keywordsUsed'],
-          },
-        },
-        2,
-      );
     }
 
-    let reviewText = '';
-    let keywordsUsed: string[] = [];
+    const genResult = await runModelCall(systemInstruction, prompt);
 
-    if (genResult.text) {
-      try {
-        const parsed = JSON.parse(genResult.text) as {
-          review?: string;
-          short?: string;
-          detailed?: string;
-          professional?: string;
-          keywordsUsed?: unknown;
+    interface ParsedReviewJson {
+      review?: string;
+      short?: string;
+      detailed?: string;
+      professional?: string;
+      language?: string;
+      sentimentDetected?: string;
+      groundedFacts?: unknown;
+      styleApplied?: string;
+      keywordsUsed?: unknown;
+      selfCheck?: {
+        noInventedClaims?: boolean;
+        scriptCompliant?: boolean;
+        conversationalTone?: boolean;
+      };
+    }
+
+    const parseReviewPayload = (rawText: string): {
+      reviewText: string;
+      keywordsUsed: string[];
+      structuredMeta: {
+        sentimentDetected: string;
+        groundedFacts: string[];
+        styleApplied: string;
+        selfCheck: {
+          noInventedClaims: boolean;
+          scriptCompliant: boolean;
+          conversationalTone: boolean;
         };
-        const chosen = parsed[style];
-        reviewText =
-          (typeof parsed.review === 'string' ? parsed.review.trim() : '') ||
-          (typeof chosen === 'string' ? chosen.trim() : '');
-        if (Array.isArray(parsed.keywordsUsed)) {
-          keywordsUsed = parsed.keywordsUsed
-            .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
-            .map((k) => k.trim())
-            .slice(0, 6);
+      };
+    } => {
+      let parsedText = '';
+      let parsedKeywords: string[] = [];
+      let sentimentDetected = 'positive';
+      let groundedFacts: string[] = [];
+      let styleApplied: string = style;
+      let selfCheck = {
+        noInventedClaims: true,
+        scriptCompliant: true,
+        conversationalTone: true,
+      };
+
+      if (rawText) {
+        try {
+          const parsed = JSON.parse(rawText) as ParsedReviewJson;
+          const chosen = parsed[style];
+          parsedText =
+            (typeof parsed.review === 'string' ? parsed.review.trim() : '') ||
+            (typeof chosen === 'string' ? chosen.trim() : '');
+          if (Array.isArray(parsed.keywordsUsed)) {
+            parsedKeywords = parsed.keywordsUsed
+              .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+              .map((k) => k.trim())
+              .slice(0, 6);
+          }
+          if (typeof parsed.sentimentDetected === 'string' && parsed.sentimentDetected.trim()) {
+            sentimentDetected = parsed.sentimentDetected.trim().slice(0, 40);
+          }
+          if (Array.isArray(parsed.groundedFacts)) {
+            groundedFacts = parsed.groundedFacts
+              .filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+              .map((f) => f.trim().slice(0, 120))
+              .slice(0, 10);
+          }
+          if (typeof parsed.styleApplied === 'string' && parsed.styleApplied.trim()) {
+            styleApplied = parsed.styleApplied.trim().slice(0, 40);
+          }
+          if (parsed.selfCheck && typeof parsed.selfCheck === 'object') {
+            selfCheck = {
+              noInventedClaims: Boolean(parsed.selfCheck.noInventedClaims ?? true),
+              scriptCompliant: Boolean(parsed.selfCheck.scriptCompliant ?? true),
+              conversationalTone: Boolean(parsed.selfCheck.conversationalTone ?? true),
+            };
+          }
+        } catch {
+          parsedText = rawText.replace(/^["']|["']$/g, '').trim();
         }
-      } catch {
-        reviewText = genResult.text.replace(/^["']|["']$/g, '').trim();
       }
-    }
+
+      return {
+        reviewText: parsedText,
+        keywordsUsed: parsedKeywords,
+        structuredMeta: {
+          sentimentDetected,
+          groundedFacts,
+          styleApplied,
+          selfCheck,
+        },
+      };
+    };
+
+    let { reviewText, keywordsUsed, structuredMeta } = parseReviewPayload(genResult.text);
+    let totalInputTokens = genResult.inputTokens;
+    let totalOutputTokens = genResult.outputTokens;
+    let totalTokens = genResult.totalTokens;
+    let finalModelId = genResult.modelId;
 
     if (!reviewText) {
       return {
         status: 502,
         data: { error: 'Unable to generate a review draft right now. Please try again.' },
       };
+    }
+
+    // Phase 3: Server-Side Quality Validation & Targeted Auto-Repair Pass
+    let qualityReport: ReviewQualityReport = validateReviewQuality({
+      reviewText,
+      language,
+      businessName,
+      category,
+      responses,
+      additionalComments,
+      previousDrafts,
+      autoRepaired: false,
+    });
+
+    if (!qualityReport.passed || !qualityReport.scriptCompliant || qualityReport.clicheCount > 0) {
+      const repairIssues = qualityReport.issues
+        .map((i) => `- [${i.type}] ${i.message}${i.evidence ? ` (Evidence: "${i.evidence}")` : ''}`)
+        .join('\n');
+
+      const repairPrompt = [
+        `Original Draft Needed Fixing:\n"${reviewText}"`,
+        `Detected Quality Issues:\n${repairIssues}`,
+        `Customer Feedback (ONLY allowed facts):\n${formattedResponses || '(None)'}`,
+        additionalComments ? `Customer Written Note: "${additionalComments}"` : '',
+        `Rewrite the review cleanly in ${languageLabel} fixing EVERY issue above while staying natural and strictly grounded.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      try {
+        const repairRes = await runModelCall(systemInstruction, repairPrompt);
+        totalInputTokens += repairRes.inputTokens;
+        totalOutputTokens += repairRes.outputTokens;
+        totalTokens += repairRes.totalTokens;
+        finalModelId = repairRes.modelId || finalModelId;
+
+        const repairedParsed = parseReviewPayload(repairRes.text);
+        if (repairedParsed.reviewText) {
+          const repairedReport = validateReviewQuality({
+            reviewText: repairedParsed.reviewText,
+            language,
+            businessName,
+            category,
+            responses,
+            additionalComments,
+            previousDrafts,
+            autoRepaired: true,
+          });
+          if (
+            repairedReport.score >= qualityReport.score ||
+            (repairedReport.scriptCompliant && !qualityReport.scriptCompliant)
+          ) {
+            reviewText = repairedParsed.reviewText;
+            if (repairedParsed.keywordsUsed.length > 0) {
+              keywordsUsed = repairedParsed.keywordsUsed;
+            }
+            structuredMeta = repairedParsed.structuredMeta;
+            qualityReport = repairedReport;
+          }
+        }
+      } catch {
+        // Non-fatal: fall back to initial draft + qualityReport if repair pass fails
+      }
     }
 
     return {
@@ -951,16 +1194,18 @@ export async function processGenerateReview(
         language,
         drafts: { [style]: reviewText },
         keywordsUsed,
+        structuredMeta,
+        qualityReport,
         aiTelemetry: {
           provider: AI_PROVIDER,
-          modelId: genResult.modelId,
-          inputTokens: genResult.inputTokens,
-          outputTokens: genResult.outputTokens,
-          totalTokens: genResult.totalTokens,
+          modelId: finalModelId,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          totalTokens,
           estimatedCostUsd: calculateEstimatedCostUsd(
-            genResult.modelId,
-            genResult.inputTokens,
-            genResult.outputTokens,
+            finalModelId,
+            totalInputTokens,
+            totalOutputTokens,
           ),
           status: 'success',
         },

@@ -15,7 +15,7 @@ export type BusinessCategory = (typeof BUSINESS_CATEGORIES)[number];
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
-export type ReviewLanguage = 'en' | 'hi' | 'mr';
+export type ReviewLanguage = 'en' | 'hi' | 'mr' | 'hinglish';
 
 export type ReviewDraftStatus = 'Generated' | 'Edited' | 'Copied' | 'Deleted';
 
@@ -378,3 +378,84 @@ export interface AdminEmail {
   addedBy: string;
   createdAt?: unknown;
 }
+
+export type QualityIssueType =
+  | 'invented_claim'
+  | 'contradiction'
+  | 'repetition'
+  | 'script_mismatch'
+  | 'ai_cliche'
+  | 'empty_output';
+
+export interface QualityIssue {
+  type: QualityIssueType;
+  severity: 'error' | 'warning';
+  message: string;
+  evidence?: string;
+}
+
+export interface ReviewQualityReport {
+  score: number;
+  passed: boolean;
+  language: ReviewLanguage;
+  inventedClaimCount: number;
+  contradictionCount: number;
+  repetitionCount: number;
+  scriptCompliant: boolean;
+  clicheCount: number;
+  groundedFactCount: number;
+  autoRepaired: boolean;
+  issues: QualityIssue[];
+}
+
+export interface ReviewEvaluation {
+  id: string;
+  evalId: string;
+  businessId: string;
+  businessName: string;
+  ownerId: string;
+  clientUid?: string;
+  slug: string;
+  category: BusinessCategory;
+  language: ReviewLanguage;
+  reviewStyle: ReviewStyle;
+  draftId?: string;
+  source: 'live_customer' | 'admin_benchmark';
+  modelId: string;
+  score: number;
+  passed: boolean;
+  inventedClaimCount: number;
+  contradictionCount: number;
+  repetitionCount: number;
+  scriptCompliant: boolean;
+  clicheCount: number;
+  groundedFactCount: number;
+  autoRepaired: boolean;
+  issues: QualityIssue[];
+  responsesSummary: string;
+  generatedReview: string;
+  createdAt?: unknown;
+}
+
+export type CurationStatus = 'pending' | 'approved' | 'archived';
+
+export interface ConsentedExample {
+  id: string;
+  exampleId: string;
+  businessId: string;
+  ownerId: string;
+  slug: string;
+  category: BusinessCategory;
+  language: ReviewLanguage;
+  reviewStyle: ReviewStyle;
+  responsesSummary: string;
+  additionalComments: string;
+  generatedReview: string;
+  finalReview: string;
+  qualityScore: number;
+  consentGiven: boolean;
+  curationStatus: CurationStatus;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
