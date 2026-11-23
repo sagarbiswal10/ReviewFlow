@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Bricolage Grotesque", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Bricolage Grotesque", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Plus Jakarta Sans", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -11,14 +12,37 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #faf8ff;
-    color: #0f172a;
+    background-color: #f3f1ec;
+    color: #111114;
     scroll-behavior: smooth;
+  }
+
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+
+  .lenis.lenis-smooth [data-lenis-prevent] {
+    overscroll-behavior: contain;
+  }
+
+  .lenis.lenis-stopped {
+    overflow: hidden;
   }
 
   h1, h2, h3, .font-display {
     font-family: var(--font-display);
   }
+}
+
+.font-editorial {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
 }
 
 .tabular-nums {
@@ -30,6 +54,126 @@
   line-height: 1.85;
   letter-spacing: 0;
   word-break: break-word;
+}
+
+/* ==========================================
+   EDITORIAL 3D LANDING SURFACES & EFFECTS
+   ========================================== */
+
+.rf-dot-grid-light {
+  background-color: #f3f1ec;
+  background-image: radial-gradient(rgba(17, 17, 20, 0.11) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.rf-dot-grid-stone {
+  background-color: #eae7df;
+  background-image: radial-gradient(rgba(17, 17, 20, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.rf-dot-grid-dark {
+  background-color: #0d0d0f;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.085) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.rf-dot-grid-blue {
+  background-color: #2454ff;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.rf-dot-grid-pink {
+  background-color: #ff3d8b;
+  background-image: radial-gradient(rgba(13, 13, 15, 0.28) 1.35px, transparent 1.35px);
+  background-size: 14px 14px;
+}
+
+.rf-3d-chromatic {
+  text-shadow:
+    3px 3px 0px #ff3d8b,
+    -2px -1px 0px #2454ff;
+}
+
+.rf-shadow-dark-sm {
+  box-shadow: 3px 3px 0px #0d0d0f;
+}
+
+.rf-shadow-dark {
+  box-shadow: 4px 4px 0px #0d0d0f;
+}
+
+.rf-shadow-dark-lg {
+  box-shadow: 8px 8px 0px #0d0d0f;
+}
+
+.rf-shadow-pink {
+  box-shadow: 4px 4px 0px #ff3d8b;
+}
+
+.rf-shadow-pink-lg {
+  box-shadow: 6px 6px 0px #ff3d8b;
+}
+
+@keyframes rf-marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.rf-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: rf-marquee 26s linear infinite;
+  will-change: transform;
+}
+
+.rf-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes rf-float-slow {
+  0%, 100% {
+    transform: translate3d(0, 0px, 36px) rotate(-1.5deg);
+  }
+  50% {
+    transform: translate3d(0, -10px, 46px) rotate(1.2deg);
+  }
+}
+
+@keyframes rf-float-slow-alt {
+  0%, 100% {
+    transform: translate3d(0, 0px, 42px) rotate(1.5deg);
+  }
+  50% {
+    transform: translate3d(0, -8px, 54px) rotate(-1.2deg);
+  }
+}
+
+.rf-float-badge-a {
+  animation: rf-float-slow 6s ease-in-out infinite;
+}
+
+.rf-float-badge-b {
+  animation: rf-float-slow-alt 7.2s ease-in-out infinite;
+}
+
+@keyframes rf-dash-flow {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.rf-dash-animated {
+  stroke-dasharray: 6 6;
+  animation: rf-dash-flow 1.2s linear infinite;
 }
 
 .spatial-canvas {
