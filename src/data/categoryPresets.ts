@@ -538,6 +538,9 @@ export const DEFAULT_ENABLED_FEATURES = {
   inStoreQrStands: true,
   gbpAutoReply: true,
   weeklyReports: true,
+  formTemplates: true,
+  qrStudio: true,
+  brandingSettings: true,
 };
 
 export const BUILTIN_DEMO_PROFILE: PublicProfile = {

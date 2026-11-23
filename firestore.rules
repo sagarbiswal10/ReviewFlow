@@ -100,7 +100,8 @@ service cloud.firestore {
         f.keys().hasAll(['aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView']) &&
         f.keys().hasOnly([
           'aiReviewDrafts', 'customQuestions', 'pdfPosterExport', 'analyticsView',
-          'inStoreQrStands', 'gbpAutoReply', 'weeklyReports'
+          'inStoreQrStands', 'gbpAutoReply', 'weeklyReports',
+          'formTemplates', 'qrStudio', 'brandingSettings'
         ]) &&
         f.aiReviewDrafts is bool &&
         f.customQuestions is bool &&
@@ -108,7 +109,17 @@ service cloud.firestore {
         f.analyticsView is bool &&
         (!('inStoreQrStands' in f) || f.inStoreQrStands is bool) &&
         (!('gbpAutoReply' in f) || f.gbpAutoReply is bool) &&
-        (!('weeklyReports' in f) || f.weeklyReports is bool);
+        (!('weeklyReports' in f) || f.weeklyReports is bool) &&
+        (!('formTemplates' in f) || f.formTemplates is bool) &&
+        (!('qrStudio' in f) || f.qrStudio is bool) &&
+        (!('brandingSettings' in f) || f.brandingSettings is bool);
+    }
+
+    function canClientEditFeatureFields(bizData, changedKeys) {
+      return (!changedKeys.hasAny(['formTemplate']) || !('formTemplates' in bizData.enabledFeatures) || bizData.enabledFeatures.formTemplates == true) &&
+        (!changedKeys.hasAny(['questions']) || bizData.enabledFeatures.customQuestions == true) &&
+        (!changedKeys.hasAny(['qrConfig']) || !('qrStudio' in bizData.enabledFeatures) || bizData.enabledFeatures.qrStudio == true) &&
+        (!changedKeys.hasAny(['ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding', 'seoKeywords', 'slug']) || !('brandingSettings' in bizData.enabledFeatures) || bizData.enabledFeatures.brandingSettings == true);
     }
 
     function isValidBranding(b) {
@@ -731,6 +742,7 @@ service cloud.firestore {
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
             (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
+            canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
@@ -745,6 +757,7 @@ service cloud.firestore {
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
+            canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'qrConfig', 'questions', 'formTemplate', 'updatedAt'
             ])
@@ -808,6 +821,10 @@ service cloud.firestore {
               (
                 get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'full' &&
                 incoming().enabledFeatures == existing().enabledFeatures &&
+                canClientEditFeatureFields(
+                  get(/databases/$(database)/documents/businesses/$(existing().businessId)).data,
+                  incoming().diff(existing()).affectedKeys()
+                ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'name', 'category', 'googleReviewUrl', 'logoDataUrl',
                   'branding', 'qrConfig', 'questions', 'formTemplate', 'seoKeywords',
@@ -817,6 +834,10 @@ service cloud.firestore {
               (
                 get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'qr_and_questions' &&
                 incoming().enabledFeatures == existing().enabledFeatures &&
+                canClientEditFeatureFields(
+                  get(/databases/$(database)/documents/businesses/$(existing().businessId)).data,
+                  incoming().diff(existing()).affectedKeys()
+                ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'qrConfig', 'questions', 'formTemplate', 'updatedAt'
                 ])

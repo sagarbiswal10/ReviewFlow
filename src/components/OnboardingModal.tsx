@@ -10,9 +10,10 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
+import { BUSINESS_CATEGORIES, type BusinessCategory, type EnabledFeatures } from '../types';
 import {
   createCategoryQuestions,
+  DEFAULT_ENABLED_FEATURES,
   DEMO_BISTRO_LOGO,
   DEMO_SALON_LOGO,
 } from '../data/categoryPresets';
@@ -51,6 +52,9 @@ export function OnboardingModal({
   const [category, setCategory] = useState<BusinessCategory>('Hair Salons');
   const [clientEmail, setClientEmail] = useState(isAdmin ? '' : userEmail);
   const [clientAccessLevel, setClientAccessLevel] = useState<'read_only' | 'qr_and_questions' | 'full'>('full');
+  const [enabledFeatures, setEnabledFeatures] = useState<EnabledFeatures>({
+    ...DEFAULT_ENABLED_FEATURES,
+  });
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(userEmail);
@@ -210,6 +214,7 @@ export function OnboardingModal({
         ownerName: ownerName.trim(),
         clientEmail: isAdmin ? clientEmail : userEmail,
         clientAccessLevel: isAdmin ? clientAccessLevel : 'full',
+        enabledFeatures: isAdmin ? enabledFeatures : undefined,
         name: name.trim(),
         slug: normalizedSlug,
         category,
@@ -661,6 +666,46 @@ export function OnboardingModal({
                       <option value="qr_and_questions">QR &amp; Questions Editor</option>
                       <option value="full">Full Self-Service</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200/80 space-y-2.5">
+                  <p className="text-xs font-semibold text-slate-800">
+                    Enabled Portal Features for This Business
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {(
+                      [
+                        { key: 'formTemplates', label: 'Customer Form Templates' },
+                        { key: 'customQuestions', label: 'Custom Question Builder' },
+                        { key: 'qrStudio', label: 'QR Studio & Styling' },
+                        { key: 'brandingSettings', label: 'Branding & Google Link' },
+                        { key: 'aiReviewDrafts', label: 'AI Review Drafts' },
+                        { key: 'pdfPosterExport', label: 'Printable A4 PDF Posters' },
+                        { key: 'analyticsView', label: 'Client Analytics View' },
+                        { key: 'inStoreQrStands', label: 'In-Store QR Stands' },
+                        { key: 'gbpAutoReply', label: 'GBP AI Auto Reply' },
+                        { key: 'weeklyReports', label: 'Weekly Reports' },
+                      ] as const
+                    ).map((feat) => (
+                      <label
+                        key={feat.key}
+                        className="px-3 py-2 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-50"
+                      >
+                        <span>{feat.label}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(enabledFeatures[feat.key])}
+                          onChange={(e) =>
+                            setEnabledFeatures((prev) => ({
+                              ...prev,
+                              [feat.key]: e.target.checked,
+                            }))
+                          }
+                          className="w-4 h-4 rounded border-slate-300 text-teal-700"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
               </section>

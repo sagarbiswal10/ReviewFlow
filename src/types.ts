@@ -75,6 +75,9 @@ export interface EnabledFeatures {
   inStoreQrStands?: boolean;
   gbpAutoReply?: boolean;
   weeklyReports?: boolean;
+  formTemplates?: boolean;
+  qrStudio?: boolean;
+  brandingSettings?: boolean;
 }
 
 export interface FeedbackQuestion {

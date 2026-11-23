@@ -19,6 +19,9 @@ export const DEFAULT_ENABLED_FEATURES_SAFE: EnabledFeatures = {
   inStoreQrStands: true,
   gbpAutoReply: true,
   weeklyReports: true,
+  formTemplates: true,
+  qrStudio: true,
+  brandingSettings: true,
 };
 
 export function clampString(val: unknown, max: number): string {
@@ -107,6 +110,9 @@ export function sanitizeEnabledFeatures(features?: Partial<EnabledFeatures>): En
     inStoreQrStands: features?.inStoreQrStands ?? DEFAULT_ENABLED_FEATURES_SAFE.inStoreQrStands,
     gbpAutoReply: features?.gbpAutoReply ?? DEFAULT_ENABLED_FEATURES_SAFE.gbpAutoReply,
     weeklyReports: features?.weeklyReports ?? DEFAULT_ENABLED_FEATURES_SAFE.weeklyReports,
+    formTemplates: features?.formTemplates ?? DEFAULT_ENABLED_FEATURES_SAFE.formTemplates,
+    qrStudio: features?.qrStudio ?? DEFAULT_ENABLED_FEATURES_SAFE.qrStudio,
+    brandingSettings: features?.brandingSettings ?? DEFAULT_ENABLED_FEATURES_SAFE.brandingSettings,
   };
 }
 

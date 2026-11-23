@@ -327,7 +327,23 @@ export function ClientPortalView({
   }, [activeBizId, activeBizOwnerId, isClientUidLinked, user.uid, isAdmin]);
 
   useEffect(() => {
-    if (!activeBusiness || isAdmin) return;
+    if (!activeBusiness) return;
+    const f = activeBusiness.enabledFeatures;
+    const isTabDisabledByFeature =
+      (activeTab === 'templates' && f.formTemplates === false) ||
+      (activeTab === 'qr_editor' && f.qrStudio === false) ||
+      (activeTab === 'questions' && !f.customQuestions) ||
+      (activeTab === 'branding' && f.brandingSettings === false) ||
+      (activeTab === 'qr_stands' && f.inStoreQrStands === false) ||
+      (activeTab === 'gbp_reply' && f.gbpAutoReply === false) ||
+      (activeTab === 'weekly_reports' && f.weeklyReports === false);
+
+    if (isTabDisabledByFeature) {
+      setActiveTab('qr_features');
+      return;
+    }
+
+    if (isAdmin) return;
     const allowedReadOnly: PortalTab[] = [
       'qr_features',
       'qr_stands',
@@ -347,7 +363,13 @@ export function ClientPortalView({
     ) {
       setActiveTab('qr_features');
     }
-  }, [activeBusiness?.id, activeBusiness?.clientAccessLevel, activeTab, isAdmin]);
+  }, [
+    activeBusiness?.id,
+    activeBusiness?.clientAccessLevel,
+    activeBusiness?.enabledFeatures,
+    activeTab,
+    isAdmin,
+  ]);
 
   const publicBaseUrl = getPublicAppUrl();
   const reviewUrl = activeBusiness
@@ -406,12 +428,17 @@ export function ClientPortalView({
       icon: FileBarChart2,
       visible: activeBusiness?.enabledFeatures.weeklyReports !== false,
     },
-    { id: 'templates', label: 'Templates', icon: LayoutGrid, visible: true },
+    {
+      id: 'templates',
+      label: 'Templates',
+      icon: LayoutGrid,
+      visible: activeBusiness?.enabledFeatures.formTemplates !== false,
+    },
     {
       id: 'qr_editor',
       label: 'QR Studio',
       icon: SlidersHorizontal,
-      visible: canEditQrOrQuestions,
+      visible: canEditQrOrQuestions && activeBusiness?.enabledFeatures.qrStudio !== false,
     },
     {
       id: 'questions',
@@ -419,7 +446,12 @@ export function ClientPortalView({
       icon: FileText,
       visible: canEditQrOrQuestions && (activeBusiness?.enabledFeatures.customQuestions ?? true),
     },
-    { id: 'branding', label: 'Branding & Profile', icon: Palette, visible: canEditBranding },
+    {
+      id: 'branding',
+      label: 'Branding & Profile',
+      icon: Palette,
+      visible: canEditBranding && activeBusiness?.enabledFeatures.brandingSettings !== false,
+    },
     { id: 'preview', label: 'Customer Form Preview', icon: Eye, visible: true },
   ];
 
@@ -1665,7 +1697,7 @@ export function ClientPortalView({
                             </>
                           )}
                         </button>
-                        {canEditQrOrQuestions && (
+                        {canEditQrOrQuestions && activeBusiness.enabledFeatures.qrStudio !== false && (
                           <button
                             type="button"
                             onClick={() => setActiveTab('qr_editor')}
@@ -1693,7 +1725,7 @@ export function ClientPortalView({
                         <h3 className="font-display text-base font-bold text-slate-900">
                           Google Review Destination
                         </h3>
-                        {canEditBranding && (
+                        {canEditBranding && activeBusiness.enabledFeatures.brandingSettings !== false && (
                           <button
                             type="button"
                             onClick={() => setActiveTab('branding')}
@@ -1969,18 +2001,21 @@ export function ClientPortalView({
                 />
               )}
 
-            {activeTab === 'templates' && (
-              <TemplatesTab
-                business={activeBusiness}
-                isAdmin={isAdmin}
-                canEdit={canEditQrOrQuestions}
-                onOpenPreview={() => setActiveTab('preview')}
-              />
-            )}
+            {activeTab === 'templates' &&
+              activeBusiness.enabledFeatures.formTemplates !== false && (
+                <TemplatesTab
+                  business={activeBusiness}
+                  isAdmin={isAdmin}
+                  canEdit={canEditQrOrQuestions}
+                  onOpenPreview={() => setActiveTab('preview')}
+                />
+              )}
 
-            {activeTab === 'qr_editor' && canEditQrOrQuestions && (
-              <QrStudioTab business={activeBusiness} isAdmin={isAdmin} />
-            )}
+            {activeTab === 'qr_editor' &&
+              canEditQrOrQuestions &&
+              activeBusiness.enabledFeatures.qrStudio !== false && (
+                <QrStudioTab business={activeBusiness} isAdmin={isAdmin} />
+              )}
 
             {activeTab === 'questions' &&
               canEditQrOrQuestions &&
@@ -1988,17 +2023,20 @@ export function ClientPortalView({
                 <QuestionBuilderTab
                   business={activeBusiness}
                   isAdmin={isAdmin}
+                  canEdit={canEditQrOrQuestions && activeBusiness.enabledFeatures.customQuestions}
                   onOpenPreview={() => setActiveTab('preview')}
                 />
               )}
 
-            {activeTab === 'branding' && canEditBranding && (
-              <BrandingTab
-                business={activeBusiness}
-                isAdmin={isAdmin}
-                onDeleted={() => setActiveTab('qr_features')}
-              />
-            )}
+            {activeTab === 'branding' &&
+              canEditBranding &&
+              activeBusiness.enabledFeatures.brandingSettings !== false && (
+                <BrandingTab
+                  business={activeBusiness}
+                  isAdmin={isAdmin}
+                  onDeleted={() => setActiveTab('qr_features')}
+                />
+              )}
 
             {activeTab === 'preview' && previewProfile && (
               <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 shadow-sm">

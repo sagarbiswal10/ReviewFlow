@@ -173,6 +173,9 @@ export function ManagementConsoleView({
     inStoreQrStands: true,
     gbpAutoReply: true,
     weeklyReports: true,
+    formTemplates: true,
+    qrStudio: true,
+    brandingSettings: true,
   });
   const [isSavingGovernance, setIsSavingGovernance] = useState(false);
   const [governanceNotice, setGovernanceNotice] = useState<string | null>(null);
@@ -275,6 +278,9 @@ export function ManagementConsoleView({
       inStoreQrStands: selectedBiz.enabledFeatures.inStoreQrStands ?? true,
       gbpAutoReply: selectedBiz.enabledFeatures.gbpAutoReply ?? true,
       weeklyReports: selectedBiz.enabledFeatures.weeklyReports ?? true,
+      formTemplates: selectedBiz.enabledFeatures.formTemplates ?? true,
+      qrStudio: selectedBiz.enabledFeatures.qrStudio ?? true,
+      brandingSettings: selectedBiz.enabledFeatures.brandingSettings ?? true,
     });
     setGovernanceNotice(null);
     setGovernanceError(null);
@@ -1077,14 +1083,29 @@ export function ManagementConsoleView({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {[
                         {
-                          key: 'aiReviewDrafts' as const,
-                          title: 'AI Review Drafts',
-                          desc: 'Allow walk-in guests to generate Short, Detailed, and Professional drafts.',
+                          key: 'formTemplates' as const,
+                          title: 'Customer Form Templates',
+                          desc: 'Allow switching and previewing feedback form UI templates in the client portal.',
                         },
                         {
                           key: 'customQuestions' as const,
                           title: 'Custom Question Builder',
                           desc: 'Allow tailored question configuration in the client portal.',
+                        },
+                        {
+                          key: 'qrStudio' as const,
+                          title: 'QR Studio & Styling',
+                          desc: 'Allow customizing QR colors, logo overlay, pause/resume status, and token rotation.',
+                        },
+                        {
+                          key: 'brandingSettings' as const,
+                          title: 'Branding, Profile & Google Link',
+                          desc: 'Allow editing business details, brand colors, SEO keywords, and Google review URL.',
+                        },
+                        {
+                          key: 'aiReviewDrafts' as const,
+                          title: 'AI Review Drafts',
+                          desc: 'Allow walk-in guests to generate Short, Detailed, and Professional drafts.',
                         },
                         {
                           key: 'pdfPosterExport' as const,

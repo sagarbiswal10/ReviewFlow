@@ -192,3 +192,46 @@ test('TC-TPL-01: Dynamic template engine adapts existing business questions clea
   assert.equal(faces[0].optionValue, 'Needs Improvement');
   assert.equal(faces[4].optionValue, 'Excellent');
 });
+
+test('TC-DOM-09: sanitizeEnabledFeatures includes formTemplates, qrStudio, brandingSettings with safe true defaults and explicit overrides', () => {
+  const defaults = sanitizeEnabledFeatures({});
+  assert.equal(defaults.formTemplates, true);
+  assert.equal(defaults.qrStudio, true);
+  assert.equal(defaults.brandingSettings, true);
+  assert.equal(defaults.customQuestions, true);
+  assert.equal(defaults.gbpAutoReply, true);
+  assert.equal(defaults.weeklyReports, true);
+
+  const restricted = sanitizeEnabledFeatures({
+    formTemplates: false,
+    qrStudio: false,
+    brandingSettings: false,
+    customQuestions: false,
+  });
+  assert.equal(restricted.formTemplates, false);
+  assert.equal(restricted.qrStudio, false);
+  assert.equal(restricted.brandingSettings, false);
+  assert.equal(restricted.customQuestions, false);
+  assert.equal(restricted.inStoreQrStands, true);
+});
+
+test('TC-ARCH-03: Business Management controls and Client Portal enforces formTemplates, qrStudio, and brandingSettings permissions', () => {
+  const adminConsoleSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ManagementConsoleView.tsx'),
+    'utf-8',
+  );
+  const onboardingSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/OnboardingModal.tsx'),
+    'utf-8',
+  );
+  const clientPortalSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
+    'utf-8',
+  );
+
+  for (const flag of ['formTemplates', 'qrStudio', 'brandingSettings']) {
+    assert.match(adminConsoleSrc, new RegExp(flag));
+    assert.match(onboardingSrc, new RegExp(flag));
+    assert.match(clientPortalSrc, new RegExp(flag));
+  }
+});

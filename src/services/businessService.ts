@@ -174,13 +174,54 @@ export async function fetchAutoSeoKeywords(input: {
   }
 }
 
+const rawNeedsBrandingRepair = new WeakSet<Business>();
+const rawNeedsQrRepair = new WeakSet<Business>();
+const rawNeedsFeaturesRepair = new WeakSet<Business>();
+
+function needsBrandingRepair(b?: Partial<BusinessBranding>): boolean {
+  if (!b || typeof b !== 'object') return true;
+  return (
+    !b.primaryColor ||
+    b.primaryColor.length < 4 ||
+    !b.secondaryColor ||
+    b.secondaryColor.length < 4 ||
+    (b.defaultReviewStyle !== 'short' &&
+      b.defaultReviewStyle !== 'detailed' &&
+      b.defaultReviewStyle !== 'professional')
+  );
+}
+
+function needsQrConfigRepair(q?: Partial<QrConfig>): boolean {
+  if (!q || typeof q !== 'object') return true;
+  return (
+    typeof q.isActive !== 'boolean' ||
+    !q.fgColor ||
+    q.fgColor.length < 4 ||
+    !q.bgColor ||
+    q.bgColor.length < 4 ||
+    !q.token ||
+    q.token.length < 4 ||
+    typeof q.includeLogo !== 'boolean'
+  );
+}
+
+function needsFeaturesRepair(f?: Partial<EnabledFeatures>): boolean {
+  if (!f || typeof f !== 'object') return true;
+  return (
+    typeof f.aiReviewDrafts !== 'boolean' ||
+    typeof f.customQuestions !== 'boolean' ||
+    typeof f.pdfPosterExport !== 'boolean' ||
+    typeof f.analyticsView !== 'boolean'
+  );
+}
+
 function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
   const data = raw as Partial<Business>;
   const category = (data.category as BusinessCategory) || 'Other Businesses';
   const hydratedKeywords = sanitizeSeoKeywords(data.seoKeywords);
   const normalizedClientEmail = normalizeEmail(data.clientEmail || '');
   const rawLimit = Number(data.qrStandLimit);
-  return {
+  const hydrated: Business = {
     id,
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
@@ -211,6 +252,16 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
+  if (needsBrandingRepair(data.branding)) {
+    rawNeedsBrandingRepair.add(hydrated);
+  }
+  if (needsQrConfigRepair(data.qrConfig)) {
+    rawNeedsQrRepair.add(hydrated);
+  }
+  if (needsFeaturesRepair(data.enabledFeatures)) {
+    rawNeedsFeaturesRepair.add(hydrated);
+  }
+  return hydrated;
 }
 
 export async function checkIsAdmin(user: User): Promise<boolean> {
@@ -792,33 +843,6 @@ export async function createBusiness(
   }
 }
 
-function needsBrandingRepair(b?: BusinessBranding): boolean {
-  if (!b) return true;
-  return (
-    !b.primaryColor ||
-    b.primaryColor.length < 4 ||
-    !b.secondaryColor ||
-    b.secondaryColor.length < 4 ||
-    (b.defaultReviewStyle !== 'short' &&
-      b.defaultReviewStyle !== 'detailed' &&
-      b.defaultReviewStyle !== 'professional')
-  );
-}
-
-function needsQrConfigRepair(q?: QrConfig): boolean {
-  if (!q) return true;
-  return (
-    typeof q.isActive !== 'boolean' ||
-    !q.fgColor ||
-    q.fgColor.length < 4 ||
-    !q.bgColor ||
-    q.bgColor.length < 4 ||
-    !q.token ||
-    q.token.length < 4 ||
-    typeof q.includeLogo !== 'boolean'
-  );
-}
-
 export async function updateBusiness(
   current: Business,
   updates: Partial<{
@@ -855,9 +879,20 @@ export async function updateBusiness(
 
   // Check whether publicProfiles/{current.slug} exists without letting a paused-profile read block us
   let publicProfileState: 'exists' | 'missing' | 'unknown' = 'unknown';
+  let publicNeedsBrandingRepair = false;
+  let publicNeedsQrRepair = false;
+  let publicNeedsFeaturesRepair = false;
   try {
     const publicSnap = await getDoc(doc(db, 'publicProfiles', current.slug));
-    publicProfileState = publicSnap.exists() ? 'exists' : 'missing';
+    if (publicSnap.exists()) {
+      publicProfileState = 'exists';
+      const rawPub = publicSnap.data() as Partial<PublicProfile>;
+      publicNeedsBrandingRepair = needsBrandingRepair(rawPub.branding);
+      publicNeedsQrRepair = needsQrConfigRepair(rawPub.qrConfig);
+      publicNeedsFeaturesRepair = needsFeaturesRepair(rawPub.enabledFeatures);
+    } else {
+      publicProfileState = 'missing';
+    }
   } catch {
     // Permission error on paused public profile for non-owner client means doc exists
     publicProfileState = 'exists';
@@ -868,7 +903,12 @@ export async function updateBusiness(
     const businessScopedUpdates: Record<string, unknown> = { updatedAt: now };
     const publicScopedUpdates: Record<string, unknown> = { updatedAt: now };
 
-    if (updates.qrConfig !== undefined || needsQrConfigRepair(current.qrConfig)) {
+    if (
+      updates.qrConfig !== undefined ||
+      needsQrConfigRepair(current.qrConfig) ||
+      rawNeedsQrRepair.has(current) ||
+      publicNeedsQrRepair
+    ) {
       const nextQrConfig = sanitizeQrConfig(
         updates.qrConfig ?? current.qrConfig,
         generateRandomToken(),
@@ -984,11 +1024,21 @@ export async function updateBusiness(
     businessUpdates.logoDataUrl = nextLogo;
     publicUpdates.logoDataUrl = nextLogo;
   }
-  if (updates.branding !== undefined || needsBrandingRepair(current.branding)) {
+  if (
+    updates.branding !== undefined ||
+    needsBrandingRepair(current.branding) ||
+    rawNeedsBrandingRepair.has(current) ||
+    publicNeedsBrandingRepair
+  ) {
     businessUpdates.branding = nextBranding;
     publicUpdates.branding = nextBranding;
   }
-  if (updates.qrConfig !== undefined || needsQrConfigRepair(current.qrConfig)) {
+  if (
+    updates.qrConfig !== undefined ||
+    needsQrConfigRepair(current.qrConfig) ||
+    rawNeedsQrRepair.has(current) ||
+    publicNeedsQrRepair
+  ) {
     businessUpdates.qrConfig = nextQrConfig;
     publicUpdates.qrConfig = nextQrConfig;
   }
@@ -1025,7 +1075,11 @@ export async function updateBusiness(
     if (updates.clientAccessLevel !== undefined) {
       businessUpdates.clientAccessLevel = nextAccessLevel;
     }
-    if (updates.enabledFeatures !== undefined) {
+    if (
+      updates.enabledFeatures !== undefined ||
+      rawNeedsFeaturesRepair.has(current) ||
+      publicNeedsFeaturesRepair
+    ) {
       businessUpdates.enabledFeatures = nextFeatures;
       publicUpdates.enabledFeatures = nextFeatures;
     }
@@ -1060,7 +1114,7 @@ export async function updateBusiness(
       questions: nextQuestions,
       formTemplate: nextFormTemplate,
       seoKeywords: nextSeoKeywords,
-      createdAt: current.createdAt ?? now,
+      createdAt: now,
       updatedAt: now,
     });
   } else if (publicProfileState === 'missing') {
@@ -1080,7 +1134,7 @@ export async function updateBusiness(
         questions: nextQuestions,
         formTemplate: nextFormTemplate,
         seoKeywords: nextSeoKeywords,
-        createdAt: current.createdAt ?? now,
+        createdAt: now,
         updatedAt: now,
       });
     }

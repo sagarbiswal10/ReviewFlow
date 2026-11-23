@@ -14,10 +14,16 @@ import { updateBusiness } from '../services/businessService';
 interface QuestionBuilderTabProps {
   business: Business;
   isAdmin?: boolean;
+  canEdit?: boolean;
   onOpenPreview: () => void;
 }
 
-export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }: QuestionBuilderTabProps) {
+export function QuestionBuilderTab({
+  business,
+  isAdmin = false,
+  canEdit = true,
+  onOpenPreview,
+}: QuestionBuilderTabProps) {
   const [questions, setQuestions] = useState<FeedbackQuestion[]>(business.questions);
   const [newOptionDrafts, setNewOptionDrafts] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -162,14 +168,26 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
   };
 
   const handleSave = async () => {
+    if (!canEdit) {
+      setError('Editing custom questions is disabled for this workspace.');
+      return;
+    }
     setError(null);
     setSavedNotice(null);
 
-    const sanitized = questions.map((q) => ({
-      ...q,
-      prompt: q.prompt.trim() || 'Untitled Question',
-      options: q.type === 'text' ? [] : q.options.map((o) => o.trim()).filter(Boolean),
-    }));
+    const sanitized = questions.map((q) => {
+      const pendingOpt = (newOptionDrafts[q.id] ?? '').trim();
+      const baseOpts = q.type === 'text' ? [] : q.options.map((o) => o.trim()).filter(Boolean);
+      const mergedOpts =
+        q.type !== 'text' && pendingOpt && !baseOpts.includes(pendingOpt)
+          ? [...baseOpts, pendingOpt]
+          : baseOpts;
+      return {
+        ...q,
+        prompt: q.prompt.trim() || 'Untitled Question',
+        options: mergedOpts,
+      };
+    });
 
     for (const q of sanitized) {
       if (q.type !== 'text' && q.options.length === 0) {
@@ -187,6 +205,7 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
         sig: JSON.stringify(sanitized),
       };
       setQuestions(sanitized);
+      setNewOptionDrafts({});
       setSavedNotice('Customer feedback form saved.');
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3000);
@@ -210,14 +229,16 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={resetToCategoryDefaults}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset to {business.category} Defaults</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={resetToCategoryDefaults}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset to {business.category} Defaults</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenPreview}
@@ -225,15 +246,17 @@ export function QuestionBuilderTab({ business, isAdmin = false, onOpenPreview }:
           >
             Preview Customer Form
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60"
-          >
-            {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>Save Form</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60"
+            >
+              {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>Save Form</span>
+            </button>
+          )}
         </div>
       </div>
 

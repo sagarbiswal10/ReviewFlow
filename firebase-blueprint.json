@@ -33,7 +33,7 @@
         },
         "enabledFeatures": {
           "type": "object",
-          "description": "Feature entitlements active for this business."
+          "description": "Feature entitlements active for this business (aiReviewDrafts, customQuestions, pdfPosterExport, analyticsView, inStoreQrStands, gbpAutoReply, weeklyReports, formTemplates, qrStudio, brandingSettings)."
         },
         "slug": {
           "type": "string",
@@ -206,7 +206,8 @@
           "maxLength": 350000
         },
         "enabledFeatures": {
-          "type": "object"
+          "type": "object",
+          "description": "Feature entitlements active for this business (aiReviewDrafts, customQuestions, pdfPosterExport, analyticsView, inStoreQrStands, gbpAutoReply, weeklyReports, formTemplates, qrStudio, brandingSettings)."
         },
         "branding": {
           "type": "object"

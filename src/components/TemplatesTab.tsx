@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Eye, Loader2, Lock } from 'lucide-react';
 import type { Business, FormTemplateId } from '../types';
 import { updateBusiness } from '../services/businessService';
@@ -32,11 +32,25 @@ export function TemplatesTab({
   canEdit,
   onOpenPreview,
 }: TemplatesTabProps) {
-  const activeTemplate = sanitizeFormTemplate(business.formTemplate);
+  const persistedTemplate = sanitizeFormTemplate(business.formTemplate);
+  const [optimisticTemplate, setOptimisticTemplate] = useState<FormTemplateId | null>(null);
+  const activeTemplate = optimisticTemplate ?? persistedTemplate;
   const [filter, setFilter] = useState<TemplateCategoryFilter>('all');
   const [savingId, setSavingId] = useState<FormTemplateId | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOptimisticTemplate(null);
+    setError(null);
+    setNotice(null);
+  }, [business.id]);
+
+  useEffect(() => {
+    if (optimisticTemplate && persistedTemplate === optimisticTemplate) {
+      setOptimisticTemplate(null);
+    }
+  }, [persistedTemplate, optimisticTemplate]);
 
   const classified = useMemo(
     () => classifyQuestionsForTemplate(business.questions),
@@ -81,8 +95,10 @@ export function TemplatesTab({
         { formTemplate: template.id },
         { isAdmin },
       );
+      setOptimisticTemplate(template.id);
       setNotice(`Applied "${template.name}" to ${business.name}. Your existing questions remain unchanged.`);
     } catch (err) {
+      setOptimisticTemplate(null);
       setError(
         err instanceof Error
           ? err.message
