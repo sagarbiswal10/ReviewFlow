@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  fetchSignInMethodsForEmail,
+  linkWithCredential,
   onAuthStateChanged,
+  reauthenticateWithPopup,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -21,6 +25,11 @@ import {
   subscribeToAllEvents,
   subscribeToClientBusinesses,
 } from './services/businessService';
+import {
+  classifyAuthError,
+  getProviderSignature,
+  type AuthActionableError,
+} from './utils/urlAndAuth';
 import { LandingPage } from './components/LandingPage';
 import { ManagementConsoleView } from './components/ManagementConsoleView';
 import { ClientPortalView } from './components/ClientPortalView';
@@ -69,36 +78,7 @@ function routesEqual(a: AppRoute, b: AppRoute): boolean {
 }
 
 function formatAuthError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  if (raw.includes('auth/operation-not-allowed')) {
-    return 'Email/Password sign-in is not enabled in Firebase Authentication yet. Enable it under Authentication > Sign-in method in Firebase Console, or sign in with Google.';
-  }
-  if (raw.includes('auth/unauthorized-domain')) {
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
-    return `This domain (${host}) is not listed in Firebase Authentication -> Settings -> Authorized domains. Add it in Firebase Console or sign in from an authorized domain.`;
-  }
-  if (raw.includes('auth/popup-blocked')) {
-    return 'Google Sign-In popup was blocked by your browser. Allow popups for this site or sign in with Email & Password below.';
-  }
-  if (raw.includes('auth/cancelled-popup-request')) {
-    return 'Previous sign-in popup was cancelled. Please try signing in again.';
-  }
-  if (raw.includes('auth/network-request-failed')) {
-    return 'Network error while contacting Google/Firebase sign-in. Check your connection and try again.';
-  }
-  if (raw.includes('auth/invalid-credential') || raw.includes('auth/wrong-password')) {
-    return 'Incorrect email or password. Please check your credentials and try again.';
-  }
-  if (raw.includes('auth/email-already-in-use')) {
-    return 'An account already exists for this email address. Please sign in instead.';
-  }
-  if (raw.includes('auth/weak-password')) {
-    return 'Password should be at least 6 characters long.';
-  }
-  if (raw.includes('auth/popup-closed-by-user')) {
-    return 'Sign-in popup was closed before finishing.';
-  }
-  return raw;
+  return classifyAuthError(err).message;
 }
 
 export default function App() {
@@ -126,6 +106,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authActionError, setAuthActionError] = useState<AuthActionableError | null>(null);
   const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
   const [isRefreshingVerification, setIsRefreshingVerification] = useState(false);
 
@@ -150,8 +131,14 @@ export default function App() {
     typeof window !== 'undefined' && /^\/(signin|login|auth)\/?$/i.test(window.location.pathname),
   );
 
-  const authIdentityRef = useRef<{ uid: string; emailVerified: boolean; email: string } | null>(null);
-  const loadedUidRef = useRef<string | null>(null);
+  const authIdentityRef = useRef<{
+    uid: string;
+    emailVerified: boolean;
+    email: string;
+    displayName: string;
+    providerSig: string;
+  } | null>(null);
+  const loadedStreamKeyRef = useRef<string | null>(null);
 
   const navigateTo = (path: string, replace = false) => {
     if (path.startsWith('/review/')) {
@@ -260,9 +247,15 @@ export default function App() {
 
       if (!nextUser || !nextUser.emailVerified) {
         authIdentityRef.current = nextUser
-          ? { uid: nextUser.uid, emailVerified: false, email: nextUser.email || '' }
+          ? {
+              uid: nextUser.uid,
+              emailVerified: false,
+              email: nextUser.email || '',
+              displayName: nextUser.displayName || '',
+              providerSig: getProviderSignature(nextUser.providerData),
+            }
           : null;
-        loadedUidRef.current = null;
+        loadedStreamKeyRef.current = null;
         setUser(nextUser);
         setAuthReady(true);
         setIsAdmin(false);
@@ -275,23 +268,37 @@ export default function App() {
       }
 
       const normalizedEmail = (nextUser.email || '').trim().toLowerCase();
+      const nextDisplayName = nextUser.displayName || '';
+      const nextProviderSig = getProviderSignature(nextUser.providerData);
       const prev = authIdentityRef.current;
       const sameVerifiedIdentity =
         Boolean(prev) &&
         prev?.uid === nextUser.uid &&
         prev?.emailVerified === true &&
         prev?.email === normalizedEmail;
+      const sameProfileMetadata =
+        sameVerifiedIdentity &&
+        prev?.displayName === nextDisplayName &&
+        prev?.providerSig === nextProviderSig;
+
+      if (sameProfileMetadata) {
+        // Avoid superfluous React tree re-renders when Firebase refreshes ID tokens or focus changes
+        setAuthReady(true);
+        return;
+      }
 
       authIdentityRef.current = {
         uid: nextUser.uid,
         emailVerified: true,
         email: normalizedEmail,
+        displayName: nextDisplayName,
+        providerSig: nextProviderSig,
       };
       setUser(nextUser);
       setAuthReady(true);
 
       if (sameVerifiedIdentity) {
-        // Avoid blanking the UI or tearing down listeners when Firebase refreshes user metadata/tokens
+        // Provider/profile updated on the same verified account without wiping listeners
         return;
       }
 
@@ -319,8 +326,8 @@ export default function App() {
   const userUid = user?.uid ?? '';
   const userEmail = user?.email ?? '';
   const userEmailVerified = Boolean(user?.emailVerified);
-  const streamScope: 'admin' | 'client' =
-    isAdmin && (route.kind === 'admin' || route.kind === 'home') ? 'admin' : 'client';
+  // Keep a consistent stream scope for admins across /admin and /portal so switching views never tears down listeners
+  const streamScope: 'admin' | 'client' = isAdmin ? 'admin' : 'client';
 
   // Role-based routing:
   // - Business Management admins on '/' or after login -> '/admin'
@@ -357,8 +364,9 @@ export default function App() {
     if (!authReady || !roleReady || !userUid || !userEmailVerified) return;
 
     let settled = false;
-    const isInitialLoadForUser = loadedUidRef.current !== userUid || reloadSeq > 0;
-    if (isInitialLoadForUser) {
+    const streamKey = `${userUid}:${streamScope}:${reloadSeq}`;
+    const isInitialLoadForStream = loadedStreamKeyRef.current !== streamKey;
+    if (isInitialLoadForStream && (businesses.length === 0 || reloadSeq > 0)) {
       setBusinessesLoaded(false);
     }
     setLoadError(null);
@@ -394,7 +402,7 @@ export default function App() {
       const unsubBiz = subscribeToAllBusinesses(
         (items) => {
           settled = true;
-          loadedUidRef.current = userUid;
+          loadedStreamKeyRef.current = streamKey;
           window.clearTimeout(timeoutId);
           setBusinesses(items);
           setLoadError(null);
@@ -421,7 +429,7 @@ export default function App() {
       userEmail,
       (items) => {
         settled = true;
-        loadedUidRef.current = userUid;
+        loadedStreamKeyRef.current = streamKey;
         window.clearTimeout(timeoutId);
         setBusinesses(items);
         setLoadError(null);
@@ -457,6 +465,7 @@ export default function App() {
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     setAuthError(null);
+    setAuthActionError(null);
     setRedirectAfterLogin(true);
     const guardTimer = window.setTimeout(() => {
       setIsSigningIn(false);
@@ -465,7 +474,9 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       setRedirectAfterLogin(false);
-      setAuthError(formatAuthError(err));
+      const classified = classifyAuthError(err, { mode: 'signin' });
+      setAuthActionError(classified);
+      setAuthError(classified.message);
     } finally {
       window.clearTimeout(guardTimer);
       setIsSigningIn(false);
@@ -473,49 +484,100 @@ export default function App() {
   };
 
   const handleEmailSignIn = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
     setIsSigningIn(true);
     setAuthError(null);
+    setAuthActionError(null);
     setRedirectAfterLogin(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, cleanEmail, password);
     } catch (err) {
       setRedirectAfterLogin(false);
-      const msg = formatAuthError(err);
-      setAuthError(msg);
-      throw new Error(msg);
+      const methods = await fetchSignInMethodsForEmail(auth, cleanEmail).catch(() => []);
+      const classified = classifyAuthError(err, {
+        mode: 'signin',
+        email: cleanEmail,
+        methods,
+      });
+      setAuthActionError(classified);
+      setAuthError(classified.message);
+      throw new Error(classified.message);
     } finally {
       setIsSigningIn(false);
     }
   };
 
   const handleEmailSignUp = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
     setIsSigningIn(true);
     setAuthError(null);
+    setAuthActionError(null);
     setRedirectAfterLogin(true);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       await sendEmailVerification(cred.user);
-      setVerificationNotice(`Verification email sent to ${email}.`);
+      setVerificationNotice(`Verification email sent to ${cleanEmail}.`);
     } catch (err) {
       setRedirectAfterLogin(false);
-      const msg = formatAuthError(err);
-      setAuthError(msg);
-      throw new Error(msg);
+      const methods = await fetchSignInMethodsForEmail(auth, cleanEmail).catch(() => []);
+      const classified = classifyAuthError(err, {
+        mode: 'signup',
+        email: cleanEmail,
+        methods,
+      });
+      setAuthActionError(classified);
+      setAuthError(classified.message);
+      throw new Error(classified.message);
     } finally {
       setIsSigningIn(false);
     }
   };
 
   const handleResetPassword = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
     setIsSigningIn(true);
     setAuthError(null);
+    setAuthActionError(null);
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, cleanEmail);
     } catch (err) {
-      const msg = formatAuthError(err);
-      throw new Error(msg);
+      const classified = classifyAuthError(err, { mode: 'reset', email: cleanEmail });
+      setAuthActionError(classified);
+      throw new Error(classified.message);
     } finally {
       setIsSigningIn(false);
+    }
+  };
+
+  const handleLinkEmailPassword = async (newPassword: string) => {
+    const currentUser = auth.currentUser;
+    const email = (currentUser?.email || '').trim().toLowerCase();
+    if (!currentUser || !email) {
+      throw new Error('You must be signed in with a verified email address to set a password.');
+    }
+    const credential = EmailAuthProvider.credential(email, newPassword);
+    try {
+      await linkWithCredential(currentUser, credential);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      if (raw.includes('auth/requires-recent-login')) {
+        await reauthenticateWithPopup(currentUser, googleProvider);
+        await linkWithCredential(currentUser, credential);
+      } else {
+        throw new Error(classifyAuthError(err, { mode: 'link', email }).message);
+      }
+    }
+    await currentUser.reload();
+    const updatedUser = auth.currentUser;
+    if (updatedUser) {
+      authIdentityRef.current = {
+        uid: updatedUser.uid,
+        emailVerified: Boolean(updatedUser.emailVerified),
+        email: (updatedUser.email || '').trim().toLowerCase(),
+        displayName: updatedUser.displayName || '',
+        providerSig: getProviderSignature(updatedUser.providerData),
+      };
+      setUser(updatedUser);
     }
   };
 
@@ -555,6 +617,7 @@ export default function App() {
     setRedirectAfterLogin(false);
     setOpenAuthFromRoute(false);
     setAuthError(null);
+    setAuthActionError(null);
     setVerificationNotice(null);
     setShowOnboarding(false);
     setSelectedBusinessId(null);
@@ -568,7 +631,7 @@ export default function App() {
     } catch (err) {
       setAuthError(formatAuthError(err));
     } finally {
-      loadedUidRef.current = null;
+      loadedStreamKeyRef.current = null;
       authIdentityRef.current = null;
       setBusinesses([]);
       setStatsMap({});
@@ -682,6 +745,7 @@ export default function App() {
         initialAuthModalOpen={openAuthFromRoute}
         isSigningIn={isSigningIn}
         authError={authError}
+        authActionError={authActionError}
       />
     );
   }
@@ -795,6 +859,7 @@ export default function App() {
           events={events}
           onOpenNewBusiness={() => setShowOnboarding(true)}
           onSwitchToPortal={() => navigateTo('/portal')}
+          onLinkEmailPassword={handleLinkEmailPassword}
           onSignOut={handleSignOut}
         />
       ) : showingLandingPage ? (
@@ -812,6 +877,7 @@ export default function App() {
           onSignOut={handleSignOut}
           isSigningIn={isSigningIn}
           authError={authError}
+          authActionError={authActionError}
         />
       ) : (
         <ClientPortalView
@@ -823,6 +889,7 @@ export default function App() {
           onOpenNewBusiness={() => setShowOnboarding(true)}
           onViewLanding={() => navigateTo('/')}
           onSwitchToAdmin={isAdmin ? () => navigateTo('/admin') : undefined}
+          onLinkEmailPassword={handleLinkEmailPassword}
           onSignOut={handleSignOut}
         />
       )}

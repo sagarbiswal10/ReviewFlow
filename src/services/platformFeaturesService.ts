@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   query,
@@ -16,7 +17,14 @@ import type { User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch, formatApiError, parseApiJson } from '../utils/apiClient';
-import { normalizeEmail, sanitizeSlug } from './businessService';
+import {
+  clampString,
+  getMondaySundayWindow,
+  getTimestampMs,
+  isMondayToday,
+  normalizeEmail,
+  sanitizeSlug,
+} from '../utils/domainHelpers';
 import type {
   AiUsageLog,
   Business,
@@ -30,6 +38,8 @@ import type {
   WeeklyReport,
 } from '../types';
 
+export { getMondaySundayWindow, getTimestampMs, isMondayToday };
+
 export const STAND_PLACEMENT_PRESETS = [
   'Restaurant Entrance',
   'Cash Counter',
@@ -40,54 +50,6 @@ export const STAND_PLACEMENT_PRESETS = [
   'Private Suite',
   'Pickup Window',
 ] as const;
-
-function clampString(val: unknown, max: number): string {
-  if (typeof val !== 'string') return '';
-  return val.trim().slice(0, max);
-}
-
-export function getTimestampMs(value: unknown): number {
-  if (!value) return 0;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  if (value instanceof Date) {
-    const ms = value.getTime();
-    return Number.isFinite(ms) ? ms : 0;
-  }
-  if (typeof value === 'object' && value !== null) {
-    const candidate = value as {
-      toMillis?: () => number;
-      toDate?: () => Date;
-      seconds?: unknown;
-      _seconds?: unknown;
-    };
-    if (typeof candidate.toMillis === 'function') {
-      try {
-        const ms = candidate.toMillis();
-        if (Number.isFinite(ms)) return ms;
-      } catch {
-        // Fallback below
-      }
-    }
-    if (typeof candidate.toDate === 'function') {
-      try {
-        const ms = candidate.toDate().getTime();
-        if (Number.isFinite(ms)) return ms;
-      } catch {
-        // Fallback below
-      }
-    }
-    const rawSec = candidate.seconds ?? candidate._seconds;
-    if (rawSec !== undefined && rawSec !== null) {
-      const sec = Number(rawSec);
-      if (Number.isFinite(sec)) return sec * 1000;
-    }
-  }
-  if (typeof value === 'string') {
-    const ms = Date.parse(value);
-    return Number.isFinite(ms) ? ms : 0;
-  }
-  return 0;
-}
 
 function subscribeClientScopedCollection<T extends { businessId: string }>(
   collectionName: string,
@@ -483,7 +445,7 @@ export function isCustomGbpOAuthClientConfigured(): boolean {
 }
 
 interface GoogleTokenClient {
-  requestAccessToken: (opts?: { prompt?: string }) => void;
+  requestAccessToken: (opts?: { prompt?: string; hint?: string }) => void;
 }
 
 declare global {
@@ -494,6 +456,7 @@ declare global {
           initTokenClient: (cfg: {
             client_id: string;
             scope: string;
+            hint?: string;
             callback: (resp: { access_token?: string; error?: string; error_description?: string }) => void;
             error_callback?: (err: { type?: string; message?: string }) => void;
           }) => GoogleTokenClient;
@@ -552,17 +515,25 @@ function loadGoogleIdentityScript(): Promise<void> {
   return gsiScriptPromise;
 }
 
-export async function requestGbpOAuthToken(): Promise<string> {
+export async function requestGbpOAuthToken(options?: {
+  loginHint?: string;
+  allowFallbackClient?: boolean;
+}): Promise<string> {
   const clientId = getGoogleOAuthClientId();
-  if (!clientId) {
-    throw new Error('Google OAuth Client ID is missing. Configure VITE_GOOGLE_OAUTH_CLIENT_ID.');
+  const hasCustomClient = isCustomGbpOAuthClientConfigured();
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  if (!clientId || (!hasCustomClient && !options?.allowFallbackClient)) {
+    throw new Error(
+      `A Google Cloud Web OAuth Client ID configured for ${currentOrigin || 'this origin'} is required before opening Google Business Profile OAuth (the default Firebase Auth client ID causes Google Error 400: origin_mismatch). Paste your Web OAuth Client ID below or set VITE_GOOGLE_OAUTH_CLIENT_ID.`,
+    );
   }
   await loadGoogleIdentityScript();
   const oauth2 = window.google?.accounts?.oauth2;
   if (!oauth2) {
     throw new Error('Google Identity Services OAuth client is unavailable.');
   }
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const cleanHint = (options?.loginHint || '').trim();
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (fn: () => void) => {
@@ -585,6 +556,7 @@ export async function requestGbpOAuthToken(): Promise<string> {
     const client = oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/business.manage',
+      ...(cleanHint ? { hint: cleanHint } : {}),
       callback: (resp) => {
         if (resp.error) {
           const desc = resp.error_description || resp.error;
@@ -608,7 +580,7 @@ export async function requestGbpOAuthToken(): Promise<string> {
           finish(() =>
             reject(
               new Error(
-                `Authorization popup was closed. If Google showed "Access blocked: Authorisation error", add ${currentOrigin || 'this domain'} to Authorized JavaScript Origins on a Google Cloud Web OAuth Client (set VITE_GOOGLE_OAUTH_CLIENT_ID) and add your Gmail under OAuth Consent Screen -> Test Users.`,
+                `Authorization popup was closed. If Google showed "Access blocked: Authorisation error" (Error 400: origin_mismatch), verify ${currentOrigin || 'this domain'} is listed under Authorized JavaScript Origins on OAuth Client ${clientId} and your Gmail is under OAuth Consent Screen -> Test Users.`,
               ),
             ),
           );
@@ -634,7 +606,10 @@ export async function requestGbpOAuthToken(): Promise<string> {
         );
       },
     });
-    client.requestAccessToken({ prompt: 'consent' });
+    client.requestAccessToken({
+      prompt: 'select_account consent',
+      ...(cleanHint ? { hint: cleanHint } : {}),
+    });
   });
 }
 
@@ -1121,39 +1096,7 @@ export function subscribeToAllAiUsage(
   );
 }
 
-function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
-export function getMondaySundayWindow(weekOffset = 0): {
-  weekStart: string;
-  weekEnd: string;
-  startMs: number;
-  endMs: number;
-} {
-  const now = new Date();
-  const day = now.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  const monday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + diffToMonday + weekOffset * 7,
-  );
-  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
-  return {
-    weekStart: toIsoDate(monday),
-    weekEnd: toIsoDate(sunday),
-    startMs: monday.getTime(),
-    endMs: sunday.getTime(),
-  };
-}
-
-export function isMondayToday(): boolean {
-  return new Date().getDay() === 1;
-}
 
 export function subscribeToBusinessWeeklyReports(
   businessId: string,
@@ -1191,6 +1134,73 @@ export function subscribeToAllWeeklyReports(
       if (onError) onError(err);
     },
   );
+}
+
+export async function fetchBusinessReportInputs(businessId: string): Promise<{
+  qrStands: QrStand[];
+  gbpReviews: GbpReview[];
+}> {
+  const [standsSnap, reviewsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'qrStands'), where('businessId', '==', businessId), limit(500))).catch(
+      () => null,
+    ),
+    getDocs(query(collection(db, 'gbpReviews'), where('businessId', '==', businessId), limit(500))).catch(
+      () => null,
+    ),
+  ]);
+
+  const qrStands: QrStand[] = standsSnap
+    ? standsSnap.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          businessId: clampString(data.businessId, 128),
+          ownerId: clampString(data.ownerId, 128),
+          clientEmail: normalizeEmail(String(data.clientEmail || '')),
+          slug: clampString(data.slug, 120),
+          standCode: clampString(data.standCode, 64),
+          name: clampString(data.name, 80) || 'QR Stand',
+          placement: clampString(data.placement, 80) || 'Counter',
+          slotNumber: Number(data.slotNumber || 1),
+          isActive: data.isActive !== false,
+          fgColor: clampString(data.fgColor, 20) || '#0F172A',
+          bgColor: clampString(data.bgColor, 20) || '#FFFFFF',
+          includeLogo: Boolean(data.includeLogo),
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+        };
+      })
+    : [];
+
+  const gbpReviews: GbpReview[] = reviewsSnap
+    ? reviewsSnap.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          businessId: clampString(data.businessId, 128),
+          ownerId: clampString(data.ownerId, 128),
+          clientEmail: normalizeEmail(String(data.clientEmail || '')),
+          externalReviewId: clampString(data.externalReviewId, 200),
+          reviewerName: clampString(data.reviewerName, 120) || 'Google Customer',
+          starRating: Math.min(5, Math.max(1, Number(data.starRating || 5))),
+          comment: clampString(data.comment, 2000),
+          reviewDate: clampString(data.reviewDate, 64) || new Date().toISOString(),
+          aiReplyText: clampString(data.aiReplyText, 2000),
+          replyStatus: (data.replyStatus as GbpReplyStatus) || 'awaiting_approval',
+          aiProvider: clampString(data.aiProvider, 40) || 'gemini',
+          aiModelId: clampString(data.aiModelId, 80) || 'gemini-3.1-flash-lite',
+          inputTokens: Number(data.inputTokens || 0),
+          outputTokens: Number(data.outputTokens || 0),
+          totalTokens: Number(data.totalTokens || 0),
+          estimatedCostUsd: Number(data.estimatedCostUsd || 0),
+          source: (data.source as GbpReview['source']) || 'manual_sync',
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+        };
+      })
+    : [];
+
+  return { qrStands, gbpReviews };
 }
 
 export async function generateAndSaveWeeklyReport(input: {

@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch, parseApiJson } from '../utils/apiClient';
+import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import {
   DEFAULT_ENABLED_FEATURES,
   DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
@@ -46,28 +47,28 @@ import type {
   WeeklyReportConfig,
 } from '../types';
 
+import {
+  clampString,
+  normalizeEmail,
+  sanitizeAccessLevel,
+  sanitizeEnabledFeatures,
+  sanitizeGbpSettings,
+  sanitizeSlug,
+  sanitizeWeeklyReportConfig,
+} from '../utils/domainHelpers';
+
+export {
+  normalizeEmail,
+  sanitizeGbpSettings,
+  sanitizeSlug,
+  sanitizeWeeklyReportConfig,
+};
+
 export const BOOTSTRAPPED_ADMIN_EMAIL = (
   import.meta.env.VITE_ADMIN_EMAIL || 'harkiratcourse36@gmail.com'
 )
   .trim()
   .toLowerCase();
-
-export function sanitizeSlug(raw: string): string {
-  const cleaned = raw
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 76);
-  if (cleaned.length >= 2) {
-    return cleaned;
-  }
-  return `biz-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-export function normalizeEmail(raw: string): string {
-  return raw.trim().toLowerCase().slice(0, 120);
-}
 
 export function generateRandomToken(length = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -76,64 +77,6 @@ export function generateRandomToken(length = 8): string {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
-}
-
-function clampString(val: unknown, max: number): string {
-  if (typeof val !== 'string') return '';
-  return val.trim().slice(0, max);
-}
-
-function sanitizeEnabledFeatures(features?: Partial<EnabledFeatures>): EnabledFeatures {
-  return {
-    aiReviewDrafts: features?.aiReviewDrafts ?? DEFAULT_ENABLED_FEATURES.aiReviewDrafts,
-    customQuestions: features?.customQuestions ?? DEFAULT_ENABLED_FEATURES.customQuestions,
-    pdfPosterExport: features?.pdfPosterExport ?? DEFAULT_ENABLED_FEATURES.pdfPosterExport,
-    analyticsView: features?.analyticsView ?? DEFAULT_ENABLED_FEATURES.analyticsView,
-    inStoreQrStands: features?.inStoreQrStands ?? DEFAULT_ENABLED_FEATURES.inStoreQrStands,
-    gbpAutoReply: features?.gbpAutoReply ?? DEFAULT_ENABLED_FEATURES.gbpAutoReply,
-    weeklyReports: features?.weeklyReports ?? DEFAULT_ENABLED_FEATURES.weeklyReports,
-  };
-}
-
-export function sanitizeGbpSettings(settings?: Partial<GbpReplySettings>): GbpReplySettings {
-  return {
-    fiveStarMode:
-      settings?.fiveStarMode === 'approval_required' ? 'approval_required' : 'auto_publish',
-    midStarMode:
-      settings?.midStarMode === 'auto_publish' ? 'auto_publish' : 'approval_required',
-    lowStarMode: 'manual_approval_only',
-    brandVoice: clampString(settings?.brandVoice ?? '', 400),
-    autoSyncEnabled: settings?.autoSyncEnabled ?? true,
-  };
-}
-
-export function sanitizeWeeklyReportConfig(
-  config?: Partial<WeeklyReportConfig>,
-  fallbackEmail = '',
-): WeeklyReportConfig {
-  const recipients = Array.isArray(config?.recipients)
-    ? config.recipients
-        .map((r) => normalizeEmail(String(r || '')))
-        .filter((r) => Boolean(r) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r))
-        .slice(0, 10)
-    : fallbackEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fallbackEmail)
-      ? [fallbackEmail]
-      : [];
-  return {
-    enabled: config?.enabled ?? true,
-    recipients,
-    autoMondayEnabled: config?.autoMondayEnabled ?? true,
-    ...(config?.lastGeneratedWeekKey
-      ? { lastGeneratedWeekKey: clampString(config.lastGeneratedWeekKey, 24) }
-      : {}),
-  };
-}
-
-function sanitizeAccessLevel(level?: unknown): ClientAccessLevel {
-  if (level === 'read_only' || level === 'qr_and_questions' || level === 'full') {
-    return level;
-  }
-  return 'full';
 }
 
 function sanitizeColorHex(val: unknown, fallback: string): string {
@@ -356,6 +299,8 @@ export function subscribeToClientBusinesses(
       emitMerged();
     },
     (error) => {
+      ownerReady = true;
+      emitMerged();
       if (onError) onError(error);
       try {
         handleFirestoreError(error, OperationType.LIST, 'businesses');
@@ -382,6 +327,8 @@ export function subscribeToClientBusinesses(
         emitMerged();
       },
       (error) => {
+        emailReady = true;
+        emitMerged();
         if (onError) onError(error);
         try {
           handleFirestoreError(error, OperationType.LIST, 'businesses');
@@ -731,8 +678,14 @@ export async function createBusiness(
   const now = serverTimestamp();
   const cleanName = clampString(input.name, 120) || 'My Business';
   const cleanOwnerName = clampString(input.ownerName, 120);
-  const cleanWebsite = clampString(input.website, 300);
-  const cleanGoogleUrl = clampString(input.googleReviewUrl, 500);
+  const cleanWebsite = clampString(
+    input.website ? sanitizeExternalUrl(input.website, '') : '',
+    300,
+  );
+  const cleanGoogleUrl = clampString(
+    sanitizeExternalUrl(input.googleReviewUrl, 'https://www.google.com/maps'),
+    500,
+  );
   const cleanLogo = clampString(input.logoDataUrl, 350000);
   const cleanClientEmail = normalizeEmail(input.clientEmail || '');
   const cleanAccessLevel = sanitizeAccessLevel(input.clientAccessLevel);
@@ -941,8 +894,8 @@ export async function updateBusiness(
   const nextCategory = updates.category ?? current.category;
   const nextGoogleUrl =
     updates.googleReviewUrl !== undefined
-      ? clampString(updates.googleReviewUrl, 500)
-      : current.googleReviewUrl;
+      ? clampString(sanitizeExternalUrl(updates.googleReviewUrl, 'https://www.google.com/maps'), 500)
+      : sanitizeExternalUrl(current.googleReviewUrl, 'https://www.google.com/maps');
   const nextLogo =
     updates.logoDataUrl !== undefined
       ? clampString(updates.logoDataUrl, 350000)
@@ -989,7 +942,10 @@ export async function updateBusiness(
     businessUpdates.contactEmail = clampString(updates.contactEmail, 120);
   }
   if (updates.website !== undefined) {
-    businessUpdates.website = clampString(updates.website, 300);
+    businessUpdates.website = clampString(
+      updates.website ? sanitizeExternalUrl(updates.website, '') : '',
+      300,
+    );
   }
   if (updates.googleReviewUrl !== undefined) {
     businessUpdates.googleReviewUrl = nextGoogleUrl;

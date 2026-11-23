@@ -103,6 +103,13 @@ export function QrStandsTab({
   const [reqNotice, setReqNotice] = useState<string | null>(null);
 
   const canvasMapRef = useRef<Record<string, HTMLCanvasElement | null>>({});
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const unsubStands = subscribeToBusinessQrStands(
@@ -236,7 +243,9 @@ export function QrStandsTab({
       setNewName('');
       setCustomPlacement('');
       setStandNotice(`Created "${created.name}" in Slot ${created.slotNumber} of ${standLimit}.`);
-      setTimeout(() => setStandNotice(null), 3500);
+      setTimeout(() => {
+        if (mountedRef.current) setStandNotice(null);
+      }, 3500);
     } catch (err) {
       setStandError(err instanceof Error ? err.message : 'Unable to create QR stand.');
     } finally {
@@ -258,7 +267,9 @@ export function QrStandsTab({
     try {
       await deleteQrStand(stand.id);
       setStandNotice(`Removed "${stand.name}". Slot ${stand.slotNumber} is now available.`);
-      setTimeout(() => setStandNotice(null), 3000);
+      setTimeout(() => {
+        if (mountedRef.current) setStandNotice(null);
+      }, 3000);
     } catch (err) {
       setStandError(err instanceof Error ? err.message : 'Failed to remove stand.');
     }
@@ -268,7 +279,9 @@ export function QrStandsTab({
     try {
       await navigator.clipboard.writeText(buildStandUrl(stand));
       setCopiedStandId(stand.id);
-      setTimeout(() => setCopiedStandId(null), 2000);
+      setTimeout(() => {
+        if (mountedRef.current) setCopiedStandId(null);
+      }, 2000);
     } catch {
       // Ignore clipboard restriction
     }
@@ -315,7 +328,9 @@ export function QrStandsTab({
       setReqNotice(
         'Additional QR stand request submitted. Business Management will review and expand your slot quota upon approval.',
       );
-      setTimeout(() => setReqNotice(null), 5000);
+      setTimeout(() => {
+        if (mountedRef.current) setReqNotice(null);
+      }, 5000);
     } catch (err) {
       setReqError(err instanceof Error ? err.message : 'Unable to submit request.');
     } finally {

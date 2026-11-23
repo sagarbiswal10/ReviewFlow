@@ -1,0 +1,123 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  checkRateLimit,
+  isOriginAllowed,
+  processGbpProxy,
+  processGenerateReply,
+  processGenerateReview,
+  processGenerateSeoKeywords,
+  processValidateQrStandSlot,
+} from '../api/_lib/apiCore.ts';
+
+test('TC-API-01: isOriginAllowed allows same-host, empty origin, and configured ALLOWED_ORIGINS only', () => {
+  const prevAllowed = process.env.ALLOWED_ORIGINS;
+  try {
+    process.env.ALLOWED_ORIGINS = 'https://reviewflow-mocha.vercel.app';
+    assert.equal(isOriginAllowed('', 'example.com'), true);
+    assert.equal(isOriginAllowed('https://reviewflow-mocha.vercel.app', 'other.com'), true);
+    assert.equal(isOriginAllowed('https://example.com', 'example.com'), true);
+    assert.equal(isOriginAllowed('https://evil-site.com', 'reviewflow-mocha.vercel.app'), false);
+  } finally {
+    if (prevAllowed === undefined) delete process.env.ALLOWED_ORIGINS;
+    else process.env.ALLOWED_ORIGINS = prevAllowed;
+  }
+});
+
+test('TC-API-02: checkRateLimit enforces request caps per bucket key', () => {
+  const key = `qa-rate-limit-${Date.now()}`;
+  assert.equal(checkRateLimit(key, 2, 10_000), true);
+  assert.equal(checkRateLimit(key, 2, 10_000), true);
+  assert.equal(checkRateLimit(key, 2, 10_000), false);
+  assert.equal(checkRateLimit(`${key}-other`, 2, 10_000), true);
+});
+
+test('TC-API-03: processGenerateReview validates required businessName and feedback answers', async () => {
+  const noBiz = await processGenerateReview({
+    businessName: '   ',
+    category: 'Restaurants',
+    responses: [{ question: 'Food', answers: ['Great'] }],
+    style: 'short',
+  });
+  assert.equal(noBiz.status, 400);
+
+  const noFeedback = await processGenerateReview({
+    businessName: 'Bella Bistro',
+    category: 'Restaurants',
+    responses: [],
+    additionalComments: '   ',
+    style: 'short',
+    language: 'hi',
+  });
+  assert.equal(noFeedback.status, 400);
+});
+
+test('TC-API-04: processGenerateReply validates businessName and integer starRating bounds (1-5)', async () => {
+  const noBiz = await processGenerateReply({
+    businessName: '',
+    starRating: 5,
+    reviewComment: 'Great!',
+  });
+  assert.equal(noBiz.status, 400);
+
+  for (const invalidRating of [0, 6, 3.5, NaN]) {
+    const res = await processGenerateReply({
+      businessName: 'Lumina Studio',
+      starRating: invalidRating,
+      reviewComment: 'Nice visit',
+    });
+    assert.equal(res.status, 400);
+  }
+});
+
+test('TC-API-05: processGenerateSeoKeywords rejects blank businessName', async () => {
+  const res = await processGenerateSeoKeywords({
+    businessName: ' ',
+    category: 'Hair Salons',
+  });
+  assert.equal(res.status, 400);
+});
+
+test('TC-API-06: processValidateQrStandSlot enforces slot range (1-100), clean businessId, and default quota (4)', async () => {
+  const badBiz = await processValidateQrStandSlot({ businessId: '../hack', slotNumber: 1 });
+  assert.equal(badBiz.status, 400);
+
+  const badSlot = await processValidateQrStandSlot({ businessId: 'biz_123', slotNumber: 0 });
+  assert.equal(badSlot.status, 400);
+
+  const allowedSlot = await processValidateQrStandSlot({ businessId: 'biz_123', slotNumber: 4 });
+  assert.equal(allowedSlot.status, 200);
+  assert.equal(allowedSlot.data.allowed, true);
+  assert.equal(allowedSlot.data.standId, 'biz_123_slot_4');
+
+  const overQuota = await processValidateQrStandSlot({ businessId: 'biz_123', slotNumber: 5 });
+  assert.equal(overQuota.status, 403);
+  assert.equal(overQuota.data.allowed, false);
+});
+
+test('TC-API-07: processGbpProxy validates OAuth token, GBP resource paths, and supported actions', async () => {
+  const noToken = await processGbpProxy({ action: 'list_locations', gbpAccessToken: '' });
+  assert.equal(noToken.status, 400);
+
+  const badLocation = await processGbpProxy({
+    action: 'fetch_reviews',
+    gbpAccessToken: 'fake-token',
+    locationName: 'invalid/location/path',
+  });
+  assert.equal(badLocation.status, 400);
+
+  const badReply = await processGbpProxy({
+    action: 'publish_reply',
+    gbpAccessToken: 'fake-token',
+    locationName: 'accounts/123/locations/456',
+    externalReviewId: 'bad/id',
+    replyText: 'Thank you!',
+  });
+  assert.equal(badReply.status, 400);
+
+  const unknownAction = await processGbpProxy({
+    action: 'delete_everything' as never,
+    gbpAccessToken: 'fake-token',
+  });
+  assert.equal(unknownAction.status, 400);
+});

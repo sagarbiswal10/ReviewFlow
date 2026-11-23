@@ -46,6 +46,8 @@ import { WarpCarousel, type WarpCard } from './ui/warp-carousel';
 import { LiquidNavbar, NimbusIcons, type LiquidNavItem } from './ui/liquid-glass-navbar';
 import { SpatialTilt } from './ui/spatial-tilt';
 
+import type { AuthActionableError } from '../utils/urlAndAuth';
+
 interface LandingPageProps {
   user?: User | null;
   hasClientAccess?: boolean;
@@ -61,6 +63,7 @@ interface LandingPageProps {
   initialAuthModalOpen?: boolean;
   isSigningIn: boolean;
   authError: string | null;
+  authActionError?: AuthActionableError | null;
 }
 
 type AuthTab = 'signin' | 'signup' | 'reset';
@@ -265,6 +268,7 @@ export function LandingPage({
   initialAuthModalOpen = false,
   isSigningIn,
   authError,
+  authActionError = null,
 }: LandingPageProps) {
   const [authModalOpen, setAuthModalOpen] = useState(() => Boolean(initialAuthModalOpen && !user));
   const [authTab, setAuthTab] = useState<AuthTab>('signin');
@@ -272,6 +276,8 @@ export function LandingPage({
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [sendingPasswordSetup, setSendingPasswordSetup] = useState(false);
+  const [dismissedAuthErrorSig, setDismissedAuthErrorSig] = useState<string | null>(null);
   const [heroImageFailed, setHeroImageFailed] = useState(false);
 
   useEffect(() => {
@@ -338,6 +344,7 @@ export function LandingPage({
     setAuthTab(initialTab);
     setLocalError(null);
     setInfoMessage(null);
+    setDismissedAuthErrorSig(authActionError?.message || authError || null);
     setAuthModalOpen(true);
   };
 
@@ -345,8 +352,9 @@ export function LandingPage({
     e.preventDefault();
     setLocalError(null);
     setInfoMessage(null);
+    setDismissedAuthErrorSig(null);
 
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) {
       setLocalError('Please enter your email address.');
       return;
@@ -355,7 +363,9 @@ export function LandingPage({
     if (authTab === 'reset') {
       try {
         await onResetPassword(cleanEmail);
-        setInfoMessage('Password reset email sent. Check your inbox and spam folder.');
+        setInfoMessage(
+          `Password setup & reset link sent to ${cleanEmail}. Check your inbox and spam folder — once you set a password via that link, you can sign in with email & password too.`,
+        );
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : 'Unable to send password reset email.');
       }
@@ -375,6 +385,29 @@ export function LandingPage({
       }
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Authentication failed.');
+    }
+  };
+
+  const handleQuickPasswordSetupLink = async () => {
+    const targetEmail = (authActionError?.email || email).trim().toLowerCase();
+    if (!targetEmail) {
+      setAuthTab('reset');
+      setLocalError(null);
+      return;
+    }
+    setSendingPasswordSetup(true);
+    setLocalError(null);
+    setInfoMessage(null);
+    try {
+      await onResetPassword(targetEmail);
+      setDismissedAuthErrorSig(authActionError?.message || authError || null);
+      setInfoMessage(
+        `Password setup link sent to ${targetEmail}. Open the link in your inbox to set a password on your existing Google-linked account, then sign in with Email & Password anytime.`,
+      );
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Unable to send password setup link.');
+    } finally {
+      setSendingPasswordSetup(false);
     }
   };
 
@@ -433,7 +466,10 @@ export function LandingPage({
   };
 
   const activeCategoryMeta = CATEGORY_SHOWCASE_DATA[selectedCategory];
-  const combinedError = localError || authError;
+  const parentErrorText = authActionError?.message || authError;
+  const visibleParentError =
+    parentErrorText && parentErrorText !== dismissedAuthErrorSig ? parentErrorText : null;
+  const combinedError = localError || visibleParentError;
 
   const renderPrimaryWorkspaceCta = (label: string, extraClass = '') => {
     if (user && isAdmin && onOpenAdmin) {
@@ -1841,6 +1877,7 @@ export function LandingPage({
                   setAuthTab('signin');
                   setLocalError(null);
                   setInfoMessage(null);
+                  setDismissedAuthErrorSig(authActionError?.message || authError || null);
                 }}
                 className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
                   authTab === 'signin'
@@ -1856,6 +1893,7 @@ export function LandingPage({
                   setAuthTab('signup');
                   setLocalError(null);
                   setInfoMessage(null);
+                  setDismissedAuthErrorSig(authActionError?.message || authError || null);
                 }}
                 className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
                   authTab === 'signup'
@@ -1902,6 +1940,7 @@ export function LandingPage({
                           setAuthTab('reset');
                           setLocalError(null);
                           setInfoMessage(null);
+                          setDismissedAuthErrorSig(authActionError?.message || authError || null);
                         }}
                         className="text-xs font-medium text-[#005c55] hover:underline cursor-pointer"
                       >
@@ -1925,9 +1964,33 @@ export function LandingPage({
               {combinedError && (
                 <div
                   role="alert"
-                  className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
+                  className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 space-y-2.5"
                 >
-                  {combinedError}
+                  <p className="leading-relaxed">{combinedError}</p>
+                  {(authActionError?.suggestGoogleSignIn || authActionError?.suggestPasswordReset) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      {authActionError.suggestGoogleSignIn && (
+                        <button
+                          type="button"
+                          disabled={isSigningIn}
+                          onClick={onGoogleSignIn}
+                          className="px-2.5 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-100/60 text-slate-800 font-semibold cursor-pointer whitespace-nowrap"
+                        >
+                          Continue with Google
+                        </button>
+                      )}
+                      {authActionError.suggestPasswordReset && (
+                        <button
+                          type="button"
+                          disabled={sendingPasswordSetup || isSigningIn}
+                          onClick={handleQuickPasswordSetupLink}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#0f766e] hover:bg-[#005c55] text-white font-semibold cursor-pointer whitespace-nowrap disabled:opacity-60"
+                        >
+                          {sendingPasswordSetup ? 'Sending link...' : 'Send Password Setup Link'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

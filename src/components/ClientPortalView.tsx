@@ -17,6 +17,7 @@ import {
   FileBarChart2,
   FileText,
   Home,
+  KeyRound,
   Layers,
   LayoutDashboard,
   Lock,
@@ -40,6 +41,8 @@ import {
 } from '../services/businessService';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { hasPasswordProvider, sanitizeExternalUrl } from '../utils/urlAndAuth';
+import { AccountSecurityModal } from './AccountSecurityModal';
 import { BusinessLogo } from './BusinessLogo';
 import { QrStudioTab } from './QrStudioTab';
 import { QuestionBuilderTab } from './QuestionBuilderTab';
@@ -70,6 +73,7 @@ interface ClientPortalViewProps {
   onOpenNewBusiness: () => void;
   onViewLanding: () => void;
   onSwitchToAdmin?: () => void;
+  onLinkEmailPassword?: (password: string) => Promise<void>;
   onSignOut: () => void;
 }
 
@@ -175,6 +179,7 @@ export function ClientPortalView({
   onOpenNewBusiness,
   onViewLanding,
   onSwitchToAdmin,
+  onLinkEmailPassword,
   onSignOut,
 }: ClientPortalViewProps) {
   const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
@@ -190,10 +195,12 @@ export function ClientPortalView({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfExportError, setPdfExportError] = useState<string | null>(null);
+  const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const claimedAttemptRef = useRef<Set<string>>(new Set());
   const claimingInFlightRef = useRef<Set<string>>(new Set());
+  const hasPasswordAuth = hasPasswordProvider(user.providerData);
 
   useEffect(() => {
     if (!switcherOpen) return;
@@ -206,33 +213,39 @@ export function ClientPortalView({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [switcherOpen]);
 
+  const activeBizId = activeBusiness?.id ?? '';
+  const activeBizOwnerId = activeBusiness?.ownerId ?? '';
+  const activeBizClientEmail = activeBusiness?.clientEmail ?? '';
+  const activeBizClientUid = activeBusiness?.clientUid ?? '';
+  const isClientUidLinked = activeBizClientUid === user.uid;
+
   useEffect(() => {
     if (
       !activeBusiness ||
       isAdmin ||
-      activeBusiness.ownerId === user.uid ||
-      activeBusiness.clientUid === user.uid
+      activeBizOwnerId === user.uid ||
+      isClientUidLinked
     ) {
       return;
     }
     const normalizedEmail = (user.email || '').trim().toLowerCase();
-    const attemptKey = `${activeBusiness.id}:${user.uid}`;
+    const attemptKey = `${activeBizId}:${user.uid}`;
     if (
       normalizedEmail &&
-      activeBusiness.clientEmail === normalizedEmail &&
+      activeBizClientEmail === normalizedEmail &&
       !claimedAttemptRef.current.has(attemptKey) &&
       !claimingInFlightRef.current.has(attemptKey)
     ) {
       claimingInFlightRef.current.add(attemptKey);
       claimBusinessClientUid(activeBusiness, user.uid)
         .then((res) => {
-          if (res.ok) {
-            claimedAttemptRef.current.add(attemptKey);
-          } else if (res.error) {
+          claimedAttemptRef.current.add(attemptKey);
+          if (!res.ok && res.error) {
             setEventsAccessError(res.error);
           }
         })
         .catch((err) => {
+          claimedAttemptRef.current.add(attemptKey);
           setEventsAccessError(
             err instanceof Error ? err.message : 'Unable to link client account.',
           );
@@ -242,10 +255,10 @@ export function ClientPortalView({
         });
     }
   }, [
-    activeBusiness?.id,
-    activeBusiness?.ownerId,
-    activeBusiness?.clientEmail,
-    activeBusiness?.clientUid,
+    activeBizId,
+    activeBizOwnerId,
+    activeBizClientEmail,
+    isClientUidLinked,
     user.uid,
     user.email,
     isAdmin,
@@ -256,7 +269,7 @@ export function ClientPortalView({
   }, [activeBusiness?.id, reportPeriod, selectedDate, eventFilter]);
 
   useEffect(() => {
-    if (!activeBusiness) {
+    if (!activeBizId) {
       setStats(null);
       setEvents([]);
       setReviewDrafts([]);
@@ -266,7 +279,7 @@ export function ClientPortalView({
     setEventsAccessError(null);
     setPdfExportError(null);
     const unsubStats = subscribeToBusinessStats(
-      activeBusiness.id,
+      activeBizId,
       (next) => {
         setStats(next);
       },
@@ -276,8 +289,8 @@ export function ClientPortalView({
       },
     );
     const unsubEvents = subscribeToBusinessEvents(
-      activeBusiness.id,
-      activeBusiness.ownerId,
+      activeBizId,
+      activeBizOwnerId,
       user.uid,
       isAdmin,
       (nextEvents) => {
@@ -288,11 +301,11 @@ export function ClientPortalView({
         setEvents([]);
         setEventsAccessError(err?.message || 'Unable to load event history from Firestore.');
       },
-      activeBusiness.clientUid,
+      activeBizClientUid,
     );
     const unsubDrafts = subscribeToBusinessReviewDrafts(
-      activeBusiness.id,
-      activeBusiness.ownerId,
+      activeBizId,
+      activeBizOwnerId,
       user.uid,
       isAdmin,
       (nextDrafts) => {
@@ -301,14 +314,14 @@ export function ClientPortalView({
       () => {
         setReviewDrafts([]);
       },
-      activeBusiness.clientUid,
+      activeBizClientUid,
     );
     return () => {
       unsubStats();
       unsubEvents();
       unsubDrafts();
     };
-  }, [activeBusiness?.id, activeBusiness?.ownerId, activeBusiness?.clientUid, user.uid, isAdmin]);
+  }, [activeBizId, activeBizOwnerId, isClientUidLinked, user.uid, isAdmin]);
 
   useEffect(() => {
     if (!activeBusiness || isAdmin) return;
@@ -470,7 +483,7 @@ export function ClientPortalView({
       activeBusiness?.ownerId === user.uid ||
       activeBusiness?.clientUid === user.uid);
 
-  const todayIso = toLocalDateStr(new Date());
+  const todayIso = useMemo(() => toLocalDateStr(new Date()), []);
 
   const reportWindowMeta = useMemo(() => {
     const now = new Date();
@@ -887,6 +900,24 @@ export function ClientPortalView({
                 </p>
               </div>
             </div>
+
+            {onLinkEmailPassword && (
+              <button
+                type="button"
+                onClick={() => setAccountSecurityOpen(true)}
+                title={hasPasswordAuth ? 'Manage Sign-In Methods' : 'Set Password for Email Sign-In'}
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  hasPasswordAuth
+                    ? 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                    : 'border-teal-200 bg-[#f0fdfa] hover:bg-[#ccfbf1]/60 text-[#005c55]'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">
+                  {hasPasswordAuth ? 'Sign-In' : 'Set Password'}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1669,10 +1700,10 @@ export function ClientPortalView({
 
                       <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-2">
                         <p className="font-mono text-xs text-slate-700 truncate">
-                          {activeBusiness.googleReviewUrl || 'https://www.google.com/maps'}
+                          {sanitizeExternalUrl(activeBusiness.googleReviewUrl, 'https://www.google.com/maps')}
                         </p>
                         <a
-                          href={activeBusiness.googleReviewUrl || 'https://www.google.com/maps'}
+                          href={sanitizeExternalUrl(activeBusiness.googleReviewUrl, 'https://www.google.com/maps')}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs font-semibold text-[#005c55] hover:underline inline-flex items-center gap-1 shrink-0"
@@ -1915,6 +1946,7 @@ export function ClientPortalView({
                   userEmail={user.email || ''}
                   isAdmin={isAdmin}
                   canEdit={canEditBranding || isAdmin}
+                  allowOAuthConnection={false}
                 />
               )}
 
@@ -1992,6 +2024,13 @@ export function ClientPortalView({
           </div>
         </div>
       </footer>
+      {accountSecurityOpen && onLinkEmailPassword && (
+        <AccountSecurityModal
+          user={user}
+          onClose={() => setAccountSecurityOpen(false)}
+          onLinkEmailPassword={onLinkEmailPassword}
+        />
+      )}
     </div>
   );
 }

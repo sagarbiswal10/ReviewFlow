@@ -72,6 +72,13 @@ export function WeeklyReportsTab({
         .join(', '),
     }),
   );
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const nextVal = (business.weeklyReportConfig?.recipients || [business.clientEmail])
@@ -170,7 +177,9 @@ export function WeeklyReportsTab({
       setStatusMessage(
         `Weekly Business Report generated for ${win.weekStart} – ${win.weekEnd} (Monday–Sunday).`,
       );
-      setTimeout(() => setStatusMessage(null), 4000);
+      setTimeout(() => {
+        if (mountedRef.current) setStatusMessage(null);
+      }, 4000);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Unable to generate weekly report.');
     } finally {
@@ -212,7 +221,9 @@ export function WeeklyReportsTab({
         val: parsed.join(', '),
       });
       setStatusMessage(`Weekly report archived & dispatched to: ${parsed.join(', ')}`);
-      setTimeout(() => setStatusMessage(null), 4500);
+      setTimeout(() => {
+        if (mountedRef.current) setStatusMessage(null);
+      }, 4500);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Unable to dispatch report.');
     } finally {
@@ -254,7 +265,9 @@ export function WeeklyReportsTab({
     try {
       await navigator.clipboard.writeText(text);
       setCopiedSummary(true);
-      setTimeout(() => setCopiedSummary(false), 2500);
+      setTimeout(() => {
+        if (mountedRef.current) setCopiedSummary(false);
+      }, 2500);
     } catch {
       // Ignore
     }

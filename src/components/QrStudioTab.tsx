@@ -38,9 +38,12 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
     sig: JSON.stringify(business.qrConfig),
   });
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
     };
   }, []);
@@ -188,7 +191,9 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
     try {
       await navigator.clipboard.writeText(reviewUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => {
+        if (mountedRef.current) setCopied(false);
+      }, 2000);
     } catch {
       // ignore
     }

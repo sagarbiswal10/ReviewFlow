@@ -26,6 +26,7 @@ import {
   updateReviewDraftLifecycle,
 } from '../services/businessService';
 import { apiFetch, formatApiError } from '../utils/apiClient';
+import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { BusinessLogo } from './BusinessLogo';
 
 interface CustomerReviewFlowProps {
@@ -51,16 +52,6 @@ function getLanguageDisplayName(lang: ReviewLanguage): string {
   if (lang === 'hi') return 'हिंदी (Hindi)';
   if (lang === 'mr') return 'मराठी (Marathi)';
   return 'English';
-}
-
-function normalizeExternalUrl(raw?: string): string {
-  const trimmed = (raw || '').trim();
-  if (!trimmed) return 'https://www.google.com/maps';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(trimmed)) {
-    return `https://${trimmed}`;
-  }
-  return 'https://www.google.com/maps';
 }
 
 export function CustomerReviewFlow({
@@ -386,7 +377,9 @@ export function CustomerReviewFlow({
 
   const handleGenerateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGenerating) return;
     setValidationError(null);
+    setGenerateError(null);
 
     for (const q of profile.questions) {
       if (!q.required) continue;
@@ -410,27 +403,33 @@ export function CustomerReviewFlow({
       return;
     }
 
-    const { responses, additionalComments } = buildStructuredPayload();
-    let submissionId = '';
-    if (!isPreview) {
-      submissionId = await saveFeedbackSubmission({
-        profile,
-        responses,
-        additionalComments,
-        sentiment: sentimentValue,
-        selectedHighlights,
-        standId: standContext.standId,
-        standCode: standContext.standCode,
-        standName: standContext.standName,
-        sessionId: standContext.sessionId,
-      });
-    } else {
-      submissionId = `preview_fb_${Date.now()}`;
-    }
-    setFeedbackSubmissionId(submissionId);
+    setIsGenerating(true);
+    try {
+      const { responses, additionalComments } = buildStructuredPayload();
+      let submissionId = '';
+      if (!isPreview) {
+        submissionId = await saveFeedbackSubmission({
+          profile,
+          responses,
+          additionalComments,
+          sentiment: sentimentValue,
+          selectedHighlights,
+          standId: standContext.standId,
+          standCode: standContext.standCode,
+          standName: standContext.standName,
+          sessionId: standContext.sessionId,
+        });
+      } else {
+        submissionId = `preview_fb_${Date.now()}`;
+      }
+      setFeedbackSubmissionId(submissionId);
 
-    const nextSeed = variationSeed;
-    await requestAiDraft(selectedLanguage, nextSeed, submissionId);
+      const nextSeed = variationSeed;
+      await requestAiDraft(selectedLanguage, nextSeed, submissionId);
+    } catch (err) {
+      setGenerateError(formatApiError(err, 'Unable to save feedback or generate review draft.'));
+      setIsGenerating(false);
+    }
   };
 
   const handleLanguageChangeOnPreview = async (nextLang: ReviewLanguage) => {
@@ -589,7 +588,7 @@ export function CustomerReviewFlow({
     setStep('feedback');
   };
 
-  const googleUrl = normalizeExternalUrl(profile.googleReviewUrl);
+  const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col relative overflow-x-hidden">
@@ -844,6 +843,7 @@ export function CustomerReviewFlow({
                 type="button"
                 onClick={() => {
                   setIsEditing(false);
+                  setFeedbackSubmissionId('');
                   setStep('feedback');
                 }}
                 className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 underline underline-offset-4 cursor-pointer whitespace-nowrap"

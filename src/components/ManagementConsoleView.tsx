@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   Download,
   Eye,
   FileBarChart2,
+  KeyRound,
   Layers,
   Loader2,
   LogOut,
@@ -54,6 +55,7 @@ import {
   updateBusiness,
 } from '../services/businessService';
 import {
+  fetchBusinessReportInputs,
   generateAndSaveWeeklyReport,
   getMondaySundayWindow,
   isMondayToday,
@@ -63,6 +65,8 @@ import {
   subscribeToAllWeeklyReports,
 } from '../services/platformFeaturesService';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
+import { hasPasswordProvider } from '../utils/urlAndAuth';
+import { AccountSecurityModal } from './AccountSecurityModal';
 import { BusinessLogo } from './BusinessLogo';
 import { OverviewTab } from './OverviewTab';
 import { QrStudioTab } from './QrStudioTab';
@@ -99,6 +103,7 @@ interface ManagementConsoleViewProps {
   events: ReviewEvent[];
   onOpenNewBusiness: () => void;
   onSwitchToPortal: () => void;
+  onLinkEmailPassword?: (password: string) => Promise<void>;
   onSignOut: () => void;
 }
 
@@ -123,6 +128,7 @@ export function ManagementConsoleView({
   events,
   onOpenNewBusiness,
   onSwitchToPortal,
+  onLinkEmailPassword,
   onSignOut,
 }: ManagementConsoleViewProps) {
   const [section, setSection] = useState<AdminSection>('directory');
@@ -131,6 +137,15 @@ export function ManagementConsoleView({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
+  const hasPasswordAuth = hasPasswordProvider(user.providerData);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Client assignment & feature governance state for selected business
   const selectedBiz = useMemo(
@@ -224,6 +239,7 @@ export function ManagementConsoleView({
     }
   }, [businesses, assignBizId]);
 
+  const selectedBizFeaturesSig = selectedBiz ? JSON.stringify(selectedBiz.enabledFeatures) : '';
   useEffect(() => {
     if (!selectedBiz) return;
     setClientEmailInput(selectedBiz.clientEmail || '');
@@ -240,7 +256,13 @@ export function ManagementConsoleView({
     });
     setGovernanceNotice(null);
     setGovernanceError(null);
-  }, [selectedBiz?.id, selectedBiz?.qrStandLimit]);
+  }, [
+    selectedBiz?.id,
+    selectedBiz?.clientEmail,
+    selectedBiz?.clientAccessLevel,
+    selectedBiz?.qrStandLimit,
+    selectedBizFeaturesSig,
+  ]);
 
   const aggregateStats = useMemo(() => {
     let totalScans = 0;
@@ -416,11 +438,12 @@ export function ManagementConsoleView({
           (r) => r.businessId === biz.id && r.weekStart === win.weekStart,
         );
         const bizLogs = globalAiLogs.filter((l) => l.businessId === biz.id);
+        const { qrStands, gbpReviews } = await fetchBusinessReportInputs(biz.id);
         await generateAndSaveWeeklyReport({
           business: biz,
           events,
-          qrStands: [],
-          gbpReviews: [],
+          qrStands,
+          gbpReviews,
           aiUsageLogs: bizLogs,
           generatedBy: user.email || user.uid,
           weekStart: win.weekStart,
@@ -431,16 +454,23 @@ export function ManagementConsoleView({
         });
         generated += 1;
       }
+      if (!mountedRef.current) return;
       setBatchReportNotice(
         `Compiled ${generated} Weekly Business Report(s) for ${win.weekStart} – ${win.weekEnd}.`,
       );
-      setTimeout(() => setBatchReportNotice(null), 5000);
+      setTimeout(() => {
+        if (mountedRef.current) setBatchReportNotice(null);
+      }, 5000);
     } catch (err) {
-      setBatchReportNotice(
-        err instanceof Error ? err.message : 'Unable to compile weekly reports.',
-      );
+      if (mountedRef.current) {
+        setBatchReportNotice(
+          err instanceof Error ? err.message : 'Unable to compile weekly reports.',
+        );
+      }
     } finally {
-      setIsBatchGeneratingReports(false);
+      if (mountedRef.current) {
+        setIsBatchGeneratingReports(false);
+      }
     }
   };
 
@@ -751,6 +781,16 @@ export function ManagementConsoleView({
           </p>
           <p className="text-xs text-slate-500 truncate">{user.email}</p>
         </div>
+        {onLinkEmailPassword && (
+          <button
+            type="button"
+            onClick={() => setAccountSecurityOpen(true)}
+            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-[#005c55]" />
+            <span>{hasPasswordAuth ? 'Sign-In Methods' : 'Set Password'}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onSignOut}
@@ -1084,6 +1124,7 @@ export function ManagementConsoleView({
                   userEmail={user.email || ''}
                   isAdmin
                   canEdit
+                  allowOAuthConnection
                 />
               )}
               {detailTab === 'weekly' && (
@@ -2074,6 +2115,13 @@ export function ManagementConsoleView({
           )}
         </main>
       </div>
+      {accountSecurityOpen && onLinkEmailPassword && (
+        <AccountSecurityModal
+          user={user}
+          onClose={() => setAccountSecurityOpen(false)}
+          onLinkEmailPassword={onLinkEmailPassword}
+        />
+      )}
     </div>
   );
 }

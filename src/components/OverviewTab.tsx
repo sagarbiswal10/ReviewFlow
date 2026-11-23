@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, QrCode, CheckCircle2, PauseCircle } from 'lucide-react';
-import { useState } from 'react';
 import type { Business, ReviewEvent } from '../types';
+import { getPublicAppUrl } from '../utils/apiClient';
+import { formatReviewEventActionLabel, getTimestampMs } from '../utils/domainHelpers';
 
 interface OverviewTabProps {
   business: Business;
@@ -10,17 +11,14 @@ interface OverviewTabProps {
 }
 
 function formatEventTime(createdAt: unknown): string {
-  if (!createdAt) return 'Just now';
-  if (typeof createdAt === 'object' && createdAt !== null && 'toDate' in createdAt) {
-    const dt = (createdAt as { toDate: () => Date }).toDate();
-    return dt.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  }
-  return 'Recent';
+  const ms = getTimestampMs(createdAt);
+  if (!ms) return 'Just now';
+  return new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProps) {
@@ -65,7 +63,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
     };
   }, [businessEvents]);
 
-  const liveUrl = `${window.location.origin}/review/${business.slug}?v=${business.qrConfig.token}`;
+  const liveUrl = `${getPublicAppUrl()}/review/${business.slug}?v=${business.qrConfig.token}`;
 
   const handleCopyUrl = async () => {
     try {
@@ -259,12 +257,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {businessEvents.slice(0, 15).map((ev) => {
-                    const actionLabel =
-                      ev.eventType === 'scan'
-                        ? 'QR Scan'
-                        : ev.eventType === 'generate'
-                          ? 'AI Draft Created'
-                          : 'Opened Google Review';
+                    const actionLabel = formatReviewEventActionLabel(ev.eventType);
                     return (
                       <tr key={ev.id} className="hover:bg-slate-50/70">
                         <td className="py-3 px-6 font-medium text-slate-900 whitespace-nowrap">

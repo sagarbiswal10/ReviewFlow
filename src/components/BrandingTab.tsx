@@ -19,6 +19,7 @@ import {
   updateBusiness,
 } from '../services/businessService';
 import { compressLogoFile } from '../utils/qrAndPdf';
+import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { BusinessLogo } from './BusinessLogo';
 
 interface BrandingTabProps {
@@ -134,7 +135,10 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
           address: address.trim(),
           phone: phone.trim(),
           contactEmail: contactEmail.trim(),
-          googleReviewUrl: googleReviewUrl.trim() || 'https://www.google.com/maps',
+          googleReviewUrl: sanitizeExternalUrl(
+            googleReviewUrl,
+            'https://www.google.com/maps',
+          ),
           logoDataUrl,
           seoKeywords,
           branding: {

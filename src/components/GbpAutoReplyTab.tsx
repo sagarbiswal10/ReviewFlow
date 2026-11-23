@@ -50,6 +50,7 @@ interface GbpAutoReplyTabProps {
   userEmail: string;
   isAdmin?: boolean;
   canEdit: boolean;
+  allowOAuthConnection?: boolean;
 }
 
 type QueueFilter = 'all' | 'awaiting_approval' | 'auto_published' | 'manually_approved' | 'failed';
@@ -60,6 +61,7 @@ export function GbpAutoReplyTab({
   userEmail,
   isAdmin = false,
   canEdit,
+  allowOAuthConnection = false,
 }: GbpAutoReplyTabProps) {
   const [connection, setConnection] = useState<GbpConnection | null>(null);
   const [reviews, setReviews] = useState<GbpReview[]>([]);
@@ -116,16 +118,42 @@ export function GbpAutoReplyTab({
   const envOAuthClientConfigured = Boolean((import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim());
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
+  const isSettingsDirtyRef = useRef(false);
+  const defaultGbpSettings = (raw?: GbpReplySettings): GbpReplySettings =>
+    raw ?? {
+      fiveStarMode: 'auto_publish',
+      midStarMode: 'approval_required',
+      lowStarMode: 'manual_approval_only',
+      brandVoice: '',
+      autoSyncEnabled: true,
+    };
+  const lastSettingsSigRef = useRef<{ id: string; sig: string }>({
+    id: business.id,
+    sig: JSON.stringify(defaultGbpSettings(business.gbpSettings)),
+  });
+  const mountedRef = useRef(true);
+
   useEffect(() => {
-    setSettings(
-      business.gbpSettings ?? {
-        fiveStarMode: 'auto_publish',
-        midStarMode: 'approval_required',
-        lowStarMode: 'manual_approval_only',
-        brandVoice: '',
-        autoSyncEnabled: true,
-      },
-    );
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const incoming = defaultGbpSettings(business.gbpSettings);
+    const incomingSig = JSON.stringify(incoming);
+    if (lastSettingsSigRef.current.id !== business.id) {
+      isSettingsDirtyRef.current = false;
+      lastSettingsSigRef.current = { id: business.id, sig: incomingSig };
+      setSettings(incoming);
+      setSettingsNotice(null);
+      return;
+    }
+    if (!isSettingsDirtyRef.current && incomingSig !== lastSettingsSigRef.current.sig) {
+      lastSettingsSigRef.current = { id: business.id, sig: incomingSig };
+      setSettings(incoming);
+    }
   }, [business.id, business.gbpSettings]);
 
   useEffect(() => {
@@ -216,10 +244,17 @@ export function GbpAutoReplyTab({
   const handleConnectGoogleOAuth = async () => {
     setConnError(null);
     setConnNotice(null);
+    if (!hasCustomOAuthClient) {
+      setShowOAuthConfig(true);
+      setConnError(
+        `Please enter your Google Cloud Web OAuth Client ID below first (with ${currentOrigin || 'this site'} in Authorized JavaScript Origins). Using the default Firebase Auth client triggers Google Error 400: origin_mismatch.`,
+      );
+      return;
+    }
     const attemptId = ++oauthAttemptRef.current;
     setIsConnecting(true);
     try {
-      const token = await requestGbpOAuthToken();
+      const token = await requestGbpOAuthToken({ loginHint: userEmail });
       if (oauthAttemptRef.current !== attemptId) return;
       setGbpToken(token);
       try {
@@ -328,7 +363,7 @@ export function GbpAutoReplyTab({
     try {
       let tokenToUse = gbpToken;
       if (!tokenToUse) {
-        tokenToUse = await requestGbpOAuthToken();
+        tokenToUse = await requestGbpOAuthToken({ loginHint: userEmail });
         if (oauthAttemptRef.current !== attemptId) return;
         setGbpToken(tokenToUse);
       }
@@ -363,23 +398,33 @@ export function GbpAutoReplyTab({
     setIsSavingSettings(true);
     setSettingsNotice(null);
     setQueueError(null);
+    const payload = {
+      ...settings,
+      lowStarMode: 'manual_approval_only' as const,
+    };
     try {
       await updateBusiness(
         business,
         {
-          gbpSettings: {
-            ...settings,
-            lowStarMode: 'manual_approval_only',
-          },
+          gbpSettings: payload,
         },
         { isAdmin },
       );
+      if (!mountedRef.current) return;
+      isSettingsDirtyRef.current = false;
+      lastSettingsSigRef.current = { id: business.id, sig: JSON.stringify(payload) };
       setSettingsNotice('Rating-based AI reply rules saved.');
-      setTimeout(() => setSettingsNotice(null), 3000);
+      setTimeout(() => {
+        if (mountedRef.current) setSettingsNotice(null);
+      }, 3000);
     } catch (err) {
-      setQueueError(err instanceof Error ? err.message : 'Unable to save reply settings.');
+      if (mountedRef.current) {
+        setQueueError(err instanceof Error ? err.message : 'Unable to save reply settings.');
+      }
     } finally {
-      setIsSavingSettings(false);
+      if (mountedRef.current) {
+        setIsSavingSettings(false);
+      }
     }
   };
 
@@ -515,62 +560,70 @@ export function GbpAutoReplyTab({
             </div>
             <p className="text-xs sm:text-sm text-slate-600">
               {connection?.locationTitle
-                ? `Location: ${connection.locationTitle} (${connection.connectedEmail || userEmail})`
-                : 'Connect Google Business Profile via OAuth 2.0 (business.manage scope) to fetch reviews and publish AI owner replies.'}
+                ? `Location: ${connection.locationTitle}${
+                    allowOAuthConnection ? ` (${connection.connectedEmail || userEmail})` : ''
+                  }`
+                : allowOAuthConnection
+                  ? 'Connect Google Business Profile via OAuth 2.0 (business.manage scope) to fetch reviews and publish AI owner replies.'
+                  : 'Google Business Profile connection is managed centrally by your ReviewFlow Administrator in the Business Management Console. Configure your rating rules, test incoming reviews, and approve AI replies below.'}
             </p>
           </div>
 
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                disabled={isConnecting}
-                onClick={handleConnectGoogleOAuth}
-                className="px-4 py-2.5 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
-              >
-                {isConnecting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Link2 className="w-4 h-4" />
-                )}
-                <span>
-                  {isConnecting
-                    ? 'Waiting for Google...'
-                    : connection?.connectionStatus === 'connected'
-                      ? 'Reconnect Google Account'
-                      : 'Connect Google Business'}
-                </span>
-              </button>
-
-              {(isConnecting || isSyncing) && (
-                <button
-                  type="button"
-                  onClick={handleCancelOAuthWait}
-                  className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
-                >
-                  Cancel
-                </button>
-              )}
-
-              {connection?.connectionStatus === 'connected' && (
+              {allowOAuthConnection && (
                 <>
                   <button
                     type="button"
-                    disabled={isSyncing}
-                    onClick={handleSyncNow}
-                    className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                    disabled={isConnecting}
+                    onClick={handleConnectGoogleOAuth}
+                    className="px-4 py-2.5 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    <span>Sync Reviews</span>
+                    {isConnecting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Link2 className="w-4 h-4" />
+                    )}
+                    <span>
+                      {isConnecting
+                        ? 'Waiting for Google...'
+                        : connection?.connectionStatus === 'connected'
+                          ? 'Reconnect Google Account'
+                          : 'Connect Google Business'}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleDisconnect}
-                    className="px-3.5 py-2.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-xs font-semibold text-red-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                  >
-                    <Unlink className="w-3.5 h-3.5" />
-                    <span>Disconnect</span>
-                  </button>
+
+                  {(isConnecting || isSyncing) && (
+                    <button
+                      type="button"
+                      onClick={handleCancelOAuthWait}
+                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
+                    >
+                      Cancel
+                    </button>
+                  )}
+
+                  {connection?.connectionStatus === 'connected' && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={isSyncing}
+                        onClick={handleSyncNow}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span>Sync Reviews</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        className="px-3.5 py-2.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-xs font-semibold text-red-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <Unlink className="w-3.5 h-3.5" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  )}
                 </>
               )}
 
@@ -586,7 +639,7 @@ export function GbpAutoReplyTab({
           )}
         </div>
 
-        {discoveredLocations.length > 1 && (
+        {allowOAuthConnection && discoveredLocations.length > 1 && (
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
             <label className="text-xs font-semibold text-slate-700">
               Select GBP Location:
@@ -611,7 +664,9 @@ export function GbpAutoReplyTab({
             <span>{connError}</span>
           </div>
         )}
-        {(!hasCustomOAuthClient || showOAuthConfig) && connection?.connectionStatus !== 'connected' && (
+        {allowOAuthConnection &&
+          (!hasCustomOAuthClient || showOAuthConfig) &&
+          connection?.connectionStatus !== 'connected' && (
           <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3.5 text-xs text-slate-700 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-slate-900 inline-flex items-center gap-1.5">
@@ -695,7 +750,11 @@ export function GbpAutoReplyTab({
             )}
           </div>
         )}
-        {hasCustomOAuthClient && !showOAuthConfig && connection?.connectionStatus !== 'connected' && !envOAuthClientConfigured && (
+        {allowOAuthConnection &&
+          hasCustomOAuthClient &&
+          !showOAuthConfig &&
+          connection?.connectionStatus !== 'connected' &&
+          !envOAuthClientConfigured && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
             <span>
               Using custom Google OAuth Client ID:{' '}
@@ -841,12 +900,13 @@ export function GbpAutoReplyTab({
             <select
               disabled={!canEdit}
               value={settings.fiveStarMode}
-              onChange={(e) =>
+              onChange={(e) => {
+                isSettingsDirtyRef.current = true;
                 setSettings((prev) => ({
                   ...prev,
                   fiveStarMode: e.target.value as 'auto_publish' | 'approval_required',
-                }))
-              }
+                }));
+              }}
               className="w-full h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-medium"
             >
               <option value="auto_publish">Generate &amp; Auto-Publish</option>
@@ -862,12 +922,13 @@ export function GbpAutoReplyTab({
             <select
               disabled={!canEdit}
               value={settings.midStarMode}
-              onChange={(e) =>
+              onChange={(e) => {
+                isSettingsDirtyRef.current = true;
                 setSettings((prev) => ({
                   ...prev,
                   midStarMode: e.target.value as 'auto_publish' | 'approval_required',
-                }))
-              }
+                }));
+              }}
               className="w-full h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-medium"
             >
               <option value="approval_required">Generate &amp; Queue Approval</option>
@@ -897,7 +958,10 @@ export function GbpAutoReplyTab({
             type="text"
             disabled={!canEdit}
             value={settings.brandVoice}
-            onChange={(e) => setSettings((prev) => ({ ...prev, brandVoice: e.target.value }))}
+            onChange={(e) => {
+              isSettingsDirtyRef.current = true;
+              setSettings((prev) => ({ ...prev, brandVoice: e.target.value }));
+            }}
             placeholder="e.g., Warm hospitality tone, sign off as '— Management Team, Bella Bistro'"
             className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900"
           />
@@ -958,7 +1022,9 @@ export function GbpAutoReplyTab({
             <MessageSquare className="w-8 h-8 text-slate-400 mx-auto" />
             <p className="text-sm font-semibold text-slate-900">No reviews in this queue filter</p>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Connect your Google Business Profile to sync live reviews or click &ldquo;Process Incoming Review&rdquo; above to test Gemini AI reply drafting and token tracking.
+              {allowOAuthConnection
+                ? 'Connect your Google Business Profile to sync live reviews or click "Process Incoming Review" above to test Gemini AI reply drafting and token tracking.'
+                : 'Synced Google reviews will appear here once connected in the Business Management Console, or click "Process Incoming Review" above to test Gemini AI reply drafting.'}
             </p>
           </div>
         ) : (

@@ -24,6 +24,7 @@ import {
 } from '../services/businessService';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { compressLogoFile } from '../utils/qrAndPdf';
+import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { BusinessLogo } from './BusinessLogo';
 
 interface OnboardingModalProps {
@@ -62,6 +63,13 @@ export function OnboardingModal({
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [keywordsTouched, setKeywordsTouched] = useState(false);
   const lastAutoKeyRef = useRef('');
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,10 +106,13 @@ export function OnboardingModal({
         category: targetCategory,
         address: targetAddress,
       });
+      if (!mountedRef.current) return;
       setSeoKeywords(generated);
       lastAutoKeyRef.current = `${cleanName.toLowerCase()}|${targetCategory}|${targetAddress.trim().toLowerCase()}`;
     } finally {
-      setIsGeneratingKeywords(false);
+      if (mountedRef.current) {
+        setIsGeneratingKeywords(false);
+      }
     }
   };
 
@@ -205,8 +216,8 @@ export function OnboardingModal({
         address: address.trim(),
         phone: phone.trim(),
         contactEmail: (contactEmail || userEmail).trim(),
-        website: website.trim(),
-        googleReviewUrl: googleReviewUrl.trim() || 'https://www.google.com/maps',
+        website: website.trim() ? sanitizeExternalUrl(website, '') : '',
+        googleReviewUrl: sanitizeExternalUrl(googleReviewUrl, 'https://www.google.com/maps'),
         logoDataUrl,
         branding: {
           primaryColor,
