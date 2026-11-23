@@ -88,6 +88,11 @@ const HINGLISH_STIFF_VOCAB = [
   'hospitality',
   'personnel',
   'establishment',
+  'assistance',
+  'satisfactory',
+  'remarkable',
+  'hassle-free',
+  'extremely satisfied',
   'exquisite',
   'impeccable',
   'delectable',
@@ -157,6 +162,7 @@ const HINGLISH_ROMAN_MARKERS = [
   'badhiya',
   'badiya',
   'theek',
+  'thaak',
   'thik',
   'dobara',
   'zaroor',
@@ -178,6 +184,26 @@ const HINGLISH_ROMAN_MARKERS = [
   'bilkul',
   'nahi',
   'nahin',
+  'mast',
+  'maza',
+  'khush',
+  'jagah',
+  'khana',
+  'dikkat',
+  'bina',
+  'bhai',
+  'yaar',
+  'gaya',
+  'gayi',
+  'laga',
+  'lagi',
+  'pada',
+  'jaldi',
+  'sahi',
+  'bura',
+  'khaas',
+  'utna',
+  'sach',
 ];
 
 const POSITIVE_INPUT_CUES = [
@@ -463,6 +489,31 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
       message: 'Output must never claim to be human-written.',
       evidence: humanClaimMatch[0],
     });
+  }
+
+  // 4c. Version 2.0 Minimal punctuation & robotic sentence construction checks
+  if (language === 'hinglish') {
+    if (/;|!{2,}|\?{2,}|!\?|\?!|\.{3,}|…/.test(reviewText)) {
+      issues.push({
+        type: 'formatting_violation',
+        severity: 'warning',
+        message: 'Keep Hinglish punctuation minimal (avoid semicolons, repeated exclamation marks, or ellipses).',
+      });
+    }
+
+    const roboticSentences = reviewText
+      .split(/[.!?]+/)
+      .map((s) => s.trim())
+      .filter((s) => /\b(?:was|were|is|are)\s+(?:good|bad|average|okay|great|satisfactory|nice)\b/i.test(s) && s.split(/\s+/).length <= 6);
+    if (roboticSentences.length >= 3) {
+      clicheCount += 1;
+      issues.push({
+        type: 'ai_cliche',
+        severity: 'warning',
+        message: 'Combine points into natural Hinglish flow instead of repeating short "X was good" template sentences.',
+        evidence: roboticSentences.slice(0, 3).join('. '),
+      });
+    }
   }
 
   // 5. Contradiction detection

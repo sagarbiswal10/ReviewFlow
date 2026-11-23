@@ -210,3 +210,38 @@ test('TC-QUAL-09: Rejects inflating Average feedback into excellent and allows r
   assert.equal(humanClaimReport.passed, false);
   assert.ok(humanClaimReport.issues.some((i) => i.type === 'formatting_violation'));
 });
+
+test('TC-QUAL-10: Hinglish V2 detects excessive punctuation, choppy robotic checklist flow, and stiff vocabulary', () => {
+  const choppyRobotic = validateReviewQuality({
+    reviewText: 'Food was good. Service was good. Ambience was average. Overall experience was satisfactory!!',
+    language: 'hinglish',
+    businessName: 'Urban Kitchen',
+    category: 'Restaurants',
+    responses: [
+      { question: 'Food', answers: ['Good'] },
+      { question: 'Service', answers: ['Good'] },
+      { question: 'Ambience', answers: ['Average'] },
+    ],
+  });
+  assert.ok(choppyRobotic.clicheCount >= 2);
+  assert.ok(choppyRobotic.issues.some((i) => i.type === 'formatting_violation'));
+  assert.equal(choppyRobotic.passed, false);
+});
+
+test('TC-QUAL-11: Hinglish V2 validates universal categories beyond restaurants (auto service, clinics, retail, custom fields)', () => {
+  const autoServiceHinglish = validateReviewQuality({
+    reviewText:
+      'Car repair bina kisi dikkat ke time par ho gaya aur staff ne sab kuch clearly samjhaya. Price thoda zyada laga but quality kaafi acchi thi.',
+    language: 'hinglish',
+    businessName: 'Apex Motors',
+    category: 'Automobile Services',
+    responses: [
+      { question: 'Repair Quality', answers: ['Good'] },
+      { question: 'Communication', answers: ['Clear Explanation'] },
+      { question: 'Pricing', answers: ['Slightly Expensive'] },
+    ],
+  });
+  assert.equal(autoServiceHinglish.passed, true);
+  assert.equal(autoServiceHinglish.scriptCompliant, true);
+  assert.equal(autoServiceHinglish.clicheCount, 0);
+});
