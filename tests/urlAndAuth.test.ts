@@ -6,6 +6,7 @@ import {
   hasGoogleProvider,
   hasPasswordProvider,
   sanitizeExternalUrl,
+  sanitizeLogoDataUrl,
 } from '../src/utils/urlAndAuth.ts';
 
 test('TC-SEC-01: sanitizeExternalUrl blocks javascript:, data:, vbscript:, file:, and blob: URLs', () => {
@@ -29,6 +30,18 @@ test('TC-SEC-02: sanitizeExternalUrl normalizes valid http/https and bare domain
   );
   assert.equal(sanitizeExternalUrl('', ''), '');
   assert.equal(sanitizeExternalUrl(null, 'https://www.google.com/maps'), 'https://www.google.com/maps');
+});
+
+test('TC-SEC-03: sanitizeLogoDataUrl blocks SVG/HTML/javascript URIs and allows safe raster images & bundled assets', () => {
+  assert.equal(sanitizeLogoDataUrl('data:image/svg+xml;base64,PHN2Zy8+'), '');
+  assert.equal(sanitizeLogoDataUrl('data:text/html,<script>alert(1)</script>'), '');
+  assert.equal(sanitizeLogoDataUrl('javascript:alert(1)'), '');
+  assert.equal(sanitizeLogoDataUrl('/src/assets/../../etc/passwd'), '');
+
+  assert.equal(sanitizeLogoDataUrl('data:image/png;base64,iVBORw0KGgo='), 'data:image/png;base64,iVBORw0KGgo=');
+  assert.equal(sanitizeLogoDataUrl('/src/assets/images/demo-salon.jpg'), '/src/assets/images/demo-salon.jpg');
+  assert.equal(sanitizeLogoDataUrl('https://cdn.example.com/logo.png'), 'https://cdn.example.com/logo.png');
+  assert.equal(sanitizeLogoDataUrl(''), '');
 });
 
 test('TC-AUTH-01: provider inspection helpers detect Google and Email/Password providers consistently', () => {

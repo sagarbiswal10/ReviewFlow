@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getHealthPayload, isOriginAllowed } from './_lib/apiCore.js';
+import { getHealthPayload, isOriginAllowed, sanitizeLogError } from './_lib/apiCore.js';
 
 type NodeReq = IncomingMessage & { method?: string };
 
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.end(JSON.stringify(payload));
 }
 
@@ -43,7 +45,7 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
 
     sendJson(res, 200, getHealthPayload());
   } catch (err) {
-    console.error('health check error:', err);
+    console.error('health check error:', sanitizeLogError(err));
     if (!res.headersSent) {
       sendJson(res, 500, { error: 'Health check failed.' });
     } else if (!res.writableEnded) {

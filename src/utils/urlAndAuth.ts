@@ -31,6 +31,29 @@ export function sanitizeExternalUrl(
   }
 }
 
+export function sanitizeLogoDataUrl(raw?: string | null): string {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return '';
+
+  // Allow safe bundled static image assets (e.g. /src/assets/... or /assets/...)
+  if (
+    /^\/(?:src\/)?assets\/[a-zA-Z0-9_./-]+\.(?:png|jpe?g|webp|gif)(?:\?[a-zA-Z0-9_=&.-]+)?$/i.test(
+      trimmed,
+    ) &&
+    !trimmed.includes('..')
+  ) {
+    return trimmed;
+  }
+
+  // Allow strictly validated raster base64 image data URLs (blocks SVG/HTML payloads)
+  if (/^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed.slice(0, 350000);
+  }
+
+  // Otherwise only permit normalized https:// or http:// URLs
+  return sanitizeExternalUrl(trimmed, '');
+}
+
 export interface ProviderSummary {
   providerId?: string | null;
 }

@@ -1,9 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
+  PayloadTooLargeError,
   authenticateBearerHeader,
   checkRateLimit,
   isOriginAllowed,
   processGenerateReply,
+  readSafeJsonBody,
+  sanitizeLogError,
   type GenerateReplyBody,
 } from './_lib/apiCore.js';
 
@@ -12,22 +15,9 @@ type NodeReq = IncomingMessage & { body?: unknown; method?: string };
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.end(JSON.stringify(payload));
-}
-
-async function readJsonBody(req: NodeReq): Promise<Record<string, unknown>> {
-  if (req.body && typeof req.body === 'object') {
-    return req.body as Record<string, unknown>;
-  }
-  if (typeof req.body === 'string') {
-    return JSON.parse(req.body) as Record<string, unknown>;
-  }
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const raw = Buffer.concat(chunks).toString('utf-8').trim();
-  return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
 }
 
 export default async function handler(req: NodeReq, res: ServerResponse) {
@@ -90,8 +80,12 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
 
     let body: Partial<GenerateReplyBody>;
     try {
-      body = (await readJsonBody(req)) as Partial<GenerateReplyBody>;
-    } catch {
+      body = (await readSafeJsonBody(req)) as Partial<GenerateReplyBody>;
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        sendJson(res, 413, { error: err.message });
+        return;
+      }
       sendJson(res, 400, { error: 'Invalid JSON request payload.' });
       return;
     }
@@ -99,7 +93,7 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
     const result = await processGenerateReply(body);
     sendJson(res, result.status, result.data);
   } catch (err) {
-    console.error('generate-reply error:', err);
+    console.error('generate-reply error:', sanitizeLogError(err));
     if (!res.headersSent) {
       sendJson(res, 500, { error: 'Internal server error while generating reply.' });
     } else if (!res.writableEnded) {

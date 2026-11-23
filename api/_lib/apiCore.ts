@@ -190,6 +190,7 @@ export async function verifyFirebaseIdToken(
     iss?: string;
     sub?: string;
     email?: string;
+    email_verified?: boolean;
     exp?: number;
     iat?: number;
   }>(payloadB64);
@@ -207,6 +208,9 @@ export async function verifyFirebaseIdToken(
   }
   if (!payload.sub || typeof payload.sub !== 'string') {
     throw new Error('Token subject is missing.');
+  }
+  if (payload.email_verified !== true) {
+    throw new Error('Please verify your email address before using protected API endpoints.');
   }
 
   if (FIREBASE_PROJECT_ID) {
@@ -272,20 +276,65 @@ export async function authenticateBearerHeader(
 }
 
 export function isOriginAllowed(origin: string, hostHeader: string): boolean {
-  const cleanOrigin = origin.trim().replace(/\/+$/, '');
+  const cleanOrigin = origin.trim().replace(/\/+$/, '').toLowerCase();
   if (!cleanOrigin) return true;
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
-    .map((o) => o.trim().replace(/\/+$/, ''))
+    .map((o) => o.trim().replace(/\/+$/, '').toLowerCase())
     .filter(Boolean);
   const candidateHosts = hostHeader
     .split(',')
-    .map((h) => h.trim())
+    .map((h) => h.trim().toLowerCase())
     .filter(Boolean);
   const isSameHost = candidateHosts.some(
     (h) => cleanOrigin === `https://${h}` || cleanOrigin === `http://${h}`,
   );
-  return allowedOrigins.length === 0 || isSameHost || allowedOrigins.includes(cleanOrigin);
+  if (isSameHost) return true;
+  if (allowedOrigins.length > 0 && allowedOrigins.includes(cleanOrigin)) return true;
+  return false;
+}
+
+export class PayloadTooLargeError extends Error {
+  constructor(message = 'Request payload exceeds maximum allowed size.') {
+    super(message);
+    this.name = 'PayloadTooLargeError';
+  }
+}
+
+export async function readSafeJsonBody(
+  req: { body?: unknown } & AsyncIterable<unknown>,
+  maxBytes = 1_048_576,
+): Promise<Record<string, unknown>> {
+  if (req.body && typeof req.body === 'object') {
+    const serialized = JSON.stringify(req.body);
+    if (Buffer.byteLength(serialized, 'utf-8') > maxBytes) {
+      throw new PayloadTooLargeError();
+    }
+    return req.body as Record<string, unknown>;
+  }
+  if (typeof req.body === 'string') {
+    if (Buffer.byteLength(req.body, 'utf-8') > maxBytes) {
+      throw new PayloadTooLargeError();
+    }
+    return req.body.trim() ? (JSON.parse(req.body) as Record<string, unknown>) : {};
+  }
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    totalBytes += buf.length;
+    if (totalBytes > maxBytes) {
+      throw new PayloadTooLargeError();
+    }
+    chunks.push(buf);
+  }
+  const raw = Buffer.concat(chunks).toString('utf-8').trim();
+  return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+}
+
+export function sanitizeLogError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return sanitizeApiErrorDetail(msg) || 'Unexpected error';
 }
 
 const rateBuckets = new Map<string, number[]>();
@@ -1668,7 +1717,7 @@ export async function processGbpProxy(
       let lastLocError: { status: number; message: string } | null = null;
 
       for (const acc of accounts.slice(0, 5)) {
-        if (!acc.name) continue;
+        if (!acc.name || !/^accounts\/[a-zA-Z0-9_-]+$/.test(acc.name)) continue;
         const locUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/${acc.name}/locations?readMask=name,title,metadata`;
         const locRes = await fetchWithTimeout(
           locUrl,

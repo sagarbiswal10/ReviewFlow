@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import {
+  PayloadTooLargeError,
   checkRateLimit,
   isOriginAllowed,
   processGbpProxy,
@@ -8,15 +10,22 @@ import {
   processGenerateReview,
   processGenerateSeoKeywords,
   processValidateQrStandSlot,
+  readSafeJsonBody,
+  sanitizeLogError,
+  verifyFirebaseIdToken,
 } from '../api/_lib/apiCore.ts';
 
-test('TC-API-01: isOriginAllowed allows same-host, empty origin, and configured ALLOWED_ORIGINS only', () => {
+test('TC-API-01: isOriginAllowed allows same-host, empty origin, and configured ALLOWED_ORIGINS only (strict when empty)', () => {
   const prevAllowed = process.env.ALLOWED_ORIGINS;
   try {
+    process.env.ALLOWED_ORIGINS = '';
+    assert.equal(isOriginAllowed('', 'reviewflow-mocha.vercel.app'), true);
+    assert.equal(isOriginAllowed('https://reviewflow-mocha.vercel.app', 'reviewflow-mocha.vercel.app'), true);
+    assert.equal(isOriginAllowed('http://localhost:3000', 'localhost:3000'), true);
+    assert.equal(isOriginAllowed('https://evil-site.com', 'reviewflow-mocha.vercel.app'), false);
+
     process.env.ALLOWED_ORIGINS = 'https://reviewflow-mocha.vercel.app';
-    assert.equal(isOriginAllowed('', 'example.com'), true);
     assert.equal(isOriginAllowed('https://reviewflow-mocha.vercel.app', 'other.com'), true);
-    assert.equal(isOriginAllowed('https://example.com', 'example.com'), true);
     assert.equal(isOriginAllowed('https://evil-site.com', 'reviewflow-mocha.vercel.app'), false);
   } finally {
     if (prevAllowed === undefined) delete process.env.ALLOWED_ORIGINS;
@@ -139,4 +148,55 @@ test('TC-API-08: processGenerateReview enforces max 5 continuous generations per
   });
   assert.equal(blocked.status, 429);
   assert.ok(String(blocked.data.error || '').includes('5'));
+});
+
+test('TC-API-09: readSafeJsonBody rejects payloads exceeding the configured byte limit and sanitizeLogError redacts keys', async () => {
+  const smallReq = Readable.from([JSON.stringify({ ok: true })]) as AsyncIterable<unknown> & {
+    body?: unknown;
+  };
+  const parsed = await readSafeJsonBody(smallReq, 1024);
+  assert.equal(parsed.ok, true);
+
+  const oversizedReq = Readable.from(['x'.repeat(2048)]) as AsyncIterable<unknown> & {
+    body?: unknown;
+  };
+  await assert.rejects(() => readSafeJsonBody(oversizedReq, 1024), PayloadTooLargeError);
+
+  const preParsedOversized = { body: { big: 'a'.repeat(2048) } } as AsyncIterable<unknown> & {
+    body?: unknown;
+  };
+  await assert.rejects(() => readSafeJsonBody(preParsedOversized, 1024), PayloadTooLargeError);
+
+  const cleanMsg = sanitizeLogError(new Error('Upstream failed using AIzaSyTestKey1234567890'));
+  assert.equal(cleanMsg.includes('AIzaSyTestKey'), false);
+  assert.ok(cleanMsg.includes('[redacted-key]'));
+});
+
+test('TC-API-10: verifyFirebaseIdToken rejects malformed tokens and unverified email claims', async () => {
+  await assert.rejects(() => verifyFirebaseIdToken('not.a.valid.jwt.token'), /Malformed bearer token/i);
+
+  const b64 = (obj: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(obj), 'utf-8')
+      .toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+  const futureExp = Math.floor(Date.now() / 1000) + 3600;
+  const unverifiedToken = [
+    b64({ alg: 'RS256', kid: 'kid-1' }),
+    b64({
+      sub: 'user-123',
+      email: 'user@example.com',
+      email_verified: false,
+      iat: futureExp - 3600,
+      exp: futureExp,
+    }),
+    'fakesig',
+  ].join('.');
+
+  await assert.rejects(
+    () => verifyFirebaseIdToken(unverifiedToken),
+    /verify your email address/i,
+  );
 });

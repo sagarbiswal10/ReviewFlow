@@ -13,6 +13,7 @@ import {
   processGenerateReview,
   processGenerateSeoKeywords,
   processValidateQrStandSlot,
+  sanitizeLogError,
   type GbpProxyBody,
   type GenerateReplyBody,
   type GenerateReviewBody,
@@ -76,17 +77,26 @@ async function requireAuthenticatedUser(
     }
     next();
   } catch (err) {
-    console.error('Auth middleware error:', err);
+    console.error('Auth middleware error:', sanitizeLogError(err));
     res.status(500).json({ error: 'Authentication verification failed.' });
   }
 }
 
 async function startServer() {
   const app = express();
+  app.disable('x-powered-by');
   app.set('trust proxy', true);
   app.use(express.json({ limit: '1mb' }));
 
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
     const origin = (req.headers.origin || '').replace(/\/+$/, '');
     const forwardedHost =
       typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
@@ -132,7 +142,7 @@ async function startServer() {
         );
         res.status(result.status).json(result.data);
       } catch (err) {
-        console.error('generate-seo-keywords route error:', err);
+        console.error('generate-seo-keywords route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while generating SEO keywords.' });
       }
     },
@@ -143,7 +153,7 @@ async function startServer() {
       const result = await processGenerateReview(req.body as Partial<GenerateReviewBody>);
       res.status(result.status).json(result.data);
     } catch (err) {
-      console.error('generate-review route error:', err);
+      console.error('generate-review route error:', sanitizeLogError(err));
       res.status(500).json({ error: 'Internal server error while generating review draft.' });
     }
   });
@@ -157,7 +167,7 @@ async function startServer() {
         const result = await processGenerateReply(req.body as Partial<GenerateReplyBody>);
         res.status(result.status).json(result.data);
       } catch (err) {
-        console.error('generate-reply route error:', err);
+        console.error('generate-reply route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while generating reply.' });
       }
     },
@@ -175,7 +185,7 @@ async function startServer() {
         );
         res.status(result.status).json(result.data);
       } catch (err) {
-        console.error('qr-stand-authorize route error:', err);
+        console.error('qr-stand-authorize route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while authorizing QR stand.' });
       }
     },
@@ -190,7 +200,7 @@ async function startServer() {
         const result = await processGbpProxy(req.body as Partial<GbpProxyBody>);
         res.status(result.status).json(result.data);
       } catch (err) {
-        console.error('gbp-sync route error:', err);
+        console.error('gbp-sync route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while syncing Google Business Profile.' });
       }
     },

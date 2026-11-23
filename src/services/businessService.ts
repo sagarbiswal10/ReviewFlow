@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch, parseApiJson } from '../utils/apiClient';
-import { sanitizeExternalUrl } from '../utils/urlAndAuth';
+import { sanitizeExternalUrl, sanitizeLogoDataUrl } from '../utils/urlAndAuth';
 import {
   DEFAULT_ENABLED_FEATURES,
   DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
@@ -193,7 +193,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     contactEmail: data.contactEmail || '',
     website: clampString(data.website, 300),
     googleReviewUrl: data.googleReviewUrl || '',
-    logoDataUrl: data.logoDataUrl || '',
+    logoDataUrl: sanitizeLogoDataUrl(data.logoDataUrl),
     branding: sanitizeBranding(data.branding),
     qrConfig: sanitizeQrConfig(data.qrConfig, 'v1token'),
     questions: Array.isArray(data.questions) ? data.questions : [],
@@ -686,7 +686,7 @@ export async function createBusiness(
     sanitizeExternalUrl(input.googleReviewUrl, 'https://www.google.com/maps'),
     500,
   );
-  const cleanLogo = clampString(input.logoDataUrl, 350000);
+  const cleanLogo = clampString(sanitizeLogoDataUrl(input.logoDataUrl), 350000);
   const cleanClientEmail = normalizeEmail(input.clientEmail || '');
   const cleanAccessLevel = sanitizeAccessLevel(input.clientAccessLevel);
   const cleanFeatures = sanitizeEnabledFeatures(input.enabledFeatures);
@@ -898,8 +898,8 @@ export async function updateBusiness(
       : sanitizeExternalUrl(current.googleReviewUrl, 'https://www.google.com/maps');
   const nextLogo =
     updates.logoDataUrl !== undefined
-      ? clampString(updates.logoDataUrl, 350000)
-      : current.logoDataUrl;
+      ? clampString(sanitizeLogoDataUrl(updates.logoDataUrl), 350000)
+      : sanitizeLogoDataUrl(current.logoDataUrl);
   const nextBranding = sanitizeBranding(updates.branding ?? current.branding);
   const nextQrConfig = sanitizeQrConfig(updates.qrConfig ?? current.qrConfig, generateRandomToken());
   const nextQuestions = sanitizeQuestions(updates.questions ?? current.questions);
@@ -1104,7 +1104,7 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       name: raw.name || 'Business',
       category: raw.category || 'Other Businesses',
       googleReviewUrl: raw.googleReviewUrl || '',
-      logoDataUrl: raw.logoDataUrl || '',
+      logoDataUrl: sanitizeLogoDataUrl(raw.logoDataUrl),
       enabledFeatures: sanitizeEnabledFeatures(raw.enabledFeatures),
       branding: sanitizeBranding(raw.branding),
       qrConfig: sanitizeQrConfig(raw.qrConfig, 'v1token'),

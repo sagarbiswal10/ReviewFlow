@@ -387,7 +387,23 @@ export function downloadWeeklyReportPdf(report: WeeklyReport): void {
   pdf.save(`reviewflow-weekly-report-${report.businessId}-${report.weekStart}.pdf`);
 }
 
+const ALLOWED_LOGO_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+]);
+const MAX_LOGO_FILE_BYTES = 5 * 1024 * 1024;
+
 export async function compressLogoFile(file: File): Promise<string> {
+  if (!ALLOWED_LOGO_MIME_TYPES.has(file.type.toLowerCase())) {
+    throw new Error('Please upload a PNG, JPG, WebP, or GIF image (SVG is not permitted).');
+  }
+  if (file.size > MAX_LOGO_FILE_BYTES) {
+    throw new Error('Logo image must be 5 MB or smaller.');
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed to read image file.'));

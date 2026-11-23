@@ -347,7 +347,12 @@ export function OnboardingModal({
                       <label className="min-h-[36px] inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap">
                         <Upload className="w-3.5 h-3.5" />
                         <span>Upload Logo</span>
-                        <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={handleLogoUpload}
+                          className="hidden"
+                        />
                       </label>
                       {logoDataUrl && (
                         <button
@@ -359,7 +364,7 @@ export function OnboardingModal({
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500">PNG, JPG or SVG recommended.</p>
+                    <p className="text-xs text-slate-500">PNG, JPG, WebP, or GIF recommended (max 5 MB).</p>
                   </div>
                 </div>
 
