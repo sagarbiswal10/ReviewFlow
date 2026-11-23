@@ -1665,6 +1665,7 @@ export async function processGbpProxy(
         title: string;
         placeId: string;
       }> = [];
+      let lastLocError: { status: number; message: string } | null = null;
 
       for (const acc of accounts.slice(0, 5)) {
         if (!acc.name) continue;
@@ -1674,7 +1675,14 @@ export async function processGbpProxy(
           { headers: { Authorization: `Bearer ${gbpAccessToken}` } },
           10000,
         );
-        if (!locRes.ok) continue;
+        if (!locRes.ok) {
+          const locErrBody = await locRes.text().catch(() => '');
+          lastLocError = {
+            status: locRes.status,
+            message: `Google Business Information API (${locRes.status}): ${sanitizeApiErrorDetail(locErrBody) || locRes.statusText}`,
+          };
+          continue;
+        }
         const locJson = (await locRes.json()) as {
           locations?: Array<{
             name?: string;
@@ -1691,6 +1699,13 @@ export async function processGbpProxy(
             placeId: loc.metadata?.placeId || '',
           });
         }
+      }
+
+      if (locations.length === 0 && lastLocError) {
+        return {
+          status: lastLocError.status,
+          data: { error: lastLocError.message },
+        };
       }
 
       return { status: 200, data: { accounts, locations } };
