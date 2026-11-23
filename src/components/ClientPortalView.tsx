@@ -772,7 +772,7 @@ export function ClientPortalView({
   return (
     <div className="min-h-screen spatial-canvas text-slate-900 flex flex-col antialiased relative">
       {/* Two-Tier Executive Portal Header */}
-      <header className="sticky top-0 z-40 liquid-glass-nav border-b border-white/75">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
         {/* Top Utility Row */}
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 sm:gap-5 min-w-0">

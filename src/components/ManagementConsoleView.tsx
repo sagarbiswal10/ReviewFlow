@@ -866,7 +866,7 @@ export function ManagementConsoleView({
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 h-16 liquid-glass-nav border-b border-white/75 px-4 sm:px-8 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs px-4 sm:px-8 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -939,47 +939,54 @@ export function ManagementConsoleView({
           {/* Selected Business Management Workspace */}
           {selectedBiz ? (
             <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={() => setSelectedBizId(null)}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back to All Businesses</span>
-                </button>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBizId(null)}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4 shrink-0" />
+                    <span>Back to All Businesses</span>
+                  </button>
+                  <span className="text-xs font-medium text-slate-500 hidden sm:inline truncate">
+                    Managing <strong className="text-slate-800">{selectedBiz.name}</strong>
+                  </span>
+                </div>
 
-                <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/70 rounded-xl">
-                  {(
-                    [
-                      { id: 'access', label: 'Client Access & Features', icon: UserCheck },
-                      { id: 'overview', label: 'Analytics', icon: Activity },
-                      { id: 'stands', label: 'QR Stands', icon: Layers },
-                      { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
-                      { id: 'weekly', label: 'Weekly Reports', icon: FileBarChart2 },
-                      { id: 'templates', label: 'Templates', icon: LayoutGrid },
-                      { id: 'qr', label: 'QR Studio', icon: QrCode },
-                      { id: 'questions', label: 'Questions', icon: SlidersHorizontal },
-                      { id: 'branding', label: 'Branding', icon: Palette },
-                      { id: 'preview', label: 'Preview', icon: Eye },
-                    ] as const
-                  ).map((t) => {
-                    const active = detailTab === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setDetailTab(t.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                          active
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    );
-                  })}
+                <div className="w-full overflow-x-auto pb-1">
+                  <div className="inline-flex items-center gap-1 p-1 bg-slate-200/75 rounded-xl min-w-max">
+                    {(
+                      [
+                        { id: 'access', label: 'Client Access & Features', icon: UserCheck },
+                        { id: 'overview', label: 'Analytics', icon: Activity },
+                        { id: 'stands', label: 'QR Stands', icon: Layers },
+                        { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
+                        { id: 'weekly', label: 'Weekly Reports', icon: FileBarChart2 },
+                        { id: 'templates', label: 'Templates', icon: LayoutGrid },
+                        { id: 'qr', label: 'QR Studio', icon: QrCode },
+                        { id: 'questions', label: 'Questions', icon: SlidersHorizontal },
+                        { id: 'branding', label: 'Branding', icon: Palette },
+                        { id: 'preview', label: 'Preview', icon: Eye },
+                      ] as const
+                    ).map((t) => {
+                      const active = detailTab === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setDetailTab(t.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

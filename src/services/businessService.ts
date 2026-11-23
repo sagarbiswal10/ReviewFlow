@@ -174,17 +174,43 @@ export async function fetchAutoSeoKeywords(input: {
   }
 }
 
+const ALLOWED_BRANDING_KEYS = new Set([
+  'primaryColor',
+  'secondaryColor',
+  'welcomeMessage',
+  'thankYouMessage',
+  'defaultReviewStyle',
+]);
+const ALLOWED_QR_KEYS = new Set(['isActive', 'fgColor', 'bgColor', 'token', 'includeLogo']);
+const ALLOWED_FEATURE_KEYS = new Set([
+  'aiReviewDrafts',
+  'customQuestions',
+  'pdfPosterExport',
+  'analyticsView',
+  'inStoreQrStands',
+  'gbpAutoReply',
+  'weeklyReports',
+  'formTemplates',
+  'qrStudio',
+  'brandingSettings',
+]);
+
 const rawNeedsBrandingRepair = new WeakSet<Business>();
 const rawNeedsQrRepair = new WeakSet<Business>();
 const rawNeedsFeaturesRepair = new WeakSet<Business>();
+const rawNeedsCoreStringsRepair = new WeakSet<Business>();
 
 function needsBrandingRepair(b?: Partial<BusinessBranding>): boolean {
   if (!b || typeof b !== 'object') return true;
+  const keys = Object.keys(b);
+  if (keys.some((k) => !ALLOWED_BRANDING_KEYS.has(k))) return true;
   return (
     !b.primaryColor ||
     b.primaryColor.length < 4 ||
     !b.secondaryColor ||
     b.secondaryColor.length < 4 ||
+    typeof b.welcomeMessage !== 'string' ||
+    typeof b.thankYouMessage !== 'string' ||
     (b.defaultReviewStyle !== 'short' &&
       b.defaultReviewStyle !== 'detailed' &&
       b.defaultReviewStyle !== 'professional')
@@ -193,6 +219,8 @@ function needsBrandingRepair(b?: Partial<BusinessBranding>): boolean {
 
 function needsQrConfigRepair(q?: Partial<QrConfig>): boolean {
   if (!q || typeof q !== 'object') return true;
+  const keys = Object.keys(q);
+  if (keys.some((k) => !ALLOWED_QR_KEYS.has(k))) return true;
   return (
     typeof q.isActive !== 'boolean' ||
     !q.fgColor ||
@@ -207,11 +235,24 @@ function needsQrConfigRepair(q?: Partial<QrConfig>): boolean {
 
 function needsFeaturesRepair(f?: Partial<EnabledFeatures>): boolean {
   if (!f || typeof f !== 'object') return true;
+  const keys = Object.keys(f);
+  if (keys.some((k) => !ALLOWED_FEATURE_KEYS.has(k))) return true;
   return (
     typeof f.aiReviewDrafts !== 'boolean' ||
     typeof f.customQuestions !== 'boolean' ||
     typeof f.pdfPosterExport !== 'boolean' ||
     typeof f.analyticsView !== 'boolean'
+  );
+}
+
+function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
+  return (
+    typeof raw.address !== 'string' ||
+    typeof raw.phone !== 'string' ||
+    typeof raw.contactEmail !== 'string' ||
+    typeof raw.googleReviewUrl !== 'string' ||
+    typeof raw.logoDataUrl !== 'string' ||
+    !Array.isArray(raw.questions)
   );
 }
 
@@ -260,6 +301,9 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
   }
   if (needsFeaturesRepair(data.enabledFeatures)) {
     rawNeedsFeaturesRepair.add(hydrated);
+  }
+  if (needsCoreBusinessStringsRepair(raw)) {
+    rawNeedsCoreStringsRepair.add(hydrated);
   }
   return hydrated;
 }
@@ -1001,14 +1045,14 @@ export async function updateBusiness(
     businessUpdates.category = nextCategory;
     publicUpdates.category = nextCategory;
   }
-  if (updates.address !== undefined) {
-    businessUpdates.address = clampString(updates.address, 240);
+  if (updates.address !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+    businessUpdates.address = clampString(updates.address ?? current.address, 240);
   }
-  if (updates.phone !== undefined) {
-    businessUpdates.phone = clampString(updates.phone, 40);
+  if (updates.phone !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+    businessUpdates.phone = clampString(updates.phone ?? current.phone, 40);
   }
-  if (updates.contactEmail !== undefined) {
-    businessUpdates.contactEmail = clampString(updates.contactEmail, 120);
+  if (updates.contactEmail !== undefined || rawNeedsCoreStringsRepair.has(current)) {
+    businessUpdates.contactEmail = clampString(updates.contactEmail ?? current.contactEmail, 120);
   }
   if (updates.website !== undefined) {
     businessUpdates.website = clampString(
@@ -1016,11 +1060,11 @@ export async function updateBusiness(
       300,
     );
   }
-  if (updates.googleReviewUrl !== undefined) {
+  if (updates.googleReviewUrl !== undefined || rawNeedsCoreStringsRepair.has(current)) {
     businessUpdates.googleReviewUrl = nextGoogleUrl;
     publicUpdates.googleReviewUrl = nextGoogleUrl;
   }
-  if (updates.logoDataUrl !== undefined) {
+  if (updates.logoDataUrl !== undefined || rawNeedsCoreStringsRepair.has(current)) {
     businessUpdates.logoDataUrl = nextLogo;
     publicUpdates.logoDataUrl = nextLogo;
   }
@@ -1042,7 +1086,7 @@ export async function updateBusiness(
     businessUpdates.qrConfig = nextQrConfig;
     publicUpdates.qrConfig = nextQrConfig;
   }
-  if (updates.questions !== undefined) {
+  if (updates.questions !== undefined || rawNeedsCoreStringsRepair.has(current)) {
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;
   }

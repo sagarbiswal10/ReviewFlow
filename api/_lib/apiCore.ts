@@ -70,11 +70,11 @@ function cleanSecretEnv(value: string | undefined): string {
 
 export const AI_PROVIDER =
   cleanSecretEnv(process.env.AI_PROVIDER).toLowerCase() === 'openai' ? 'openai' : 'gemini';
-export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-3.1-flash-lite';
+export const GEMINI_MODEL = cleanSecretEnv(process.env.GEMINI_MODEL) || 'gemini-4-hydrogen';
 export const GEMINI_FALLBACK_MODEL =
   process.env.GEMINI_FALLBACK_MODEL !== undefined
     ? cleanSecretEnv(process.env.GEMINI_FALLBACK_MODEL)
-    : 'gemini-4-hydrogen';
+    : 'gemini-3.1-flash-lite';
 export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !== 'false';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'gen-lang-client-0894437771';
@@ -444,10 +444,68 @@ function createGenAIClient(useVertexAi: boolean) {
 function getVertexEndpointModes(): boolean[] {
   const apiKey = getGeminiApiKey();
   const explicit = cleanSecretEnv(process.env.GOOGLE_GENAI_USE_VERTEXAI).toLowerCase();
-  if (explicit === 'true') return apiKey.startsWith('AQ.') ? [true, false] : [true];
+  // Always fall back to standard Gemini Developer API (false) if Vertex AI (true) rejects due to billing or auth
+  if (explicit === 'true') return [true, false];
   if (apiKey.startsWith('AQ.')) return [false, true];
   if (explicit === 'false') return [false];
   return [false];
+}
+
+function isBillingRequiredError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('requires billing') ||
+    lower.includes('billing_disabled') ||
+    lower.includes('enable billing') ||
+    lower.includes('billing to be enabled')
+  );
+}
+
+function formatGeminiEndpointError(
+  err: unknown,
+  actionLabel: string,
+): { status: number; message: string } {
+  const rawMessage = err instanceof Error ? err.message : String(err);
+  const detail = sanitizeApiErrorDetail(rawMessage);
+  const rawStatus =
+    typeof err === 'object' && err !== null && 'status' in err
+      ? Number((err as { status?: unknown }).status)
+      : 500;
+
+  if (isBillingRequiredError(rawMessage)) {
+    return {
+      status: 403,
+      message: `Billing required for ${actionLabel}: ${detail}. Enable billing on that Google Cloud project, OR switch GEMINI_API_KEY to a free-tier Google AI Studio API key (with GOOGLE_GENAI_USE_VERTEXAI=false) in Settings > Secrets or your deployment environment variables.`,
+    };
+  }
+
+  if (
+    rawStatus === 403 ||
+    rawStatus === 400 ||
+    rawMessage.includes('PERMISSION_DENIED') ||
+    rawMessage.includes('API_KEY_INVALID') ||
+    rawMessage.toLowerCase().includes('api key not valid')
+  ) {
+    const isRefererBlock = detail.toLowerCase().includes('referer');
+    return {
+      status: rawStatus === 400 ? 400 : 403,
+      message: isRefererBlock
+        ? 'Your Google API key has HTTP referrer restrictions enabled, which blocks server-side calls. In Google Cloud Console, switch this key to None (or API-only restrictions), or use a standard server Gemini API key.'
+        : `API key error when ${actionLabel}: ${detail || 'Please check GEMINI_API_KEY in Settings > Secrets or your server environment.'} Please verify your GEMINI_API_KEY in Settings > Secrets.`,
+    };
+  }
+
+  if (rawStatus === 429 || rawMessage.includes('RESOURCE_EXHAUSTED')) {
+    return {
+      status: 429,
+      message: 'AI generation rate limit reached. Please wait a moment and try again.',
+    };
+  }
+
+  return {
+    status: 500,
+    message: `Failed when ${actionLabel}: ${(detail || rawMessage).slice(0, 180)}`,
+  };
 }
 
 interface GeminiGenerationResult {
@@ -464,7 +522,11 @@ async function generateGeminiContentWithFallback(
   maxTransientAttempts = 1,
 ): Promise<GeminiGenerationResult> {
   const modelAttempts = Array.from(
-    new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter(Boolean)),
+    new Set(
+      [GEMINI_MODEL, GEMINI_FALLBACK_MODEL, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'].filter(
+        Boolean,
+      ),
+    ),
   );
   const endpointModes = getVertexEndpointModes();
   let lastErr: unknown;
@@ -479,9 +541,13 @@ async function generateGeminiContentWithFallback(
         try {
           const supportsMinimalThinking =
             modelName.startsWith('gemini-3.') && modelName.includes('flash-lite');
+          const supportsLowThinking =
+            modelName === 'gemini-4-hydrogen' || modelName === 'gemini-4-neon';
           const modelConfig = supportsMinimalThinking
             ? { ...config, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
-            : config;
+            : supportsLowThinking
+              ? { ...config, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+              : config;
           const response = await ai.models.generateContent({
             model: modelName,
             contents,
@@ -511,11 +577,23 @@ async function generateGeminiContentWithFallback(
           const isApiKeyInvalid =
             msg.includes('API_KEY_INVALID') ||
             msg.toLowerCase().includes('api key not valid');
-          if (isApiKeyInvalid && hasNextMode) {
+          if (isApiKeyInvalid) {
+            if (hasNextMode) break;
+            throw err;
+          }
+
+          // Try next fallback model if current model is missing, billing-gated, permission-denied, or rejects config
+          const isModelLevelError =
+            msg.includes('404') ||
+            msg.includes('NOT_FOUND') ||
+            msg.includes('403') ||
+            msg.includes('PERMISSION_DENIED') ||
+            msg.includes('400') ||
+            msg.includes('INVALID_ARGUMENT') ||
+            isBillingRequiredError(msg);
+          if (isModelLevelError) {
             break;
           }
-          const isNotFound = msg.includes('404') || msg.includes('NOT_FOUND');
-          if (isNotFound) break;
 
           const isTransient =
             msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
@@ -531,7 +609,8 @@ async function generateGeminiContentWithFallback(
       if (
         hasNextMode &&
         (lastMsg.includes('API_KEY_INVALID') ||
-          lastMsg.toLowerCase().includes('api key not valid'))
+          lastMsg.toLowerCase().includes('api key not valid') ||
+          (useVertexAi && isBillingRequiredError(lastMsg)))
       ) {
         break;
       }
@@ -830,24 +909,13 @@ export async function processGenerateSeoKeywords(
       },
     };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const detail = sanitizeApiErrorDetail(message);
-    if (
-      message.includes('PERMISSION_DENIED') ||
-      message.includes('API_KEY_INVALID') ||
-      message.toLowerCase().includes('api key not valid')
-    ) {
-      return {
-        status: 400,
-        data: {
-          error: `API key error when generating SEO keywords: ${detail || 'Please check GEMINI_API_KEY in Settings > Secrets or your server environment.'}`,
-        },
-      };
+    const formatted = formatGeminiEndpointError(err, 'generating SEO keywords');
+    if (formatted.status >= 500) {
+      console.error('SEO keyword generation error:', formatted.message);
     }
-    console.error('SEO keyword generation error:', detail || message);
     return {
-      status: 500,
-      data: { error: `Failed to generate SEO keywords: ${detail.slice(0, 180) || message.slice(0, 180)}` },
+      status: formatted.status,
+      data: { error: formatted.message },
     };
   }
 }
@@ -1471,39 +1539,13 @@ export async function processGenerateReview(
       },
     };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const detail = sanitizeApiErrorDetail(message);
-    const status =
-      typeof err === 'object' && err !== null && 'status' in err
-        ? Number((err as { status?: unknown }).status)
-        : 500;
-    if (
-      status === 403 ||
-      status === 400 ||
-      message.includes('PERMISSION_DENIED') ||
-      message.includes('API_KEY_INVALID') ||
-      message.toLowerCase().includes('api key not valid')
-    ) {
-      const isRefererBlock = detail.toLowerCase().includes('referer');
-      return {
-        status: status === 400 ? 400 : 403,
-        data: {
-          error: isRefererBlock
-            ? 'Your Google API key has HTTP referrer restrictions enabled, which blocks server-side calls from Vercel. In Google Cloud Console, switch this key to None (or API-only restrictions), or use a standard server Gemini API key.'
-            : `API key error when generating review: ${detail || 'Please check GEMINI_API_KEY in Settings > Secrets or your server environment.'} Please verify your GEMINI_API_KEY in Settings > Secrets.`,
-        },
-      };
+    const formatted = formatGeminiEndpointError(err, 'generating review');
+    if (formatted.status >= 500) {
+      console.error('Review generation error:', formatted.message);
     }
-    if (status === 429 || message.includes('RESOURCE_EXHAUSTED')) {
-      return {
-        status: 429,
-        data: { error: 'AI generation rate limit reached. Please wait a moment and try again.' },
-      };
-    }
-    console.error('Review generation error:', detail || message);
     return {
-      status: 500,
-      data: { error: `Failed to generate review draft: ${(detail || message).slice(0, 180)}` },
+      status: formatted.status,
+      data: { error: formatted.message },
     };
   }
 }
@@ -1633,12 +1675,13 @@ export async function processGenerateReply(
       },
     };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const detail = sanitizeApiErrorDetail(message);
-    console.error('GBP reply generation error:', detail || message);
+    const formatted = formatGeminiEndpointError(err, 'generating AI reply');
+    if (formatted.status >= 500) {
+      console.error('GBP reply generation error:', formatted.message);
+    }
     return {
-      status: 500,
-      data: { error: `Failed to generate AI reply: ${(detail || message).slice(0, 180)}` },
+      status: formatted.status,
+      data: { error: formatted.message },
     };
   }
 }

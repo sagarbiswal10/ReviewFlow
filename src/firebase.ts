@@ -139,8 +139,11 @@ export function handleFirestoreError(
       auth.currentUser && !auth.currentUser.emailVerified ? ' (email not verified)' : '';
     const actor = activeEmail ? `Signed in as ${activeEmail}${verifiedNote}` : 'Not signed in';
     const target = path ? `${operationType} on ${path}` : operationType;
+    const externalHint = hasCustomEnvConfig
+      ? ` Ensure the latest firestore.rules are published in Firebase Console for project "${projectId}".`
+      : '';
     throw new Error(
-      `Permission denied: your account does not have permission for this action (${target}; ${actor}).`,
+      `Permission denied: your account does not have permission for this action (${target}; ${actor}).${externalHint}`,
     );
   }
   if (lower.includes('not-found') || lower.includes('no document to update')) {
