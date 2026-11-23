@@ -243,6 +243,7 @@ export function CustomerReviewFlow({
   const editPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consentedDraftIdsRef = useRef<Set<string>>(new Set());
   const fewShotCacheRef = useRef<Record<string, Array<{ responsesSummary: string; finalReview: string }>>>({});
+  const queuedAlternatesRef = useRef<Record<string, string[]>>({});
 
   useEffect(() => {
     if (isPreview) return;
@@ -735,6 +736,7 @@ export function CustomerReviewFlow({
       const rawBody = await res.text();
       let data: {
         review?: string;
+        alternates?: string[];
         language?: ReviewLanguage;
         qualityReport?: ReviewQualityReport;
         quotaRemaining?: number;
@@ -785,6 +787,12 @@ export function CustomerReviewFlow({
           },
         );
         return;
+      }
+
+      if (Array.isArray(data.alternates) && data.alternates.length > 0) {
+        queuedAlternatesRef.current[languageToUse] = data.alternates
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => item.trim());
       }
 
       await applyFinalDraft(
@@ -899,6 +907,7 @@ export function CustomerReviewFlow({
             return id;
           });
 
+      queuedAlternatesRef.current = {};
       const nextSeed = variationSeed;
       await requestAiDraft(selectedLanguage, nextSeed, submissionPromise);
     } catch (err) {
@@ -920,6 +929,86 @@ export function CustomerReviewFlow({
     if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
+
+    const queued = queuedAlternatesRef.current[selectedLanguage] || [];
+    if (queued.length > 0) {
+      const [nextDraftText, ...restAlts] = queued;
+      queuedAlternatesRef.current[selectedLanguage] = restAlts;
+      const { responses, additionalComments } = buildStructuredPayload();
+      const computedQuality = validateReviewQuality({
+        reviewText: nextDraftText,
+        language: selectedLanguage,
+        businessName: profile.name,
+        category: profile.category,
+        responses,
+        additionalComments,
+        previousDrafts: previousDrafts.slice(-4),
+      });
+      setGenerateError(null);
+      setCopied(false);
+      setOpenedGoogle(false);
+      setIsEditing(false);
+      setDraftText(nextDraftText);
+      setInitialGeneratedText(nextDraftText);
+      setLastQualityReport(computedQuality);
+      setConsentSaved(false);
+      setPreviousDrafts((prev) => [...prev, nextDraftText].slice(-5));
+      applyGenerationQuotaUpdate();
+      setDraftStatus('Generated');
+      setDraftDeleted(false);
+      setStep('draft');
+
+      if (!isPreview) {
+        const subId = feedbackSubmissionId;
+        void (async () => {
+          try {
+            let newDraftId = `local_dr_${Date.now()}`;
+            if (subId && !subId.startsWith('local_fb_')) {
+              newDraftId = await createReviewDraftRecord({
+                profile,
+                feedbackSubmissionId: subId,
+                reviewText: nextDraftText,
+                language: selectedLanguage,
+                reviewStyle: selectedStyle,
+                variationSeed: nextSeed,
+                sessionId: standContext.sessionId,
+              });
+            }
+            setCurrentDraftId(newDraftId);
+            recordReviewEvent(profile, 'generate', {
+              reviewStyle: selectedStyle,
+              sentiment: sentimentValue,
+              language: selectedLanguage,
+              selectedHighlights,
+              standId: standContext.standId,
+              standCode: standContext.standCode,
+              standName: standContext.standName,
+              sessionId: standContext.sessionId,
+            });
+            saveReviewEvaluation({
+              businessId: profile.businessId,
+              businessName: profile.name,
+              ownerId: profile.ownerId,
+              clientUid: profile.clientUid,
+              slug: profile.slug,
+              category: profile.category,
+              language: selectedLanguage,
+              reviewStyle: selectedStyle,
+              draftId: newDraftId,
+              source: 'live_customer',
+              modelId: 'gemini-3.1-flash-lite',
+              qualityReport: computedQuality,
+              responsesSummary: responses.map((r) => `${r.question}: ${r.answers.join(', ')}`).join(' | '),
+              generatedReview: nextDraftText,
+            });
+          } catch {
+            // Non-blocking background persistence
+          }
+        })();
+      }
+      return;
+    }
+
     await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId);
   };
 

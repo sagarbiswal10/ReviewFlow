@@ -1170,62 +1170,35 @@ export async function processGenerateReview(
 
     const systemInstruction = [
       'You are ReviewFlow\'s authentic customer review-writing assistant.',
-      'Return ONLY valid JSON strictly matching this format: {"review": string, "language": string, "script": "roman" | "devanagari", "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "validation": {"english_vocabulary_found": boolean, "facts_preserved": boolean, "sentiment_preserved": boolean, "unsupported_claims": boolean}, "groundedFacts": string[], "styleApplied": string, "keywordsUsed": string[]}.',
+      'Return ONLY valid JSON: {"review": string, "alternates": [string, string], "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "keywordsUsed": string[]}.',
       languageRules[language],
-      'Strict Authenticity, Grounding & Final Validation Rules:',
+      'Strict Authenticity & Grounding Rules:',
       '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment (plus naturally phrasing 1-2 fitting business SEO keywords if compatible). NEVER invent specific services purchased, food items ordered, staff names, conversations, pricing/discounts, facilities, or unmentioned incidents.',
-      '2. Preserve exact customer meaning and sentiment across all 6 levels (very_positive, positive, neutral, mixed, negative, very_negative). If answers are mixed or average, preserve both positive and negative points accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
+      '2. Preserve exact customer meaning and sentiment accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
       '3. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and readable; 2-4 natural sentences.',
       '4. NEVER use generic AI clichés or promotional language ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever").',
-      '5. No quotation marks wrapping the review, no bullet points, no titles/headings, no explanations outside JSON, no hashtags, no emojis (unless supplied by customer), and never claim the review is "human-written".',
-      '6. In groundedFacts, list exact facts from the customer feedback you used. In keywordsUsed, list 0-3 short natural keywords/phrases used cleanly in the review.',
+      '5. No quotation marks wrapping the review, no bullet points, no titles/headings, no hashtags, no emojis (unless supplied by customer).',
+      '6. In alternates, write 2 distinctly phrased variations using the EXACT same language, script, and grounded facts so switching drafts sounds fresh. In keywordsUsed, list 0-3 short natural keywords used cleanly.',
     ].join('\n');
 
     const reviewResponseSchema = {
       type: Type.OBJECT,
       properties: {
         review: { type: Type.STRING },
-        language: { type: Type.STRING },
-        script: { type: Type.STRING, enum: ['roman', 'devanagari'] },
+        alternates: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
         sentiment: {
           type: Type.STRING,
           enum: ['very_positive', 'positive', 'neutral', 'mixed', 'negative', 'very_negative'],
         },
-        validation: {
-          type: Type.OBJECT,
-          properties: {
-            english_vocabulary_found: { type: Type.BOOLEAN },
-            facts_preserved: { type: Type.BOOLEAN },
-            sentiment_preserved: { type: Type.BOOLEAN },
-            unsupported_claims: { type: Type.BOOLEAN },
-          },
-          required: [
-            'english_vocabulary_found',
-            'facts_preserved',
-            'sentiment_preserved',
-            'unsupported_claims',
-          ],
-        },
-        groundedFacts: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-        },
-        styleApplied: { type: Type.STRING },
         keywordsUsed: {
           type: Type.ARRAY,
           items: { type: Type.STRING },
         },
       },
-      required: [
-        'review',
-        'language',
-        'script',
-        'sentiment',
-        'validation',
-        'groundedFacts',
-        'styleApplied',
-        'keywordsUsed',
-      ],
+      required: ['review', 'alternates', 'sentiment', 'keywordsUsed'],
     };
 
     const runModelCall = async (
@@ -1245,8 +1218,8 @@ export async function processGenerateReview(
           systemInstruction: callSystem,
           responseMimeType: 'application/json',
           responseSchema: reviewResponseSchema,
-          temperature: 0.7,
-          maxOutputTokens: 380,
+          temperature: 0.75,
+          maxOutputTokens: 420,
         },
         1,
       );
@@ -1264,6 +1237,20 @@ export async function processGenerateReview(
         language,
         variationSeed,
       });
+      const fallbackAlts = [variationSeed + 1, variationSeed + 2]
+        .map(
+          (altSeed) =>
+            composeGroundedFallbackReview({
+              businessName,
+              category,
+              responses,
+              additionalComments,
+              style,
+              language,
+              variationSeed: altSeed,
+            }).reviewText,
+        )
+        .filter((txt, idx, arr) => txt && txt !== composed.reviewText && arr.indexOf(txt) === idx);
       const fallbackQuality = validateReviewQuality({
         reviewText: composed.reviewText,
         language,
@@ -1279,6 +1266,7 @@ export async function processGenerateReview(
         status: 200,
         data: {
           review: composed.reviewText,
+          alternates: fallbackAlts,
           language,
           script: composed.script,
           sentiment: composed.sentiment,
@@ -1356,6 +1344,7 @@ export async function processGenerateReview(
 
     interface ParsedReviewJson {
       review?: string;
+      alternates?: unknown;
       short?: string;
       detailed?: string;
       professional?: string;
@@ -1386,6 +1375,7 @@ export async function processGenerateReview(
 
     const parseReviewPayload = (rawText: string): {
       reviewText: string;
+      alternates: string[];
       keywordsUsed: string[];
       script: 'roman' | 'devanagari';
       sentiment: ReviewSentimentLevel;
@@ -1409,6 +1399,7 @@ export async function processGenerateReview(
       };
     } => {
       let parsedText = '';
+      let parsedAlternates: string[] = [];
       let parsedKeywords: string[] = [];
       let script: 'roman' | 'devanagari' = defaultScript;
       let sentiment: ReviewSentimentLevel = 'positive';
@@ -1435,6 +1426,12 @@ export async function processGenerateReview(
           parsedText =
             (typeof parsed.review === 'string' ? parsed.review.trim() : '') ||
             (typeof chosen === 'string' ? chosen.trim() : '');
+          if (Array.isArray(parsed.alternates)) {
+            parsedAlternates = parsed.alternates
+              .filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+              .map((a) => a.trim())
+              .slice(0, 3);
+          }
           if (parsed.script === 'roman' || parsed.script === 'devanagari') {
             script = parsed.script;
           }
@@ -1489,6 +1486,7 @@ export async function processGenerateReview(
 
       return {
         reviewText: parsedText,
+        alternates: parsedAlternates,
         keywordsUsed: parsedKeywords,
         script,
         sentiment,
@@ -1502,9 +1500,8 @@ export async function processGenerateReview(
       };
     };
 
-    let { reviewText, keywordsUsed, script, sentiment, validation, structuredMeta } = parseReviewPayload(
-      genResult.text,
-    );
+    let { reviewText, alternates, keywordsUsed, script, sentiment, validation, structuredMeta } =
+      parseReviewPayload(genResult.text);
     let totalInputTokens = genResult.inputTokens;
     let totalOutputTokens = genResult.outputTokens;
     let totalTokens = genResult.totalTokens;
@@ -1605,10 +1602,37 @@ export async function processGenerateReview(
       }
     }
 
+    const seenTexts = new Set<string>([
+      reviewText.trim().toLowerCase(),
+      ...previousDrafts.map((d) => d.trim().toLowerCase()),
+    ]);
+    const verifiedAlternates: string[] = [];
+    for (const candidateAlt of alternates) {
+      const cleanAlt = candidateAlt.trim();
+      const normalizedAlt = cleanAlt.toLowerCase();
+      if (!cleanAlt || seenTexts.has(normalizedAlt)) continue;
+      const altQuality = validateReviewQuality({
+        reviewText: cleanAlt,
+        language,
+        businessName,
+        category,
+        responses,
+        additionalComments,
+        previousDrafts: [...previousDrafts, reviewText, ...verifiedAlternates],
+        autoRepaired: false,
+      });
+      if (altQuality.scriptCompliant && altQuality.inventedClaimCount === 0 && altQuality.contradictionCount === 0) {
+        seenTexts.add(normalizedAlt);
+        verifiedAlternates.push(cleanAlt);
+        if (verifiedAlternates.length >= 2) break;
+      }
+    }
+
     return {
       status: 200,
       data: {
         review: reviewText,
+        alternates: verifiedAlternates,
         language,
         script,
         sentiment,
