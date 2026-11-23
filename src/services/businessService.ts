@@ -35,6 +35,7 @@ import type {
   EnabledFeatures,
   FeedbackQuestion,
   FeedbackSubmissionResponse,
+  FormTemplateId,
   GbpReplySettings,
   PublicProfile,
   QrConfig,
@@ -52,6 +53,7 @@ import {
   normalizeEmail,
   sanitizeAccessLevel,
   sanitizeEnabledFeatures,
+  sanitizeFormTemplate,
   sanitizeGbpSettings,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
@@ -197,6 +199,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     branding: sanitizeBranding(data.branding),
     qrConfig: sanitizeQrConfig(data.qrConfig, 'v1token'),
     questions: Array.isArray(data.questions) ? data.questions : [],
+    formTemplate: sanitizeFormTemplate(data.formTemplate),
     seoKeywords:
       hydratedKeywords.length > 0
         ? hydratedKeywords
@@ -663,6 +666,7 @@ export async function createBusiness(
     branding: BusinessBranding;
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
+    formTemplate?: FormTemplateId;
     seoKeywords?: string[];
   },
 ): Promise<string> {
@@ -693,6 +697,7 @@ export async function createBusiness(
   const cleanBranding = sanitizeBranding(input.branding);
   const cleanQrConfig = sanitizeQrConfig(input.qrConfig);
   const cleanQuestions = sanitizeQuestions(input.questions);
+  const cleanFormTemplate = sanitizeFormTemplate(input.formTemplate);
   const providedKeywords = sanitizeSeoKeywords(input.seoKeywords);
   const cleanSeoKeywords =
     providedKeywords.length > 0
@@ -717,6 +722,7 @@ export async function createBusiness(
     branding: cleanBranding,
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
+    formTemplate: cleanFormTemplate,
     seoKeywords: cleanSeoKeywords,
     qrStandLimit: 4,
     gbpSettings: sanitizeGbpSettings(),
@@ -737,6 +743,7 @@ export async function createBusiness(
     branding: cleanBranding,
     qrConfig: cleanQrConfig,
     questions: cleanQuestions,
+    formTemplate: cleanFormTemplate,
     seoKeywords: cleanSeoKeywords,
     createdAt: now,
     updatedAt: now,
@@ -816,6 +823,7 @@ export async function updateBusiness(
     branding: BusinessBranding;
     qrConfig: QrConfig;
     questions: FeedbackQuestion[];
+    formTemplate: FormTemplateId;
     seoKeywords: string[];
     qrStandLimit: number;
     gbpSettings: GbpReplySettings;
@@ -857,6 +865,11 @@ export async function updateBusiness(
       const nextQuestions = sanitizeQuestions(updates.questions);
       businessScopedUpdates.questions = nextQuestions;
       publicScopedUpdates.questions = nextQuestions;
+    }
+    if (updates.formTemplate !== undefined) {
+      const nextTemplate = sanitizeFormTemplate(updates.formTemplate);
+      businessScopedUpdates.formTemplate = nextTemplate;
+      publicScopedUpdates.formTemplate = nextTemplate;
     }
 
     batch.update(doc(db, 'businesses', current.id), businessScopedUpdates);
@@ -903,6 +916,7 @@ export async function updateBusiness(
   const nextBranding = sanitizeBranding(updates.branding ?? current.branding);
   const nextQrConfig = sanitizeQrConfig(updates.qrConfig ?? current.qrConfig, generateRandomToken());
   const nextQuestions = sanitizeQuestions(updates.questions ?? current.questions);
+  const nextFormTemplate = sanitizeFormTemplate(updates.formTemplate ?? current.formTemplate);
   const nextSeoKeywords = sanitizeSeoKeywords(
     updates.seoKeywords ?? current.seoKeywords ?? DEFAULT_SEO_KEYWORDS_BY_CATEGORY[nextCategory],
   );
@@ -967,6 +981,10 @@ export async function updateBusiness(
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;
   }
+  if (updates.formTemplate !== undefined) {
+    businessUpdates.formTemplate = nextFormTemplate;
+    publicUpdates.formTemplate = nextFormTemplate;
+  }
   if (updates.seoKeywords !== undefined) {
     businessUpdates.seoKeywords = nextSeoKeywords;
     publicUpdates.seoKeywords = nextSeoKeywords;
@@ -1025,6 +1043,7 @@ export async function updateBusiness(
       branding: nextBranding,
       qrConfig: nextQrConfig,
       questions: nextQuestions,
+      formTemplate: nextFormTemplate,
       seoKeywords: nextSeoKeywords,
       createdAt: current.createdAt ?? now,
       updatedAt: now,
@@ -1044,6 +1063,7 @@ export async function updateBusiness(
         branding: nextBranding,
         qrConfig: nextQrConfig,
         questions: nextQuestions,
+        formTemplate: nextFormTemplate,
         seoKeywords: nextSeoKeywords,
         createdAt: current.createdAt ?? now,
         updatedAt: now,
@@ -1109,6 +1129,7 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       branding: sanitizeBranding(raw.branding),
       qrConfig: sanitizeQrConfig(raw.qrConfig, 'v1token'),
       questions: Array.isArray(raw.questions) ? raw.questions : [],
+      formTemplate: sanitizeFormTemplate(raw.formTemplate),
       seoKeywords: (() => {
         const kw = sanitizeSeoKeywords(raw.seoKeywords);
         const cat = (raw.category as BusinessCategory) || 'Other Businesses';

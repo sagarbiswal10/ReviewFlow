@@ -1,10 +1,15 @@
-import type {
-  ClientAccessLevel,
-  EnabledFeatures,
-  GbpReplySettings,
-  ReviewEventType,
-  WeeklyReportConfig,
+import {
+  FORM_TEMPLATE_IDS,
+  type ClientAccessLevel,
+  type EnabledFeatures,
+  type FormTemplateId,
+  type GbpReplySettings,
+  type ReviewEventType,
+  type WeeklyReportConfig,
 } from '../types';
+
+export const VISITOR_QUOTA_MAX_GENERATIONS = 5;
+export const VISITOR_QUOTA_WINDOW_MS = 5 * 60 * 1000;
 
 export const DEFAULT_ENABLED_FEATURES_SAFE: EnabledFeatures = {
   aiReviewDrafts: true,
@@ -36,6 +41,61 @@ export function sanitizeSlug(raw: string): string {
     return cleaned;
   }
   return `biz-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function sanitizeFormTemplate(val?: unknown): FormTemplateId {
+  if (typeof val === 'string' && (FORM_TEMPLATE_IDS as readonly string[]).includes(val)) {
+    return val as FormTemplateId;
+  }
+  return 'classic_cards';
+}
+
+export function resolveVisitorQuotaState(
+  rawCount: unknown,
+  rawResetAt: unknown,
+  nowMs = Date.now(),
+  maxGenerations = VISITOR_QUOTA_MAX_GENERATIONS,
+  windowMs = VISITOR_QUOTA_WINDOW_MS,
+): { generationCount: number; quotaResetAt: number; expired: boolean } {
+  const numericCount =
+    typeof rawCount === 'number' && Number.isFinite(rawCount)
+      ? Math.max(0, Math.min(maxGenerations, Math.floor(rawCount)))
+      : 0;
+  const numericResetAt =
+    typeof rawResetAt === 'number' && Number.isFinite(rawResetAt) && rawResetAt > 0
+      ? Math.floor(rawResetAt)
+      : 0;
+
+  if (numericCount === 0) {
+    return { generationCount: 0, quotaResetAt: 0, expired: false };
+  }
+
+  // Legacy persisted state without reset timestamp should start a clean window or expire
+  if (!numericResetAt) {
+    return {
+      generationCount: numericCount,
+      quotaResetAt: nowMs + windowMs,
+      expired: false,
+    };
+  }
+
+  if (nowMs >= numericResetAt) {
+    return { generationCount: 0, quotaResetAt: 0, expired: true };
+  }
+
+  return {
+    generationCount: numericCount,
+    quotaResetAt: Math.min(numericResetAt, nowMs + windowMs),
+    expired: false,
+  };
+}
+
+export function formatQuotaCountdown(resetAtMs: number, nowMs = Date.now()): string {
+  const remainingMs = Math.max(0, resetAtMs - nowMs);
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
 export function sanitizeEnabledFeatures(features?: Partial<EnabledFeatures>): EnabledFeatures {
@@ -124,7 +184,7 @@ export function getTimestampMs(value: unknown): number {
       }
     }
     const rawSec = candidate.seconds ?? candidate._seconds;
-    if (rawSec !== undefined && rawSec !== null) {
+    if (rawSecondsOrUnknown(rawSec) !== null) {
       const sec = Number(rawSec);
       if (Number.isFinite(sec)) return sec * 1000;
     }
@@ -134,6 +194,10 @@ export function getTimestampMs(value: unknown): number {
     return Number.isFinite(ms) ? ms : 0;
   }
   return 0;
+}
+
+function rawSecondsOrUnknown(v: unknown): unknown {
+  return v !== undefined && v !== null ? v : null;
 }
 
 function toIsoDate(d: Date): string {

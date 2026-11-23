@@ -20,6 +20,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  LayoutGrid,
   Lock,
   LogOut,
   Palette,
@@ -51,12 +52,14 @@ import { CustomerReviewFlow } from './CustomerReviewFlow';
 import { QrStandsTab } from './QrStandsTab';
 import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
+import { TemplatesTab } from './TemplatesTab';
 
 type PortalTab =
   | 'qr_features'
   | 'qr_stands'
   | 'gbp_reply'
   | 'weekly_reports'
+  | 'templates'
   | 'qr_editor'
   | 'questions'
   | 'branding'
@@ -330,6 +333,7 @@ export function ClientPortalView({
       'qr_stands',
       'gbp_reply',
       'weekly_reports',
+      'templates',
       'preview',
     ];
     if (
@@ -402,6 +406,7 @@ export function ClientPortalView({
       icon: FileBarChart2,
       visible: activeBusiness?.enabledFeatures.weeklyReports !== false,
     },
+    { id: 'templates', label: 'Templates', icon: LayoutGrid, visible: true },
     {
       id: 'qr_editor',
       label: 'QR Studio',
@@ -473,6 +478,7 @@ export function ClientPortalView({
         branding: activeBusiness.branding,
         qrConfig: activeBusiness.qrConfig,
         questions: activeBusiness.questions,
+        formTemplate: activeBusiness.formTemplate,
         seoKeywords: activeBusiness.seoKeywords,
       }
     : null;
@@ -1962,6 +1968,15 @@ export function ClientPortalView({
                   canEdit={canEditBranding || isAdmin}
                 />
               )}
+
+            {activeTab === 'templates' && (
+              <TemplatesTab
+                business={activeBusiness}
+                isAdmin={isAdmin}
+                canEdit={canEditQrOrQuestions}
+                onOpenPreview={() => setActiveTab('preview')}
+              />
+            )}
 
             {activeTab === 'qr_editor' && canEditQrOrQuestions && (
               <QrStudioTab business={activeBusiness} isAdmin={isAdmin} />

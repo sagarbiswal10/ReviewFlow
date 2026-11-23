@@ -97,6 +97,18 @@
         "questions": {
           "type": "array"
         },
+        "formTemplate": {
+          "type": "string",
+          "description": "Selected customer feedback form template identifier.",
+          "enum": [
+            "classic_cards",
+            "emoji_checklist_light",
+            "emoji_checklist_dark",
+            "warm_editorial",
+            "split_executive",
+            "quick_tap_express"
+          ]
+        },
         "seoKeywords": {
           "type": "array",
           "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
@@ -204,6 +216,18 @@
         },
         "questions": {
           "type": "array"
+        },
+        "formTemplate": {
+          "type": "string",
+          "description": "Selected customer feedback form template identifier.",
+          "enum": [
+            "classic_cards",
+            "emoji_checklist_light",
+            "emoji_checklist_dark",
+            "warm_editorial",
+            "split_executive",
+            "quick_tap_express"
+          ]
         },
         "seoKeywords": {
           "type": "array"

@@ -71,6 +71,17 @@ service cloud.firestore {
       return st in ['onboarding', 'provisioning', 'active', 'suspended'];
     }
 
+    function isValidFormTemplate(tpl) {
+      return tpl in [
+        'classic_cards',
+        'emoji_checklist_light',
+        'emoji_checklist_dark',
+        'warm_editorial',
+        'split_executive',
+        'quick_tap_express'
+      ];
+    }
+
     function isValidTenantFirebase(tf) {
       return tf == null || (
         tf is map &&
@@ -181,7 +192,7 @@ service cloud.firestore {
           'ownerId', 'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
           'slug', 'name', 'category', 'address', 'phone',
           'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
-          'qrConfig', 'questions', 'seoKeywords', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
           'lifecycleStatus', 'tenantFirebase', 'createdAt', 'updatedAt'
         ]) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
@@ -202,6 +213,7 @@ service cloud.firestore {
         isValidBranding(data.branding) &&
         isValidQrConfig(data.qrConfig) &&
         isValidQuestions(data.questions) &&
+        (!('formTemplate' in data) || isValidFormTemplate(data.formTemplate)) &&
         (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
         (!('qrStandLimit' in data) || (data.qrStandLimit is int && data.qrStandLimit >= 1 && data.qrStandLimit <= 100)) &&
         (!('gbpSettings' in data) || isValidGbpSettings(data.gbpSettings)) &&
@@ -221,7 +233,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'businessId', 'ownerId', 'clientUid', 'slug', 'name', 'category',
           'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
-          'qrConfig', 'questions', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
+          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.businessId) &&
@@ -236,6 +248,7 @@ service cloud.firestore {
         isValidBranding(data.branding) &&
         isValidQrConfig(data.qrConfig) &&
         isValidQuestions(data.questions) &&
+        (!('formTemplate' in data) || isValidFormTemplate(data.formTemplate)) &&
         (!('seoKeywords' in data) || isValidSeoKeywords(data.seoKeywords)) &&
         (!('lifecycleStatus' in data) || isValidLifecycleStatus(data.lifecycleStatus)) &&
         (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
@@ -706,7 +719,7 @@ service cloud.firestore {
               'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
               'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'seoKeywords', 'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+              'questions', 'formTemplate', 'seoKeywords', 'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
@@ -721,7 +734,7 @@ service cloud.firestore {
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'seoKeywords', 'slug', 'gbpSettings', 'weeklyReportConfig',
+              'questions', 'formTemplate', 'seoKeywords', 'slug', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
@@ -733,7 +746,7 @@ service cloud.firestore {
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'qrConfig', 'questions', 'updatedAt'
+              'qrConfig', 'questions', 'formTemplate', 'updatedAt'
             ])
           ) ||
           // Action 4: Assigned Client links verified clientUid for Portal event history
@@ -778,7 +791,7 @@ service cloud.firestore {
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'clientUid', 'name', 'category', 'googleReviewUrl', 'logoDataUrl',
-              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'seoKeywords',
+              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate', 'seoKeywords',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
@@ -791,7 +804,7 @@ service cloud.firestore {
                 incoming().enabledFeatures == existing().enabledFeatures &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'name', 'category', 'googleReviewUrl', 'logoDataUrl',
-                  'branding', 'qrConfig', 'questions', 'seoKeywords',
+                  'branding', 'qrConfig', 'questions', 'formTemplate', 'seoKeywords',
                   'lifecycleStatus', 'tenantFirebase', 'updatedAt'
                 ])
               ) ||
@@ -799,7 +812,7 @@ service cloud.firestore {
                 get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'qr_and_questions' &&
                 incoming().enabledFeatures == existing().enabledFeatures &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
-                  'qrConfig', 'questions', 'updatedAt'
+                  'qrConfig', 'questions', 'formTemplate', 'updatedAt'
                 ])
               ) ||
               (

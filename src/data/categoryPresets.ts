@@ -564,5 +564,6 @@ export const BUILTIN_DEMO_PROFILE: PublicProfile = {
     includeLogo: true,
   },
   questions: createCategoryQuestions('Hair Salons'),
+  formTemplate: 'classic_cards',
   seoKeywords: DEFAULT_SEO_KEYWORDS_BY_CATEGORY['Hair Salons'],
 };

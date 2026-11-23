@@ -337,27 +337,52 @@ export function sanitizeLogError(err: unknown): string {
   return sanitizeApiErrorDetail(msg) || 'Unexpected error';
 }
 
-const rateBuckets = new Map<string, number[]>();
+export const VISITOR_QUOTA_MAX_GENERATIONS = 5;
+export const VISITOR_QUOTA_WINDOW_MS = 5 * 60 * 1000;
 
-export function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
-  const now = Date.now();
-  const cutoff = now - windowMs;
-  const existing = rateBuckets.get(key) || [];
-  const recent = existing.filter((ts) => ts > cutoff);
-  if (recent.length >= maxRequests) {
-    return false;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+export function consumeRateLimitSlot(
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+  now = Date.now(),
+): { allowed: boolean; count: number; remaining: number; resetAt: number } {
+  const existing = rateBuckets.get(key);
+  let bucket =
+    existing && existing.resetAt > now ? existing : { count: 0, resetAt: now + windowMs };
+
+  if (bucket.count >= maxRequests) {
+    rateBuckets.set(key, bucket);
+    return {
+      allowed: false,
+      count: maxRequests,
+      remaining: 0,
+      resetAt: bucket.resetAt,
+    };
   }
-  recent.push(now);
-  rateBuckets.set(key, recent);
+
+  bucket = { count: bucket.count + 1, resetAt: bucket.resetAt };
+  rateBuckets.set(key, bucket);
 
   if (rateBuckets.size > 5000) {
-    for (const [k, stamps] of rateBuckets.entries()) {
-      if (stamps.every((ts) => ts <= cutoff)) {
+    for (const [k, b] of rateBuckets.entries()) {
+      if (b.resetAt <= now) {
         rateBuckets.delete(k);
       }
     }
   }
-  return true;
+
+  return {
+    allowed: true,
+    count: bucket.count,
+    remaining: Math.max(0, maxRequests - bucket.count),
+    resetAt: bucket.resetAt,
+  };
+}
+
+export function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  return consumeRateLimitSlot(key, maxRequests, windowMs).allowed;
 }
 
 function getGeminiApiKey(): string {
@@ -895,21 +920,29 @@ export async function processGenerateReview(
       };
     }
 
+    let visitorQuota: { remaining: number; resetAt: number } | null = null;
     if (businessId && visitorId) {
-      const withinUserQuota = checkRateLimit(
+      const slot = consumeRateLimitSlot(
         `visitor:${businessId}:${visitorId}`,
-        5,
-        24 * 60 * 60 * 1000,
+        VISITOR_QUOTA_MAX_GENERATIONS,
+        VISITOR_QUOTA_WINDOW_MS,
       );
-      if (!withinUserQuota) {
+      if (!slot.allowed) {
+        const secsLeft = Math.max(1, Math.ceil((slot.resetAt - Date.now()) / 1000));
+        const minsLeft = Math.floor(secsLeft / 60);
+        const remSecs = secsLeft % 60;
+        const countdownLabel =
+          minsLeft > 0 ? `${minsLeft}m ${String(remSecs).padStart(2, '0')}s` : `${remSecs}s`;
         return {
           status: 429,
           data: {
-            error:
-              'You have reached the maximum limit of 5 review generations for this visit. You can still edit, copy, and post your current review.',
+            error: `You have reached the limit of ${VISITOR_QUOTA_MAX_GENERATIONS} review generations. Your limit will refresh in ${countdownLabel}. You can still edit, copy, and post your current review.`,
+            quotaRemaining: 0,
+            quotaResetAt: slot.resetAt,
           },
         };
       }
+      visitorQuota = { remaining: slot.remaining, resetAt: slot.resetAt };
     }
 
     const styleGuidance: Record<ReviewStyle, string> =
@@ -1416,6 +1449,12 @@ export async function processGenerateReview(
         keywordsUsed,
         structuredMeta,
         qualityReport,
+        ...(visitorQuota
+          ? {
+              quotaRemaining: visitorQuota.remaining,
+              quotaResetAt: visitorQuota.resetAt,
+            }
+          : {}),
         aiTelemetry: {
           provider: AI_PROVIDER,
           modelId: finalModelId,

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import {
   PayloadTooLargeError,
+  VISITOR_QUOTA_MAX_GENERATIONS,
+  VISITOR_QUOTA_WINDOW_MS,
   checkRateLimit,
+  consumeRateLimitSlot,
   isOriginAllowed,
   processGbpProxy,
   processGenerateReply,
@@ -131,12 +134,21 @@ test('TC-API-07: processGbpProxy validates OAuth token, GBP resource paths, and 
   assert.equal(unknownAction.status, 400);
 });
 
-test('TC-API-08: processGenerateReview enforces max 5 continuous generations per visitorId and businessId', async () => {
+test('TC-API-08: processGenerateReview enforces max 5 generations with 5-minute auto-refresh window', async () => {
+  assert.equal(VISITOR_QUOTA_MAX_GENERATIONS, 5);
+  assert.equal(VISITOR_QUOTA_WINDOW_MS, 5 * 60 * 1000);
+
   const bizId = `biz_limit_${Date.now()}`;
   const visitorId = `vis_limit_${Date.now()}`;
+  const bucketKey = `visitor:${bizId}:${visitorId}`;
+
   for (let i = 0; i < 5; i += 1) {
-    assert.equal(checkRateLimit(`visitor:${bizId}:${visitorId}`, 5, 24 * 60 * 60 * 1000), true);
+    const slot = consumeRateLimitSlot(bucketKey, VISITOR_QUOTA_MAX_GENERATIONS, VISITOR_QUOTA_WINDOW_MS);
+    assert.equal(slot.allowed, true);
+    assert.equal(slot.remaining, 4 - i);
+    assert.ok(slot.resetAt > Date.now());
   }
+
   const blocked = await processGenerateReview({
     businessId: bizId,
     visitorId,
@@ -147,7 +159,21 @@ test('TC-API-08: processGenerateReview enforces max 5 continuous generations per
     language: 'hinglish',
   });
   assert.equal(blocked.status, 429);
+  assert.equal(blocked.data.quotaRemaining, 0);
+  assert.ok(typeof blocked.data.quotaResetAt === 'number');
   assert.ok(String(blocked.data.error || '').includes('5'));
+
+  // Verify automatic refresh after 5 minutes + 1ms
+  const simKey = `visitor:sim_${Date.now()}`;
+  const startMs = 1_700_000_000_000;
+  for (let i = 0; i < 5; i += 1) {
+    assert.equal(consumeRateLimitSlot(simKey, 5, VISITOR_QUOTA_WINDOW_MS, startMs + i * 1000).allowed, true);
+  }
+  assert.equal(consumeRateLimitSlot(simKey, 5, VISITOR_QUOTA_WINDOW_MS, startMs + 60_000).allowed, false);
+  const refreshed = consumeRateLimitSlot(simKey, 5, VISITOR_QUOTA_WINDOW_MS, startMs + VISITOR_QUOTA_WINDOW_MS + 1);
+  assert.equal(refreshed.allowed, true);
+  assert.equal(refreshed.count, 1);
+  assert.equal(refreshed.remaining, 4);
 });
 
 test('TC-API-09: readSafeJsonBody rejects payloads exceeding the configured byte limit and sanitizeLogError redacts keys', async () => {

@@ -14,6 +14,7 @@ import {
   FlaskConical,
   KeyRound,
   Layers,
+  LayoutGrid,
   Loader2,
   LogOut,
   Mail,
@@ -82,6 +83,7 @@ import { CustomerReviewFlow } from './CustomerReviewFlow';
 import { QrStandsTab } from './QrStandsTab';
 import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
+import { TemplatesTab } from './TemplatesTab';
 
 type AdminSection =
   | 'directory'
@@ -98,6 +100,7 @@ type BusinessDetailTab =
   | 'stands'
   | 'gbp_reply'
   | 'weekly'
+  | 'templates'
   | 'qr'
   | 'questions'
   | 'branding'
@@ -630,6 +633,7 @@ export function ManagementConsoleView({
         branding: selectedBiz.branding,
         qrConfig: selectedBiz.qrConfig,
         questions: selectedBiz.questions,
+        formTemplate: selectedBiz.formTemplate,
         seoKeywords: selectedBiz.seoKeywords,
       }
     : null;
@@ -947,6 +951,7 @@ export function ManagementConsoleView({
                       { id: 'stands', label: 'QR Stands', icon: Layers },
                       { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
                       { id: 'weekly', label: 'Weekly Reports', icon: FileBarChart2 },
+                      { id: 'templates', label: 'Templates', icon: LayoutGrid },
                       { id: 'qr', label: 'QR Studio', icon: QrCode },
                       { id: 'questions', label: 'Questions', icon: SlidersHorizontal },
                       { id: 'branding', label: 'Branding', icon: Palette },
@@ -1173,6 +1178,14 @@ export function ManagementConsoleView({
                   isAdmin
                   events={events}
                   canEdit
+                />
+              )}
+              {detailTab === 'templates' && (
+                <TemplatesTab
+                  business={selectedBiz}
+                  isAdmin
+                  canEdit
+                  onOpenPreview={() => setDetailTab('preview')}
                 />
               )}
               {detailTab === 'qr' && <QrStudioTab business={selectedBiz} isAdmin />}

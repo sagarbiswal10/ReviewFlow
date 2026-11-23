@@ -120,6 +120,17 @@ export interface WeeklyReportConfig {
   lastGeneratedWeekKey?: string;
 }
 
+export const FORM_TEMPLATE_IDS = [
+  'classic_cards',
+  'emoji_checklist_light',
+  'emoji_checklist_dark',
+  'warm_editorial',
+  'split_executive',
+  'quick_tap_express',
+] as const;
+
+export type FormTemplateId = (typeof FORM_TEMPLATE_IDS)[number];
+
 export interface Business {
   id: string;
   ownerId: string;
@@ -140,6 +151,7 @@ export interface Business {
   branding: BusinessBranding;
   qrConfig: QrConfig;
   questions: FeedbackQuestion[];
+  formTemplate?: FormTemplateId;
   seoKeywords?: string[];
   qrStandLimit?: number;
   gbpSettings?: GbpReplySettings;
@@ -161,6 +173,7 @@ export interface PublicProfile {
   branding: BusinessBranding;
   qrConfig: QrConfig;
   questions: FeedbackQuestion[];
+  formTemplate?: FormTemplateId;
   seoKeywords?: string[];
   createdAt?: unknown;
   updatedAt?: unknown;

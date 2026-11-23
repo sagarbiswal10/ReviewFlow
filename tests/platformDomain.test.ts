@@ -3,17 +3,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  VISITOR_QUOTA_MAX_GENERATIONS,
+  VISITOR_QUOTA_WINDOW_MS,
+  formatQuotaCountdown,
   formatReviewEventActionLabel,
   getMondaySundayWindow,
   getTimestampMs,
   isMondayToday,
   normalizeEmail,
+  resolveVisitorQuotaState,
   sanitizeAccessLevel,
   sanitizeEnabledFeatures,
+  sanitizeFormTemplate,
   sanitizeGbpSettings,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
 } from '../src/utils/domainHelpers.ts';
+import {
+  FORM_TEMPLATES,
+  classifyQuestionsForTemplate,
+  isExperienceRatingQuestion,
+  mapOptionsToFiveFaces,
+} from '../src/data/formTemplates.ts';
+import { createCategoryQuestions } from '../src/data/categoryPresets.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
   assert.equal(sanitizeSlug('  Bella Bistro & Cafe! '), 'bella-bistro-cafe');
@@ -124,4 +136,59 @@ test('TC-ARCH-02: ClientPortalView guards failed clientUid claims from infinite 
   assert.match(clientPortalSrc, /claimedAttemptRef\.current\.add\(attemptKey\)/);
   assert.match(clientPortalSrc, /isClientUidLinked/);
   assert.doesNotMatch(clientPortalSrc, /const todayIso = toLocalDateStr\(new Date\(\)\);/);
+});
+
+test('TC-DOM-08: sanitizeFormTemplate, resolveVisitorQuotaState, and formatQuotaCountdown enforce 5-min refresh', () => {
+  assert.equal(sanitizeFormTemplate('emoji_checklist_dark'), 'emoji_checklist_dark');
+  assert.equal(sanitizeFormTemplate('invalid_template'), 'classic_cards');
+  assert.equal(sanitizeFormTemplate(undefined), 'classic_cards');
+
+  const now = 1_700_000_000_000;
+  const activeState = resolveVisitorQuotaState(5, now + 125_000, now);
+  assert.equal(activeState.generationCount, 5);
+  assert.equal(activeState.expired, false);
+  assert.equal(formatQuotaCountdown(activeState.quotaResetAt, now), '2:05');
+
+  const expiredState = resolveVisitorQuotaState(
+    VISITOR_QUOTA_MAX_GENERATIONS,
+    now - 1,
+    now,
+    VISITOR_QUOTA_MAX_GENERATIONS,
+    VISITOR_QUOTA_WINDOW_MS,
+  );
+  assert.equal(expiredState.generationCount, 0);
+  assert.equal(expiredState.quotaResetAt, 0);
+  assert.equal(expiredState.expired, true);
+});
+
+test('TC-TPL-01: Dynamic template engine adapts existing business questions cleanly with zero data loss', () => {
+  assert.ok(FORM_TEMPLATES.length >= 6);
+  const salonQuestions = [
+    ...createCategoryQuestions('Hair Salons'),
+    {
+      id: 'q-custom-hygiene',
+      prompt: 'Was the booking smooth?',
+      type: 'single' as const,
+      options: ['Super Easy', 'Took Time'],
+      required: false,
+    },
+  ];
+
+  const classified = classifyQuestionsForTemplate(salonQuestions);
+  assert.ok(classified.ratingQuestion);
+  assert.equal(classified.ratingQuestion.id, 'q-experience');
+  assert.equal(classified.textQuestions.length, 1);
+  // Original had 5 questions + 1 custom => 1 rating + 4 checklist + 1 text = 6 total preserved
+  assert.equal(
+    1 + classified.checklistQuestions.length + classified.textQuestions.length,
+    salonQuestions.length,
+  );
+  assert.ok(classified.checklistQuestions.some((q) => q.id === 'q-custom-hygiene'));
+  assert.equal(isExperienceRatingQuestion(classified.ratingQuestion), true);
+
+  // Best-first preset options should map lowest -> highest left-to-right onto the 5 emoji faces
+  const faces = mapOptionsToFiveFaces(classified.ratingQuestion.options);
+  assert.equal(faces.length, 5);
+  assert.equal(faces[0].optionValue, 'Needs Improvement');
+  assert.equal(faces[4].optionValue, 'Excellent');
 });
