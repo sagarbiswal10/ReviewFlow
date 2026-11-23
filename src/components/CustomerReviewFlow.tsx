@@ -242,6 +242,26 @@ export function CustomerReviewFlow({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const editPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consentedDraftIdsRef = useRef<Set<string>>(new Set());
+  const fewShotCacheRef = useRef<Record<string, Array<{ responsesSummary: string; finalReview: string }>>>({});
+
+  useEffect(() => {
+    if (isPreview) return;
+    const cacheKey = `${selectedLanguage}:${profile.category}`;
+    if (fewShotCacheRef.current[cacheKey]) return;
+    let active = true;
+    fetchApprovedExamplesForPrompt(selectedLanguage, profile.category)
+      .then((examples) => {
+        if (active) {
+          fewShotCacheRef.current[cacheKey] = examples;
+        }
+      })
+      .catch(() => {
+        // Non-blocking prefetch
+      });
+    return () => {
+      active = false;
+    };
+  }, [isPreview, selectedLanguage, profile.category]);
 
   const remainingGenerations = Math.max(0, MAX_USER_REVIEW_GENERATIONS - generationCount);
   const hasReachedGenerationLimit = generationCount >= MAX_USER_REVIEW_GENERATIONS;
@@ -506,7 +526,7 @@ export function CustomerReviewFlow({
   const requestAiDraft = async (
     languageToUse: ReviewLanguage,
     seed: number,
-    submissionIdOverride?: string,
+    submissionIdOrPromise?: string | Promise<string>,
   ) => {
     const currentNow = Date.now();
     const isWindowActive = !quotaResetAt || currentNow < quotaResetAt;
@@ -533,7 +553,9 @@ export function CustomerReviewFlow({
       const { responses, additionalComments } = buildStructuredPayload();
       setSavedResponses(responses);
       setSavedAdditionalComments(additionalComments);
-      const activeSubmissionId = submissionIdOverride || (await ensureFeedbackSubmission());
+      const submissionPromise: Promise<string> = submissionIdOrPromise
+        ? Promise.resolve(submissionIdOrPromise)
+        : ensureFeedbackSubmission().catch(() => `local_fb_${Date.now()}`);
 
       const buildLocalFallback = () =>
         composeGroundedFallbackReview({
@@ -563,6 +585,7 @@ export function CustomerReviewFlow({
           return;
         }
         try {
+          const activeSubmissionId = await submissionPromise;
           const canPersistRemoteSub = Boolean(activeSubmissionId) && !activeSubmissionId.startsWith('local_fb_');
           let newDraftId = `local_dr_${Date.now()}`;
           if (canPersistRemoteSub) {
@@ -665,7 +688,7 @@ export function CustomerReviewFlow({
         setDraftStatus('Generated');
         setDraftDeleted(false);
         setStep('draft');
-        await persistDraftSafely(generatedText, computedQuality, telemetry);
+        void persistDraftSafely(generatedText, computedQuality, telemetry);
       };
 
       if (profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) {
@@ -681,13 +704,14 @@ export function CustomerReviewFlow({
         return;
       }
 
-      let fewShotExamples: Array<{ responsesSummary: string; finalReview: string }> = [];
-      if (!isPreview) {
-        try {
-          fewShotExamples = await fetchApprovedExamplesForPrompt(languageToUse, profile.category);
-        } catch {
-          fewShotExamples = [];
-        }
+      const cacheKey = `${languageToUse}:${profile.category}`;
+      const fewShotExamples = fewShotCacheRef.current[cacheKey] || [];
+      if (!isPreview && !fewShotCacheRef.current[cacheKey]) {
+        void fetchApprovedExamplesForPrompt(languageToUse, profile.category)
+          .then((items) => {
+            fewShotCacheRef.current[cacheKey] = items;
+          })
+          .catch(() => undefined);
       }
 
       const res = await apiFetch('/api/generate-review', {
@@ -849,10 +873,8 @@ export function CustomerReviewFlow({
       const { responses, additionalComments } = buildStructuredPayload();
       setSavedResponses(responses);
       setSavedAdditionalComments(additionalComments);
-      let submissionId = '';
-      if (!isPreview) {
-        try {
-          submissionId = await saveFeedbackSubmission({
+      const submissionPromise: Promise<string> = !isPreview
+        ? saveFeedbackSubmission({
             profile,
             responses,
             additionalComments,
@@ -862,17 +884,23 @@ export function CustomerReviewFlow({
             standCode: standContext.standCode,
             standName: standContext.standName,
             sessionId: standContext.sessionId,
+          })
+            .then((id) => {
+              setFeedbackSubmissionId(id);
+              return id;
+            })
+            .catch(() => {
+              const localId = `local_fb_${Date.now()}`;
+              setFeedbackSubmissionId(localId);
+              return localId;
+            })
+        : Promise.resolve(`preview_fb_${Date.now()}`).then((id) => {
+            setFeedbackSubmissionId(id);
+            return id;
           });
-        } catch {
-          submissionId = `local_fb_${Date.now()}`;
-        }
-      } else {
-        submissionId = `preview_fb_${Date.now()}`;
-      }
-      setFeedbackSubmissionId(submissionId);
 
       const nextSeed = variationSeed;
-      await requestAiDraft(selectedLanguage, nextSeed, submissionId);
+      await requestAiDraft(selectedLanguage, nextSeed, submissionPromise);
     } catch (err) {
       setGenerateError(formatApiError(err, 'Unable to save feedback or generate review draft.'));
       setIsGenerating(false);

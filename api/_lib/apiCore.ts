@@ -1245,8 +1245,10 @@ export async function processGenerateReview(
           systemInstruction: callSystem,
           responseMimeType: 'application/json',
           responseSchema: reviewResponseSchema,
+          temperature: 0.7,
+          maxOutputTokens: 380,
         },
-        2,
+        1,
       );
     };
 
@@ -1524,21 +1526,16 @@ export async function processGenerateReview(
       autoRepaired: false,
     });
 
-    const hasFormattingViolation = qualityReport.issues.some(
-      (i) => i.type === 'formatting_violation',
-    );
     const needsModelValidationRepair =
       (language === 'hinglish' && validation.english_vocabulary_found) ||
-      !validation.facts_preserved ||
-      !validation.sentiment_preserved ||
       validation.unsupported_claims;
-    if (
-      !qualityReport.passed ||
+    const hasCriticalQualityIssue =
       !qualityReport.scriptCompliant ||
+      qualityReport.inventedClaimCount > 0 ||
+      qualityReport.contradictionCount > 0 ||
       qualityReport.clicheCount > 0 ||
-      hasFormattingViolation ||
-      needsModelValidationRepair
-    ) {
+      needsModelValidationRepair;
+    if (hasCriticalQualityIssue) {
       const repairIssues = [
         ...qualityReport.issues.map(
           (i) => `- [${i.type}] ${i.message}${i.evidence ? ` (Evidence: "${i.evidence}")` : ''}`,
