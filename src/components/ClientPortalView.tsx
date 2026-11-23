@@ -1503,34 +1503,34 @@ export function ClientPortalView({
 
                     {/* Column 2: Featured Standee Kit (Warm Sunset Gradient Highlight Card) */}
                     <div
-                      className="rounded-2xl p-5 text-[#101015] flex flex-col justify-between gap-4 shadow-md"
+                      className="rounded-2xl p-5 text-[#101015] flex flex-col justify-between gap-4 shadow-md overflow-hidden"
                       style={{
                         background:
                           'linear-gradient(145deg, #F6B985 0%, #E78FB3 52%, #B983E5 100%)',
                       }}
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="px-2.5 py-0.5 rounded-full bg-[#101015] text-white text-[10px] font-semibold">
                           Standee Kit
                         </span>
-                        <span className="font-mono text-[10px] font-semibold text-[#101015]/70">
+                        <span className="font-mono text-[10px] font-semibold text-[#101015]/75">
                           PDF &amp; PNG
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-3.5">
+                      <div className="flex flex-col items-center text-center gap-3">
                         <div
-                          className="p-2 rounded-xl bg-white shadow-xs shrink-0"
+                          className="w-24 h-24 p-2 rounded-xl bg-white shadow-xs shrink-0 overflow-hidden flex items-center justify-center [&>canvas]:!w-full [&>canvas]:!h-full"
                           style={{ backgroundColor: activeBusiness.qrConfig.bgColor }}
                         >
-                          <canvas ref={qrCanvasRef} className="w-20 h-20 block" />
+                          <canvas ref={qrCanvasRef} className="w-full h-full block" />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 w-full">
                           <h2 className="font-display text-base font-bold text-[#101015] leading-tight">
                             Business QR Stand
                           </h2>
-                          <p className="text-[11px] text-[#101015]/75 mt-1 leading-snug">
-                            Export print-ready tabletop posters or create up to 4 placement stands.
+                          <p className="text-[11px] text-[#101015]/80 mt-1 leading-snug">
+                            Print-ready tabletop posters or up to 4 placement stands.
                           </p>
                         </div>
                       </div>

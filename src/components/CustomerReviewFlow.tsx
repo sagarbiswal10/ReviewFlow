@@ -184,7 +184,7 @@ export function CustomerReviewFlow({
   const isEmojiChecklist =
     activeTemplate === 'emoji_checklist_light' || activeTemplate === 'emoji_checklist_dark';
 
-  const [step, setStep] = useState<FlowStep>(persistedInitial?.step || 'feedback');
+  const [step, setStep] = useState<FlowStep>('feedback');
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [textInputs, setTextInputs] = useState<Record<string, string>>({});
   const [savedResponses, setSavedResponses] = useState<FeedbackSubmissionResponse[]>(
@@ -366,9 +366,6 @@ export function CustomerReviewFlow({
       if (!updated) return;
       setGenerationCount(updated.generationCount);
       setQuotaResetAt(updated.quotaResetAt);
-      if (updated.step === 'draft') {
-        setStep('draft');
-      }
     };
     window.addEventListener('storage', handleStorageSync);
     return () => window.removeEventListener('storage', handleStorageSync);
@@ -2609,16 +2606,22 @@ export function CustomerReviewFlow({
       <header className={headerClass}>
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            {onExit && (
+            {(step === 'draft' || onExit) && (
               <button
                 type="button"
-                onClick={onExit}
+                onClick={() => {
+                  if (step === 'draft') {
+                    setStep('feedback');
+                  } else if (onExit) {
+                    onExit();
+                  }
+                }}
                 className={`min-h-[40px] min-w-[40px] -ml-2 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
                   isDarkTemplate
                     ? 'text-slate-300 hover:text-white hover:bg-slate-800'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
-                aria-label="Back"
+                aria-label={step === 'draft' ? 'Back to Step 1 Questions' : 'Back'}
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -2679,6 +2682,21 @@ export function CustomerReviewFlow({
 
         {step === 'draft' && (
           <div className="space-y-5">
+            <div className="px-1">
+              <button
+                type="button"
+                onClick={() => setStep('feedback')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+                  isDarkTemplate
+                    ? 'border-slate-700 bg-[#131C31] text-slate-200 hover:bg-slate-800'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-xs'
+                }`}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Questions</span>
+              </button>
+            </div>
+
             {/* Top context bar */}
             <div className="flex items-center justify-between gap-3 px-1">
               <div>

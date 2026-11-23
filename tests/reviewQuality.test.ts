@@ -262,14 +262,13 @@ test('TC-QUAL-11: Roman Hindi validates universal categories without English voc
   assert.equal(hotelRomanHindi.clicheCount, 0);
 });
 
-test('TC-QUAL-12: CustomerReviewFlow removes Hinglish sub-label, blocks back-to-form navigation, and caps generations at 5', () => {
+test('TC-QUAL-12: CustomerReviewFlow removes Hinglish sub-label, starts QR visits at Step 1, allows Back to Questions, and caps generations at 5', () => {
   const flowSource = fs.readFileSync(
     path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
     'utf-8',
   );
   assert.equal(flowSource.includes('Roman Hindi+Eng'), false);
-  assert.equal(flowSource.includes('Edit answers'), false);
-  assert.equal(flowSource.includes('Back to Feedback Form'), false);
-  assert.equal(flowSource.includes('Start Fresh'), false);
+  assert.ok(flowSource.includes("useState<FlowStep>('feedback')"));
+  assert.ok(flowSource.includes('Back to Questions'));
   assert.ok(flowSource.includes('MAX_USER_REVIEW_GENERATIONS = 5'));
 });
