@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import {
   AnimatePresence,
@@ -10,12 +10,15 @@ import {
 } from 'motion/react';
 import {
   ArrowRight,
-  Check,
   Copy,
+  FileBarChart2,
   Gift,
+  Languages,
+  LayoutTemplate,
   ListChecks,
   Loader2,
   Mail,
+  MapPin,
   Menu,
   Pencil,
   Play,
@@ -27,7 +30,8 @@ import {
   X,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { BUSINESS_CATEGORIES, type BusinessCategory } from '../types';
+import type { BusinessCategory, ReviewLanguage } from '../types';
+import { FORM_TEMPLATES } from '../data/formTemplates';
 import type { AuthActionableError } from '../utils/urlAndAuth';
 import { SpatialTilt } from './ui/spatial-tilt';
 import { BrandedQrCard, ReviewFlowMark } from './landing/ReviewFlowMark';
@@ -148,9 +152,18 @@ const NAV_LINKS = [
 
 const MARQUEE_ITEMS = [
   'NO STAR GATING',
-  'NO INCENTIVES FOR RATINGS',
-  'FULL CUSTOMER EDITORIAL CONTROL',
+  'UP TO 4 TRACKABLE QR STANDS',
+  'MARATHI · HINDI · ENGLISH · HINGLISH',
+  'WEEKLY A4 PDF REPORTS',
+  '6 FORM TEMPLATES',
   'ZERO APP INSTALLS',
+];
+
+const FEATURE_STAND_PRESETS = [
+  { label: 'Reception Desk', scans: 64 },
+  { label: 'Cash Counter', scans: 48 },
+  { label: 'Dining Table', scans: 24 },
+  { label: 'Pickup Window', scans: 12 },
 ];
 
 function AnimatedKpiNumber({
@@ -238,6 +251,12 @@ export function LandingPage({
   const [scanPulse, setScanPulse] = useState(false);
   const [activeBuilderChips, setActiveBuilderChips] = useState<string[]>(['FAST TURNAROUND']);
   const [featureTone, setFeatureTone] = useState<FeatureTone>('short');
+  const [featureLang, setFeatureLang] = useState<ReviewLanguage>('mr');
+  const [selectedFeatureStandIdx, setSelectedFeatureStandIdx] = useState(0);
+  const [selectedFeatureTemplateId, setSelectedFeatureTemplateId] = useState(
+    FORM_TEMPLATES[0].id,
+  );
+  const [pdfPreviewToast, setPdfPreviewToast] = useState(false);
 
   // Interactive Onboarding Category state
   const [selectedCategory, setSelectedCategory] = useState<BusinessCategory>('Hair Salons');
@@ -300,36 +319,72 @@ export function LandingPage({
     }
   }, [authModalOpen]);
 
-  // Switch top-right CTA pill color between black and pink based on scroll position (matches screenshots)
+  // Switch top-right CTA pill color dynamically based on visible section
   useEffect(() => {
     const onScroll = () => {
-      const y = window.scrollY;
-      setPinkHeaderCta(y > 2100 && y < 6200);
+      const showcaseEl = document.getElementById('showcase');
+      const policyEl = document.getElementById('policy');
+      if (!showcaseEl || !policyEl) return;
+      const sTop = showcaseEl.getBoundingClientRect().top;
+      const pTop = policyEl.getBoundingClientRect().top;
+      setPinkHeaderCta(sTop <= 160 && pTop > 180);
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Auto-advance pipeline steps when enabled
-  useEffect(() => {
-    if (!pipelineAutoPlay) return;
-    const timer = window.setInterval(() => {
-      setPipelineStep((prev) => (prev + 1) % 4);
-    }, 3200);
-    return () => window.clearInterval(timer);
-  }, [pipelineAutoPlay]);
+  const scrollToY = (y: number, duration = 1.05) => {
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(y, { duration });
+    } else {
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  };
 
   const scrollToSection = (selector: string) => {
     setMobileMenuOpen(false);
     const target = document.querySelector(selector) as HTMLElement | null;
     if (!target) return;
     if (lenisRef.current) {
-      lenisRef.current.scrollTo(target, { offset: -64, duration: 1.25 });
+      lenisRef.current.scrollTo(target, { offset: -64, duration: 1.2 });
     } else {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+
+  // Clicking a pipeline step card smoothly scrolls inside the sticky pipeline track on desktop
+  const handleJumpToPipelineStep = (step: number, trackEl: HTMLElement | null) => {
+    setPipelineAutoPlay(false);
+    setPipelineStep(step);
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024 && trackEl) {
+      const trackTop = trackEl.getBoundingClientRect().top + window.scrollY;
+      const scrollable = Math.max(0, trackEl.offsetHeight - window.innerHeight);
+      const stepProgress = step === 0 ? 0.04 : step === 1 ? 0.34 : step === 2 ? 0.62 : 0.88;
+      scrollToY(trackTop + scrollable * stepProgress, 0.9);
+    }
+  };
+
+  // Auto-advance pipeline smoothly (scrolls pinned track on desktop, advances state on mobile)
+  useEffect(() => {
+    if (!pipelineAutoPlay) return;
+    const timer = window.setInterval(() => {
+      setPipelineStep((prev) => {
+        const next = (prev + 1) % 4;
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          const trackEl = document.getElementById('pipeline');
+          if (trackEl) {
+            const trackTop = trackEl.getBoundingClientRect().top + window.scrollY;
+            const scrollable = Math.max(0, trackEl.offsetHeight - window.innerHeight);
+            const stepProgress = next === 0 ? 0.04 : next === 1 ? 0.34 : next === 2 ? 0.62 : 0.88;
+            scrollToY(trackTop + scrollable * stepProgress, 0.95);
+          }
+        }
+        return next;
+      });
+    }, 2800);
+    return () => window.clearInterval(timer);
+  }, [pipelineAutoPlay]);
 
   const handleWatchFlow = () => {
     setPipelineStep(0);
@@ -434,6 +489,8 @@ export function LandingPage({
   };
 
   const activeCategoryMeta = CATEGORY_SHOWCASE_DATA[selectedCategory];
+  const activeFeatureTemplate =
+    FORM_TEMPLATES.find((t) => t.id === selectedFeatureTemplateId) ?? FORM_TEMPLATES[0];
   const parentErrorText = authActionError?.message || authError;
   const visibleParentError =
     parentErrorText && parentErrorText !== dismissedAuthErrorSig ? parentErrorText : null;
@@ -472,7 +529,6 @@ export function LandingPage({
          ========================================== */}
       <header className="sticky top-0 z-40 w-full bg-[#F3F1EC]/80 backdrop-blur-xl border-b border-black/[0.06]">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          {/* Brand Logo */}
           <a
             href="#top"
             onClick={(e) => {
@@ -487,7 +543,6 @@ export function LandingPage({
             </span>
           </a>
 
-          {/* Center Nav Links */}
           <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-[#111114]/75">
             {NAV_LINKS.map((link) => (
               <a
@@ -504,7 +559,6 @@ export function LandingPage({
             ))}
           </nav>
 
-          {/* Right Actions */}
           <div className="flex items-center gap-3 shrink-0">
             <span className="hidden lg:inline-flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-wider text-[#111114]/65 whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
@@ -546,7 +600,6 @@ export function LandingPage({
           </div>
         </div>
 
-        {/* Mobile Drawer */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
@@ -594,7 +647,6 @@ export function LandingPage({
           className="relative w-full rf-dot-grid-light pt-12 sm:pt-16 lg:pt-20 pb-14 lg:pb-16 overflow-hidden"
           style={{ perspective: 1400 }}
         >
-          {/* Corner Registration Marks (matches Screenshot 1) */}
           <div
             aria-hidden="true"
             className="hidden sm:flex items-center justify-center w-5 h-5 rounded-full border border-black/20 text-black/30 text-[10px] font-mono absolute top-14 left-8 select-none"
@@ -618,7 +670,6 @@ export function LandingPage({
               </div>
             )}
 
-            {/* 3D Interactive Parallax Constellation */}
             <div
               className="relative flex flex-col items-center text-center transition-transform duration-300 ease-out"
               style={{
@@ -644,7 +695,7 @@ export function LandingPage({
                 </div>
               </motion.div>
 
-              {/* Floating 3D Pill Right Upper: SCAN · TAP / EDIT · POST */}
+              {/* Floating 3D Pill Right Upper */}
               <motion.div
                 style={{ y: badgeRightTopY }}
                 initial={{ opacity: 0, x: 30, rotate: 4 }}
@@ -662,7 +713,7 @@ export function LandingPage({
                 </div>
               </motion.div>
 
-              {/* Floating 3D Pill Right Lower: NO REVIEW GATING */}
+              {/* Floating 3D Pill Right Lower */}
               <motion.div
                 style={{ y: badgeRightBotY }}
                 initial={{ opacity: 0, y: 24 }}
@@ -676,7 +727,6 @@ export function LandingPage({
                 </div>
               </motion.div>
 
-              {/* Eyebrow Pill */}
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -689,7 +739,6 @@ export function LandingPage({
                 </span>
               </motion.div>
 
-              {/* Massive 3D Headline */}
               <motion.div style={{ y: heroTitleY }}>
                 <motion.h1
                   initial={{ opacity: 0, y: 26, rotateX: 14 }}
@@ -704,7 +753,6 @@ export function LandingPage({
                 </motion.h1>
               </motion.div>
 
-              {/* Subheadline */}
               <motion.p
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -712,12 +760,11 @@ export function LandingPage({
                 className="mt-7 max-w-xl text-sm sm:text-base text-[#111114]/70 leading-relaxed"
               >
                 Customers often skip leaving reviews because staring at a blank text box feels like
-                work. With ReviewFlow, they scan your tactile QR stand, tap a few tailored
-                responses, and receive an authentic draft ready to post directly on Google in under
-                20 seconds.
+                work. With ReviewFlow, they scan up to 4 trackable QR stands, tap responses in
+                English, Hindi, Marathi, or Hinglish, and receive an authentic draft ready to post
+                in under 20 seconds.
               </motion.p>
 
-              {/* Hero CTAs */}
               <motion.div
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -754,18 +801,17 @@ export function LandingPage({
                 </p>
               )}
 
-              {/* Bottom Micro Trust Line */}
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.6, delay: 0.34 }}
                 className="mt-9 font-mono text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-[#111114]/45 flex flex-wrap items-center justify-center gap-x-4 gap-y-2"
               >
-                <span>100% POLICY-COMPLIANT (NO GATING)</span>
+                <span>4 TRACKABLE QR STANDS</span>
                 <span aria-hidden="true">•</span>
-                <span>PRINTABLE PDF &amp; PNG KIT</span>
+                <span>MARATHI · HINDI · ENGLISH · HINGLISH</span>
                 <span aria-hidden="true">•</span>
-                <span>INSTANT AI TONE GENERATOR</span>
+                <span>WEEKLY A4 PDF REPORTS</span>
               </motion.p>
             </div>
           </div>
@@ -775,7 +821,6 @@ export function LandingPage({
             DARK KPI STRIP + HOT PINK MARQUEE RIBBON
            ========================================== */}
         <section className="relative w-full">
-          {/* Dark 4-Stat Band */}
           <div className="bg-gradient-to-b from-[#F3F1EC] via-[#F3F1EC] via-45% to-[#0D0D0F] to-45% px-4 sm:px-6 lg:px-8 pb-7">
             <motion.div
               initial={{ opacity: 0, y: 26, rotateX: 12 }}
@@ -795,18 +840,22 @@ export function LandingPage({
 
                 <div className="p-6 sm:p-7">
                   <p className="font-display text-3xl sm:text-4xl font-bold text-white tracking-tight">
-                    <AnimatedKpiNumber target={20} />{' '}
-                    <span className="text-[#FF3D8B] text-2xl sm:text-3xl font-semibold">s</span>
+                    <AnimatedKpiNumber target={4} />{' '}
+                    <span className="text-[#FF3D8B] text-xl sm:text-2xl font-semibold">
+                      Stands
+                    </span>
                   </p>
-                  <p className="mt-1.5 text-xs text-white/55">Average Visit-to-Post Time</p>
+                  <p className="mt-1.5 text-xs text-white/55">Placement QR Attribution</p>
                 </div>
 
                 <div className="p-6 sm:p-7">
                   <p className="font-display text-3xl sm:text-4xl font-bold text-white tracking-tight">
-                    <AnimatedKpiNumber target={100} />
-                    <span className="text-[#FF3D8B]">%</span>
+                    <AnimatedKpiNumber target={4} />{' '}
+                    <span className="text-[#FF3D8B] text-xl sm:text-2xl font-semibold">
+                      Langs
+                    </span>
                   </p>
-                  <p className="mt-1.5 text-xs text-white/55">Google Policy Compliant</p>
+                  <p className="mt-1.5 text-xs text-white/55">EN · हिंदी · मराठी · Hinglish</p>
                 </div>
 
                 <div className="p-6 sm:p-7">
@@ -838,14 +887,12 @@ export function LandingPage({
         </section>
 
         {/* ==========================================
-            SECTION 01: THE FRICTIONLESS PIPELINE
+            SECTION 01: SCROLL-PINNED 4-STEP PIPELINE
            ========================================== */}
         <InteractivePipelineSection
           activeStep={pipelineStep}
-          onSelectStep={(step) => {
-            setPipelineAutoPlay(false);
-            setPipelineStep(step);
-          }}
+          onStepChange={setPipelineStep}
+          onJumpToStep={handleJumpToPipelineStep}
           autoPlay={pipelineAutoPlay}
           onToggleAutoPlay={() => setPipelineAutoPlay((v) => !v)}
         />
@@ -856,7 +903,7 @@ export function LandingPage({
         <InteractiveShowcaseSection onTryDemo={onTryDemo} />
 
         {/* ==========================================
-            SECTION 03: ENGINEERED PRECISION (DARK 3D CARDS)
+            SECTION 03: ENGINEERED PRECISION (6-CARD 3D FEATURE MATRIX)
            ========================================== */}
         <section
           id="features"
@@ -880,54 +927,213 @@ export function LandingPage({
                 </span>
               </h2>
               <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-xl">
-                Manage every storefront from one workspace with per-location analytics, custom
-                question builders, and full brand controls.
+                Pinpoint top-converting QR placements across 4 stands, generate reviews in 4
+                languages, switch between 6 form templates, and receive weekly A4 PDF updates.
               </p>
             </motion.div>
 
-            {/* 3 Interactive 3D Dark Bento Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Card 1: QR Studio & Token Control */}
+            {/* 6 Interactive 3D Dark Bento Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Card 1: Up to 4 Trackable In-Store QR Stands */}
               <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
-                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-8 hover:border-[#FF3D8B]/45 transition-colors">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#FF3D8B]/45 transition-colors">
                   <div>
                     <div className="w-9 h-9 rounded-lg bg-[#FF3D8B]/15 text-[#FF3D8B] flex items-center justify-center mb-5">
-                      <QrCode className="w-4 h-4" />
+                      <MapPin className="w-4 h-4" />
                     </div>
                     <h3 className="font-display text-lg sm:text-xl font-bold text-white mb-2.5">
-                      QR Studio &amp; Token Control
+                      Up to 4 Trackable QR Stands
                     </h3>
                     <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
-                      Track real-time QR scans, rotate revision tokens on damaged stands, pause
-                      links instantly, and export print-ready tabletop PDF posters.
+                      Create up to 4 unique QR codes per storefront and paste them anywhere—desk,
+                      billing counter, tables, or exit—to see where your most reviews actually come
+                      from.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl bg-[#1D1D23] border border-white/8 p-3.5">
+                    {FEATURE_STAND_PRESETS.map((stand, idx) => {
+                      const active = selectedFeatureStandIdx === idx;
+                      return (
+                        <button
+                          key={stand.label}
+                          type="button"
+                          onClick={() => setSelectedFeatureStandIdx(idx)}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#FF3D8B]/18 text-white'
+                              : 'text-white/60 hover:text-white'
+                          }`}
+                        >
+                          <span className="truncate">{stand.label}</span>
+                          <span
+                            className={`font-mono font-bold tabular-nums ${
+                              idx === 0 ? 'text-[#4ADE80]' : 'text-white/75'
+                            }`}
+                          >
+                            {stand.scans} scans
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </SpatialTilt>
+
+              {/* Card 2: Multilingual AI Reviews (Marathi, Hindi, English, Hinglish) */}
+              <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#2454FF]/55 transition-colors">
+                  <div>
+                    <div className="w-9 h-9 rounded-lg bg-[#2454FF]/15 text-[#60A5FA] flex items-center justify-center mb-5">
+                      <Languages className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-display text-lg sm:text-xl font-bold text-white mb-2.5">
+                      Multilingual AI Review Drafts
+                    </h3>
+                    <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
+                      Guests switch effortlessly between Marathi, Hindi, English, and Hinglish in
+                      Short, Detailed, or Pro tones without inventing fake experiences.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#1D1D23] border border-white/8">
+                      {(
+                        [
+                          { id: 'mr', label: 'मराठी' },
+                          { id: 'hi', label: 'हिंदी' },
+                          { id: 'en', label: 'English' },
+                          { id: 'hinglish', label: 'Hinglish' },
+                        ] as { id: ReviewLanguage; label: string }[]
+                      ).map((l) => (
+                        <button
+                          key={l.id}
+                          type="button"
+                          onClick={() => setFeatureLang(l.id)}
+                          className={`py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                            featureLang === l.id
+                              ? 'bg-[#2454FF] text-white'
+                              : 'text-white/55 hover:text-white'
+                          }`}
+                        >
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#1D1D23] border border-white/8">
+                      {(
+                        [
+                          { id: 'short', label: 'SHORT' },
+                          { id: 'detailed', label: 'DETAILED' },
+                          { id: 'pro', label: 'PRO' },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setFeatureTone(item.id)}
+                          className={`py-1.5 rounded-lg font-mono text-[9px] font-bold tracking-wider transition-all cursor-pointer ${
+                            featureTone === item.id
+                              ? 'bg-white text-[#111114] shadow-xs'
+                              : 'text-white/50 hover:text-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </SpatialTilt>
+
+              {/* Card 3: Proper PDF Format Weekly Updates */}
+              <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#FACC15]/45 transition-colors">
+                  <div>
+                    <div className="w-9 h-9 rounded-lg bg-[#FACC15]/15 text-[#FACC15] flex items-center justify-center mb-5">
+                      <FileBarChart2 className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-display text-lg sm:text-xl font-bold text-white mb-2.5">
+                      Weekly PDF Updates
+                    </h3>
+                    <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
+                      Receive structured Monday-to-Sunday reports in proper A4 PDF format covering
+                      top &amp; lowest QR stands, redirects, ratings, and AI auto-reply metrics.
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    onClick={triggerSimulatedScan}
-                    className="w-full text-left rounded-xl bg-[#1D1D23] hover:bg-[#24242C] border border-white/8 px-4 py-3.5 flex items-center gap-4 transition-colors cursor-pointer group"
+                    onClick={() => {
+                      setPdfPreviewToast(true);
+                      window.setTimeout(() => setPdfPreviewToast(false), 2000);
+                    }}
+                    className="w-full text-left rounded-xl bg-[#1D1D23] hover:bg-[#24242C] border border-white/8 p-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer"
                   >
-                    <span
-                      className={`font-display text-2xl font-bold tabular-nums transition-colors ${
-                        scanPulse ? 'text-[#FF3D8B]' : 'text-white'
-                      }`}
-                    >
-                      {simulatedScans}
-                    </span>
-                    <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/50 leading-relaxed flex-1">
-                      <p>LIVE QR COUNTER</p>
-                      <p className="group-hover:text-white/80 transition-colors">
-                        {scanPulse ? 'SCAN LOGGED!' : 'VERIFIED SCANS · TAP TO TEST'}
+                    <div>
+                      <p className="font-mono text-[9px] uppercase tracking-widest text-[#FACC15]">
+                        MON–SUN EXECUTIVE BRIEF
+                      </p>
+                      <p className="text-xs font-semibold text-white mt-0.5">
+                        {pdfPreviewToast
+                          ? 'A4 PDF included in workspace!'
+                          : 'ReviewFlow-Weekly-Report.pdf'}
                       </p>
                     </div>
+                    <span className="px-2 py-1 rounded bg-[#FF3D8B] text-[#111114] font-mono text-[10px] font-bold shrink-0">
+                      A4 PDF
+                    </span>
                   </button>
                 </div>
               </SpatialTilt>
 
-              {/* Card 2: Dynamic Question Builder */}
+              {/* Card 4: 6 Form Templates */}
               <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
-                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-8 hover:border-[#2454FF]/55 transition-colors">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#FF3D8B]/45 transition-colors">
+                  <div>
+                    <div className="w-9 h-9 rounded-lg bg-[#FF3D8B]/15 text-[#FF3D8B] flex items-center justify-center mb-5">
+                      <LayoutTemplate className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-display text-lg sm:text-xl font-bold text-white mb-2.5">
+                      6 Customer Form Templates
+                    </h3>
+                    <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
+                      Switch your live QR form theme anytime across Pulse Light, Midnight Studio,
+                      Warm Editorial, Executive Grid, Express Check-In, and Classic Cards.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {FORM_TEMPLATES.map((tpl) => {
+                        const active = tpl.id === selectedFeatureTemplateId;
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => setSelectedFeatureTemplateId(tpl.id)}
+                            className={`px-2.5 py-1 rounded-full font-mono text-[9px] font-semibold uppercase tracking-wider transition-all cursor-pointer border ${
+                              active
+                                ? 'bg-white text-[#111114] border-white'
+                                : 'bg-[#1D1D23] text-white/60 border-white/10 hover:text-white'
+                            }`}
+                          >
+                            {tpl.name.split('·')[0].trim()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="font-mono text-[10px] text-white/45 truncate">
+                      Best for: <span className="text-white/75">{activeFeatureTemplate.bestFor}</span>
+                    </p>
+                  </div>
+                </div>
+              </SpatialTilt>
+
+              {/* Card 5: Dynamic Question Builder */}
+              <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#2454FF]/55 transition-colors">
                   <div>
                     <div className="w-9 h-9 rounded-lg bg-[#2454FF]/15 text-[#60A5FA] flex items-center justify-center mb-5">
                       <ListChecks className="w-4 h-4" />
@@ -970,44 +1176,41 @@ export function LandingPage({
                 </div>
               </SpatialTilt>
 
-              {/* Card 3: Authentic AI Review Drafts */}
+              {/* Card 6: QR Studio & Token Control */}
               <SpatialTilt maxTilt={4} scale={1.012} glare={false} className="rounded-2xl">
-                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-8 hover:border-[#FACC15]/45 transition-colors">
+                <div className="h-full rounded-2xl bg-[#141418] border border-white/10 p-7 flex flex-col justify-between gap-7 hover:border-[#FACC15]/45 transition-colors">
                   <div>
                     <div className="w-9 h-9 rounded-lg bg-[#FACC15]/15 text-[#FACC15] flex items-center justify-center mb-5">
-                      <Wand2 className="w-4 h-4" />
+                      <QrCode className="w-4 h-4" />
                     </div>
                     <h3 className="font-display text-lg sm:text-xl font-bold text-white mb-2.5">
-                      Authentic AI Review Drafts
+                      QR Studio &amp; Token Control
                     </h3>
                     <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
-                      Drafts natural first-person reviews in Short, Detailed, or Professional tones
-                      without inventing fake details or hiding honest criticism.
+                      Track real-time QR scans, rotate revision tokens on damaged stands, pause
+                      links instantly, and export print-ready tabletop PDF posters.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl bg-[#1D1D23] border border-white/8">
-                    {(
-                      [
-                        { id: 'short', label: 'SHORT' },
-                        { id: 'detailed', label: 'DETAILED' },
-                        { id: 'pro', label: 'PRO' },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setFeatureTone(item.id)}
-                        className={`py-2 rounded-lg font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer ${
-                          featureTone === item.id
-                            ? 'bg-white text-[#111114] shadow-xs'
-                            : 'text-white/50 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={triggerSimulatedScan}
+                    className="w-full text-left rounded-xl bg-[#1D1D23] hover:bg-[#24242C] border border-white/8 px-4 py-3.5 flex items-center gap-4 transition-colors cursor-pointer group"
+                  >
+                    <span
+                      className={`font-display text-2xl font-bold tabular-nums transition-colors ${
+                        scanPulse ? 'text-[#FF3D8B]' : 'text-white'
+                      }`}
+                    >
+                      {simulatedScans}
+                    </span>
+                    <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/50 leading-relaxed flex-1">
+                      <p>LIVE QR COUNTER</p>
+                      <p className="group-hover:text-white/80 transition-colors">
+                        {scanPulse ? 'SCAN LOGGED!' : 'VERIFIED SCANS · TAP TO TEST'}
+                      </p>
+                    </div>
+                  </button>
                 </div>
               </SpatialTilt>
             </div>
@@ -1023,7 +1226,6 @@ export function LandingPage({
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-              {/* Left Copy */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -1054,11 +1256,9 @@ export function LandingPage({
                 </button>
               </motion.div>
 
-              {/* Right Elevated Interactive Category Card */}
               <div className="lg:col-span-7">
                 <SpatialTilt maxTilt={3} scale={1.008} glare={false} className="rounded-3xl">
                   <div className="rounded-3xl bg-[#FBFBF9] border border-black/10 p-6 sm:p-8 shadow-[0_24px_60px_-20px_rgba(17,17,20,0.12)]">
-                    {/* Category Pills */}
                     <div className="flex flex-wrap gap-2 mb-7">
                       {ONBOARDING_CATEGORY_ORDER.map((category) => {
                         const active = selectedCategory === category;
@@ -1079,7 +1279,6 @@ export function LandingPage({
                       })}
                     </div>
 
-                    {/* Dynamic Category Detail */}
                     <AnimatePresence mode="wait">
                       <motion.div
                         key={selectedCategory}
@@ -1098,7 +1297,6 @@ export function LandingPage({
                           {activeCategoryMeta.desc}
                         </p>
 
-                        {/* Color-Coded Tags (matches Screenshot 10) */}
                         <div className="flex flex-wrap items-center gap-2">
                           {activeCategoryMeta.tags.map((tag, idx) => {
                             const tagStyle =
@@ -1134,7 +1332,6 @@ export function LandingPage({
         <section id="policy" className="relative w-full rf-dot-grid-blue py-20 lg:py-28 text-white">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              {/* Left Copy */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -1174,7 +1371,6 @@ export function LandingPage({
                 </div>
               </motion.div>
 
-              {/* Right Interactive 3D Compliance Architecture Diagram */}
               <div className="lg:col-span-6">
                 <SpatialTilt maxTilt={3.5} scale={1.01} glare={false} className="rounded-3xl">
                   <motion.div
@@ -1185,7 +1381,6 @@ export function LandingPage({
                     className="rounded-3xl bg-white/[0.08] backdrop-blur-md border border-white/20 p-6 sm:p-8 shadow-[0_28px_60px_-20px_rgba(10,20,70,0.5)]"
                   >
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-5 mb-6">
-                      {/* Every Guest White Card */}
                       <div className="w-full sm:w-[190px] rounded-2xl bg-[#F5F3EE] text-[#111114] p-4 rf-shadow-dark border border-[#111114] shrink-0">
                         <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-[#111114]/55 mb-2.5">
                           EVERY GUEST
@@ -1206,7 +1401,6 @@ export function LandingPage({
                         </div>
                       </div>
 
-                      {/* Animated Direct Connector */}
                       <div className="flex sm:flex-col items-center justify-center gap-1.5 shrink-0">
                         <div className="relative flex items-center justify-center">
                           <svg
@@ -1235,7 +1429,6 @@ export function LandingPage({
                         </span>
                       </div>
 
-                      {/* Google Listing Target Box */}
                       <div className="w-full sm:w-[190px] rounded-2xl border border-dashed border-white/40 bg-white/[0.06] p-5 text-center shrink-0">
                         <span className="font-display text-2xl font-bold text-white block mb-1.5">
                           G
@@ -1247,7 +1440,6 @@ export function LandingPage({
                       </div>
                     </div>
 
-                    {/* Bottom Dark Compliance Strip */}
                     <div className="rounded-xl bg-[#163299]/80 border border-white/15 px-4 py-2.5 flex items-center justify-between text-xs font-mono">
                       <span className="inline-flex items-center gap-2 text-white/85">
                         <ShieldCheck className="w-4 h-4 text-[#FACC15]" />
@@ -1275,7 +1467,6 @@ export function LandingPage({
                 transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
                 className="rounded-[32px] bg-[#FF3D8B] text-[#111114] overflow-hidden grid grid-cols-1 lg:grid-cols-12 border border-white/15 shadow-[0_32px_70px_-20px_rgba(255,61,139,0.3)]"
               >
-                {/* Left Copy */}
                 <div className="lg:col-span-6 p-8 sm:p-12 lg:p-14 flex flex-col justify-between gap-8">
                   <div>
                     <p className="font-mono text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-[#111114]/70 mb-3">
@@ -1288,8 +1479,8 @@ export function LandingPage({
                       </span>
                     </h2>
                     <p className="text-sm sm:text-base text-[#111114]/80 leading-relaxed max-w-md">
-                      Create your workspace in minutes, connect your Google Business Profiles, and
-                      export your custom printable QR display kit immediately.
+                      Create up to 4 QR stands, enable Marathi, Hindi, English, and Hinglish
+                      drafts, pick a form template, and receive weekly A4 PDF updates.
                     </p>
                   </div>
 
@@ -1311,12 +1502,11 @@ export function LandingPage({
                     </button>
 
                     <p className="font-mono text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.16em] text-[#111114]/70 leading-relaxed">
-                      INSTANT DIGITAL QR GENERATION · PRINTABLE PDF POSTERS · CANCEL ANYTIME
+                      4 QR STANDS · WEEKLY A4 PDF REPORTS · 6 FORM TEMPLATES
                     </p>
                   </div>
                 </div>
 
-                {/* Right Black-Dot Pink Matrix + 3D Tilted ReviewFlow QR Standee */}
                 <div className="lg:col-span-6 rf-dot-grid-pink p-10 sm:p-14 flex items-center justify-center relative min-h-[300px]">
                   <motion.div
                     whileHover={{ rotate: 0, scale: 1.04, y: -4 }}
@@ -1422,7 +1612,7 @@ export function LandingPage({
                     : 'Reset your password'}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Access your business portal, QR codes, and review analytics.
+                  Access your business portal, QR stands, templates, and weekly PDF reports.
                 </p>
               </div>
               <button
