@@ -34,7 +34,7 @@ import {
   saveReviewEvaluation,
 } from '../services/platformFeaturesService';
 import { apiFetch, formatApiError } from '../utils/apiClient';
-import { validateReviewQuality } from '../utils/reviewQuality';
+import { composeGroundedFallbackReview, validateReviewQuality } from '../utils/reviewQuality';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import {
   formatQuotaCountdown,
@@ -465,19 +465,25 @@ export function CustomerReviewFlow({
       setFeedbackSubmissionId(previewSubId);
       return previewSubId;
     }
-    const createdSubId = await saveFeedbackSubmission({
-      profile,
-      responses,
-      additionalComments,
-      sentiment: sentimentValue,
-      selectedHighlights,
-      standId: standContext.standId,
-      standCode: standContext.standCode,
-      standName: standContext.standName,
-      sessionId: standContext.sessionId,
-    });
-    setFeedbackSubmissionId(createdSubId);
-    return createdSubId;
+    try {
+      const createdSubId = await saveFeedbackSubmission({
+        profile,
+        responses,
+        additionalComments,
+        sentiment: sentimentValue,
+        selectedHighlights,
+        standId: standContext.standId,
+        standCode: standContext.standCode,
+        standName: standContext.standName,
+        sessionId: standContext.sessionId,
+      });
+      setFeedbackSubmissionId(createdSubId);
+      return createdSubId;
+    } catch {
+      const localSubId = `local_fb_${Date.now()}`;
+      setFeedbackSubmissionId(localSubId);
+      return localSubId;
+    }
   };
 
   const applyGenerationQuotaUpdate = (serverResetAt?: number, serverRemaining?: number) => {
@@ -530,36 +536,160 @@ export function CustomerReviewFlow({
       setSavedAdditionalComments(additionalComments);
       const activeSubmissionId = submissionIdOverride || (await ensureFeedbackSubmission());
 
-      if (profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) {
-        const highlightPart = selectedHighlights.join(', ');
-        const fallback =
-          additionalComments ||
-          (highlightPart
-            ? `Visited ${profile.name} (${highlightPart}).`
-            : `Visited ${profile.name}.`);
-        setDraftText(fallback);
-        setDraftStatus('Generated');
-        setDraftDeleted(false);
-        applyGenerationQuotaUpdate();
-        setStep('draft');
-        if (!isPreview) {
-          const newDraftId = await createReviewDraftRecord({
-            profile,
-            feedbackSubmissionId: activeSubmissionId,
-            reviewText: fallback,
-            language: languageToUse,
+      const buildLocalFallback = () =>
+        composeGroundedFallbackReview({
+          businessName: profile.name,
+          category: profile.category,
+          responses,
+          additionalComments,
+          style: selectedStyle,
+          language: languageToUse,
+          variationSeed: seed,
+        });
+
+      const persistDraftSafely = async (
+        textToSave: string,
+        computedQuality: ReviewQualityReport,
+        telemetry?: {
+          provider?: string;
+          modelId?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+          totalTokens?: number;
+          estimatedCostUsd?: number;
+        },
+      ) => {
+        if (isPreview) {
+          setCurrentDraftId(`preview_dr_${Date.now()}`);
+          return;
+        }
+        try {
+          const canPersistRemoteSub = Boolean(activeSubmissionId) && !activeSubmissionId.startsWith('local_fb_');
+          let newDraftId = `local_dr_${Date.now()}`;
+          if (canPersistRemoteSub) {
+            newDraftId = await createReviewDraftRecord({
+              profile,
+              feedbackSubmissionId: activeSubmissionId,
+              reviewText: textToSave,
+              language: languageToUse,
+              reviewStyle: selectedStyle,
+              variationSeed: seed,
+              sessionId: standContext.sessionId,
+            });
+          }
+          setCurrentDraftId(newDraftId);
+
+          recordReviewEvent(profile, 'generate', {
             reviewStyle: selectedStyle,
-            variationSeed: seed,
+            sentiment: sentimentValue,
+            language: languageToUse,
+            selectedHighlights,
+            standId: standContext.standId,
+            standCode: standContext.standCode,
+            standName: standContext.standName,
             sessionId: standContext.sessionId,
           });
-          setCurrentDraftId(newDraftId);
+
+          const responsesSummary = responses
+            .map((r) => `${r.question}: ${r.answers.join(', ')}`)
+            .join(' | ');
+
+          saveReviewEvaluation({
+            businessId: profile.businessId,
+            businessName: profile.name,
+            ownerId: profile.ownerId,
+            clientUid: profile.clientUid,
+            slug: profile.slug,
+            category: profile.category,
+            language: languageToUse,
+            reviewStyle: selectedStyle,
+            draftId: newDraftId,
+            source: 'live_customer',
+            modelId: telemetry?.modelId || 'grounded-composer-v1',
+            qualityReport: computedQuality,
+            responsesSummary,
+            generatedReview: textToSave,
+          });
+
+          if (telemetry) {
+            logAiUsage({
+              businessId: profile.businessId,
+              ownerId: profile.ownerId,
+              provider: telemetry.provider || 'gemini',
+              operationType: 'review_draft',
+              modelName: telemetry.modelId || 'gemini-3.1-flash-lite',
+              inputTokens: telemetry.inputTokens || 0,
+              outputTokens: telemetry.outputTokens || 0,
+              totalTokens: telemetry.totalTokens || 0,
+              estimatedCostUsd: telemetry.estimatedCostUsd || 0,
+              status: 'success',
+            });
+          }
+        } catch {
+          // Non-fatal: keep generated review usable even if remote analytics/draft persistence fails
+          setCurrentDraftId(`local_dr_${Date.now()}`);
         }
+      };
+
+      const applyFinalDraft = async (
+        generatedText: string,
+        qualityReportOverride?: ReviewQualityReport,
+        quotaResetOverride?: number,
+        quotaRemainingOverride?: number,
+        telemetry?: {
+          provider?: string;
+          modelId?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+          totalTokens?: number;
+          estimatedCostUsd?: number;
+        },
+      ) => {
+        const computedQuality =
+          qualityReportOverride ||
+          validateReviewQuality({
+            reviewText: generatedText,
+            language: languageToUse,
+            businessName: profile.name,
+            category: profile.category,
+            responses,
+            additionalComments,
+            previousDrafts: previousDrafts.slice(-4),
+          });
+
+        setDraftText(generatedText);
+        setInitialGeneratedText(generatedText);
+        setLastQualityReport(computedQuality);
+        setConsentSaved(false);
+        setPreviousDrafts((prev) => [...prev, generatedText].slice(-5));
+        applyGenerationQuotaUpdate(quotaResetOverride, quotaRemainingOverride);
+        setDraftStatus('Generated');
+        setDraftDeleted(false);
+        setStep('draft');
+        await persistDraftSafely(generatedText, computedQuality, telemetry);
+      };
+
+      if (profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) {
+        const composed = buildLocalFallback();
+        await applyFinalDraft(composed.reviewText, undefined, undefined, undefined, {
+          provider: 'grounded-fallback',
+          modelId: 'grounded-composer-v1',
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        });
         return;
       }
 
-      const fewShotExamples = isPreview
-        ? []
-        : await fetchApprovedExamplesForPrompt(languageToUse, profile.category);
+      let fewShotExamples: Array<{ responsesSummary: string; finalReview: string }> = [];
+      if (!isPreview) {
+        try {
+          fewShotExamples = await fetchApprovedExamplesForPrompt(languageToUse, profile.category);
+        } catch {
+          fewShotExamples = [];
+        }
+      }
 
       const res = await apiFetch('/api/generate-review', {
         method: 'POST',
@@ -598,9 +728,7 @@ export function CustomerReviewFlow({
       try {
         data = rawBody ? (JSON.parse(rawBody) as typeof data) : {};
       } catch {
-        throw new Error(
-          `Review draft service returned a non-JSON response (HTTP ${res.status}).`,
-        );
+        data = {};
       }
 
       if (res.status === 429) {
@@ -617,29 +745,48 @@ export function CustomerReviewFlow({
       }
 
       if (!res.ok || !data.review) {
-        if (!isPreview) {
-          logAiUsage({
-            businessId: profile.businessId,
-            ownerId: profile.ownerId,
-            provider: data.aiTelemetry?.provider || 'gemini',
-            operationType: 'review_draft',
-            modelName: data.aiTelemetry?.modelId || 'gemini-3.1-flash-lite',
+        const composed = buildLocalFallback();
+        await applyFinalDraft(
+          composed.reviewText,
+          undefined,
+          data.quotaResetAt,
+          data.quotaRemaining,
+          {
+            provider: 'grounded-fallback',
+            modelId: 'grounded-composer-v1',
             inputTokens: 0,
             outputTokens: 0,
             totalTokens: 0,
             estimatedCostUsd: 0,
-            status: 'failed',
-            errorCode: `HTTP_${res.status}`,
-          });
-        }
-        throw new Error(data.error || 'Could not generate review draft.');
+          },
+        );
+        return;
       }
 
-      const generatedText = data.review.trim();
-      const computedQuality =
-        data.qualityReport ||
-        validateReviewQuality({
-          reviewText: generatedText,
+      await applyFinalDraft(
+        data.review.trim(),
+        data.qualityReport,
+        data.quotaResetAt,
+        data.quotaRemaining,
+        data.aiTelemetry,
+      );
+    } catch (err) {
+      const msg = formatApiError(err, 'Unable to generate review draft.');
+      if (msg.toLowerCase().includes('limit of')) {
+        setGenerateError(msg);
+      } else {
+        const { responses, additionalComments } = buildStructuredPayload();
+        const composed = composeGroundedFallbackReview({
+          businessName: profile.name,
+          category: profile.category,
+          responses,
+          additionalComments,
+          style: selectedStyle,
+          language: languageToUse,
+          variationSeed: seed,
+        });
+        const fallbackQuality = validateReviewQuality({
+          reviewText: composed.reviewText,
           language: languageToUse,
           businessName: profile.name,
           category: profile.category,
@@ -647,80 +794,17 @@ export function CustomerReviewFlow({
           additionalComments,
           previousDrafts: previousDrafts.slice(-4),
         });
-
-      setDraftText(generatedText);
-      setInitialGeneratedText(generatedText);
-      setLastQualityReport(computedQuality);
-      setConsentSaved(false);
-      setPreviousDrafts((prev) => [...prev, generatedText].slice(-5));
-      applyGenerationQuotaUpdate(data.quotaResetAt, data.quotaRemaining);
-      setDraftStatus('Generated');
-      setDraftDeleted(false);
-      setStep('draft');
-
-      if (!isPreview) {
-        const newDraftId = await createReviewDraftRecord({
-          profile,
-          feedbackSubmissionId: activeSubmissionId,
-          reviewText: generatedText,
-          language: languageToUse,
-          reviewStyle: selectedStyle,
-          variationSeed: seed,
-          sessionId: standContext.sessionId,
-        });
-        setCurrentDraftId(newDraftId);
-
-        recordReviewEvent(profile, 'generate', {
-          reviewStyle: selectedStyle,
-          sentiment: sentimentValue,
-          language: languageToUse,
-          selectedHighlights,
-          standId: standContext.standId,
-          standCode: standContext.standCode,
-          standName: standContext.standName,
-          sessionId: standContext.sessionId,
-        });
-
-        const responsesSummary = responses
-          .map((r) => `${r.question}: ${r.answers.join(', ')}`)
-          .join(' | ');
-
-        saveReviewEvaluation({
-          businessId: profile.businessId,
-          businessName: profile.name,
-          ownerId: profile.ownerId,
-          clientUid: profile.clientUid,
-          slug: profile.slug,
-          category: profile.category,
-          language: languageToUse,
-          reviewStyle: selectedStyle,
-          draftId: newDraftId,
-          source: 'live_customer',
-          modelId: data.aiTelemetry?.modelId || 'gemini-3.1-flash-lite',
-          qualityReport: computedQuality,
-          responsesSummary,
-          generatedReview: generatedText,
-        });
-
-        if (data.aiTelemetry) {
-          logAiUsage({
-            businessId: profile.businessId,
-            ownerId: profile.ownerId,
-            provider: data.aiTelemetry.provider || 'gemini',
-            operationType: 'review_draft',
-            modelName: data.aiTelemetry.modelId || 'gemini-3.1-flash-lite',
-            inputTokens: data.aiTelemetry.inputTokens || 0,
-            outputTokens: data.aiTelemetry.outputTokens || 0,
-            totalTokens: data.aiTelemetry.totalTokens || 0,
-            estimatedCostUsd: data.aiTelemetry.estimatedCostUsd || 0,
-            status: 'success',
-          });
-        }
-      } else {
-        setCurrentDraftId(`preview_dr_${Date.now()}`);
+        setDraftText(composed.reviewText);
+        setInitialGeneratedText(composed.reviewText);
+        setLastQualityReport(fallbackQuality);
+        setConsentSaved(false);
+        setPreviousDrafts((prev) => [...prev, composed.reviewText].slice(-5));
+        applyGenerationQuotaUpdate();
+        setDraftStatus('Generated');
+        setDraftDeleted(false);
+        setStep('draft');
+        setCurrentDraftId(isPreview ? `preview_dr_${Date.now()}` : `local_dr_${Date.now()}`);
       }
-    } catch (err) {
-      setGenerateError(formatApiError(err, 'Unable to generate review draft.'));
     } finally {
       setIsGenerating(false);
     }
@@ -767,17 +851,21 @@ export function CustomerReviewFlow({
       setSavedAdditionalComments(additionalComments);
       let submissionId = '';
       if (!isPreview) {
-        submissionId = await saveFeedbackSubmission({
-          profile,
-          responses,
-          additionalComments,
-          sentiment: sentimentValue,
-          selectedHighlights,
-          standId: standContext.standId,
-          standCode: standContext.standCode,
-          standName: standContext.standName,
-          sessionId: standContext.sessionId,
-        });
+        try {
+          submissionId = await saveFeedbackSubmission({
+            profile,
+            responses,
+            additionalComments,
+            sentiment: sentimentValue,
+            selectedHighlights,
+            standId: standContext.standId,
+            standCode: standContext.standCode,
+            standName: standContext.standName,
+            sessionId: standContext.sessionId,
+          });
+        } catch {
+          submissionId = `local_fb_${Date.now()}`;
+        }
       } else {
         submissionId = `preview_fb_${Date.now()}`;
       }
@@ -813,7 +901,11 @@ export function CustomerReviewFlow({
       if (editPersistTimeoutRef.current) {
         clearTimeout(editPersistTimeoutRef.current);
       }
-      if (!isPreview && currentDraftId && draftText.trim() && draftStatus === 'Edited') {
+      const isRemoteDraftId =
+        Boolean(currentDraftId) &&
+        !currentDraftId.startsWith('local_dr_') &&
+        !currentDraftId.startsWith('preview_dr_');
+      if (!isPreview && isRemoteDraftId && draftText.trim() && draftStatus === 'Edited') {
         updateReviewDraftLifecycle({
           profile,
           draftId: currentDraftId,
@@ -842,7 +934,11 @@ export function CustomerReviewFlow({
     if (editPersistTimeoutRef.current) {
       clearTimeout(editPersistTimeoutRef.current);
     }
-    if (!isPreview && currentDraftId && nextVal.trim()) {
+    const isRemoteDraftId =
+      Boolean(currentDraftId) &&
+      !currentDraftId.startsWith('local_dr_') &&
+      !currentDraftId.startsWith('preview_dr_');
+    if (!isPreview && isRemoteDraftId && nextVal.trim()) {
       editPersistTimeoutRef.current = setTimeout(() => {
         updateReviewDraftLifecycle({
           profile,
@@ -898,7 +994,11 @@ export function CustomerReviewFlow({
     setCopied(true);
     setDraftStatus('Copied');
 
-    if (!isPreview && currentDraftId) {
+    const isRemoteDraftId =
+      Boolean(currentDraftId) &&
+      !currentDraftId.startsWith('local_dr_') &&
+      !currentDraftId.startsWith('preview_dr_');
+    if (!isPreview && isRemoteDraftId) {
       updateReviewDraftLifecycle({
         profile,
         draftId: currentDraftId,
@@ -931,7 +1031,11 @@ export function CustomerReviewFlow({
       clearTimeout(editPersistTimeoutRef.current);
     }
     try {
-      if (!isPreview && currentDraftId) {
+      const isRemoteDraftId =
+        Boolean(currentDraftId) &&
+        !currentDraftId.startsWith('local_dr_') &&
+        !currentDraftId.startsWith('preview_dr_');
+      if (!isPreview && isRemoteDraftId) {
         await updateReviewDraftLifecycle({
           profile,
           draftId: currentDraftId,

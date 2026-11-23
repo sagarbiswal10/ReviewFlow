@@ -8,3 +8,5 @@ export {
   type QualityValidationInput,
   type ReviewQualityReport,
 } from '../../api/_lib/reviewQualityCore';
+export { composeGroundedFallbackReview } from '../../api/_lib/fallbackReviewComposer';
+

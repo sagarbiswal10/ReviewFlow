@@ -226,3 +226,53 @@ test('TC-API-10: verifyFirebaseIdToken rejects malformed tokens and unverified e
     /verify your email address/i,
   );
 });
+
+test('TC-API-11: processGenerateReview succeeds via grounded fallback across languages when GEMINI_API_KEY is unset', async () => {
+  const prevGeminiKey = process.env.GEMINI_API_KEY;
+  const prevApiKey = process.env.API_KEY;
+  try {
+    process.env.GEMINI_API_KEY = '';
+    process.env.API_KEY = '';
+
+    for (const lang of ['en', 'hinglish', 'hi', 'mr'] as const) {
+      const res = await processGenerateReview({
+        businessName: 'Oho Shwarma',
+        category: 'Restaurants',
+        responses: [
+          { question: 'Overall experience', answers: ['Good', 'Friendly staff'] },
+        ],
+        additionalComments: lang === 'en' ? 'Quick counter service.' : '',
+        style: 'short',
+        language: lang,
+        variationSeed: 1,
+      });
+
+      assert.equal(res.status, 200);
+      assert.equal(typeof res.data.review, 'string');
+      assert.ok(String(res.data.review).includes('Oho Shwarma'));
+      const report = res.data.qualityReport as { scriptCompliant?: boolean; passed?: boolean };
+      assert.equal(report?.scriptCompliant, true);
+      assert.equal(report?.passed, true);
+    }
+
+    const mixedRes = await processGenerateReview({
+      businessName: 'Oho Shwarma',
+      category: 'Restaurants',
+      responses: [
+        { question: 'Food', answers: ['Tasty food'] },
+        { question: 'Wait time', answers: ['Slow service'] },
+      ],
+      style: 'detailed',
+      language: 'en',
+      variationSeed: 2,
+    });
+    assert.equal(mixedRes.status, 200);
+    assert.equal(mixedRes.data.sentiment, 'mixed');
+  } finally {
+    if (prevGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = prevGeminiKey;
+    if (prevApiKey === undefined) delete process.env.API_KEY;
+    else process.env.API_KEY = prevApiKey;
+  }
+});
+
