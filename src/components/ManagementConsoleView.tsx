@@ -689,11 +689,17 @@ export function ManagementConsoleView({
     setIsSavingGovernance(true);
     setGovernanceError(null);
     setGovernanceNotice(null);
+    const cleanedEmail = normalizeEmail(clientEmailInput);
+    if (cleanedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
+      setGovernanceError('Please enter a valid Client Gmail / email address (or leave it blank).');
+      setIsSavingGovernance(false);
+      return;
+    }
     try {
       await updateBusiness(
         selectedBiz,
         {
-          clientEmail: normalizeEmail(clientEmailInput),
+          clientEmail: cleanedEmail,
           clientAccessLevel: accessLevelInput,
           packageTier: packageTierInput,
           reviewFlowMode: reviewFlowModeInput,
@@ -703,10 +709,20 @@ export function ManagementConsoleView({
         },
         { isAdmin: true },
       );
-      setGovernanceNotice('Customer Gmail access, QR stand quota, and portal permissions saved.');
-      setTimeout(() => setGovernanceNotice(null), 3000);
+      setClientEmailInput(cleanedEmail);
+      setGovernanceNotice(
+        `Saved! ${packageTierInput === 'standard' ? '₹3,000 Standard (English Only)' : '₹4,000 Standard Plus (All 4 Languages)'} & ${reviewFlowModeInput === 'ai_drafted_instant' ? '5+ Ready AI Reviews' : 'Guided Questions'} permissions updated.`,
+      );
+      setTimeout(() => setGovernanceNotice(null), 4000);
     } catch (err) {
-      setGovernanceError(err instanceof Error ? err.message : 'Failed to update permissions.');
+      const msg = err instanceof Error ? err.message : 'Failed to update permissions.';
+      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('insufficient')) {
+        setGovernanceError(
+          `Blocked by Firebase Firestore Rules: please copy & publish the latest firestore.rules file (from GitHub main) in Firebase Console → Firestore Database → Rules. Details: ${msg}`,
+        );
+      } else {
+        setGovernanceError(msg);
+      }
     } finally {
       setIsSavingGovernance(false);
     }
@@ -1349,6 +1365,7 @@ export function ManagementConsoleView({
               {detailTab === 'access' && (
                 <form
                   onSubmit={handleSaveGovernance}
+                  noValidate
                   className="liquid-glass rounded-2xl p-6 sm:p-8 space-y-6"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
@@ -1637,6 +1654,28 @@ export function ManagementConsoleView({
                         </label>
                       ))}
                     </div>
+                  </div>
+
+                  {governanceError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {governanceError}
+                    </div>
+                  )}
+                  {governanceNotice && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                      {governanceNotice}
+                    </div>
+                  )}
+
+                  <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSavingGovernance}
+                      className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer whitespace-nowrap disabled:opacity-60"
+                    >
+                      {isSavingGovernance && <Loader2 className="w-4 h-4 animate-spin" />}
+                      <span>Save Permissions</span>
+                    </button>
                   </div>
                 </form>
               )}
