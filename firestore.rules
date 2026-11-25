@@ -780,12 +780,10 @@ service cloud.firestore {
         );
       allow update: if isVerifiedUser() &&
         isValidId(businessId) &&
-        isValidBusiness(incoming()) &&
         incoming().ownerId == existing().ownerId &&
-        incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time &&
         (
-          // Action 1: Platform Management full administration (includes qrStandLimit approval)
+          // Action 1: Platform Management full administration (includes qrStandLimit & packageTier/flow governance)
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -798,11 +796,19 @@ service cloud.firestore {
               'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-            ])
+            ]) &&
+            (!('packageTier' in incoming()) || incoming().packageTier == null || incoming().packageTier in ['standard', 'standard_plus']) &&
+            (!('reviewFlowMode' in incoming()) || incoming().reviewFlowMode == null || incoming().reviewFlowMode in ['ai_drafted_instant', 'guided_questions']) &&
+            (!('allowClientFlowModeSwitch' in incoming()) || incoming().allowClientFlowModeSwitch == null || incoming().allowClientFlowModeSwitch is bool) &&
+            (!('qrStandLimit' in incoming()) || incoming().qrStandLimit == null || (incoming().qrStandLimit is int && incoming().qrStandLimit >= 1 && incoming().qrStandLimit <= 100)) &&
+            incoming().clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
+            isValidEnabledFeatures(incoming().enabledFeatures)
           ) ||
           // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit, packageTier, or permissions)
           (
             isAssignedClient(existing()) &&
+            isValidBusiness(incoming()) &&
+            incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
@@ -824,6 +830,8 @@ service cloud.firestore {
           // Action 3: Assigned Client with 'qr_and_questions' tier
           (
             isAssignedClient(existing()) &&
+            isValidBusiness(incoming()) &&
+            incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'qr_and_questions' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
@@ -836,6 +844,8 @@ service cloud.firestore {
           // Action 4: Assigned Client links verified clientUid for Portal event history
           (
             isAssignedClient(existing()) &&
+            isValidBusiness(incoming()) &&
+            incoming().createdAt == existing().createdAt &&
             incoming().clientUid == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'clientUid', 'updatedAt'
@@ -870,11 +880,9 @@ service cloud.firestore {
         (isAdmin() || incoming().ownerId == request.auth.uid);
       allow update: if isVerifiedUser() &&
         isValidSlug(slug) &&
-        isValidPublicProfile(incoming()) &&
         incoming().ownerId == existing().ownerId &&
         incoming().businessId == existing().businessId &&
         incoming().slug == existing().slug &&
-        incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time &&
         (
           (
@@ -887,9 +895,14 @@ service cloud.firestore {
               'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate',
               'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-            ])
+            ]) &&
+            (!('packageTier' in incoming()) || incoming().packageTier == null || incoming().packageTier in ['standard', 'standard_plus']) &&
+            (!('reviewFlowMode' in incoming()) || incoming().reviewFlowMode == null || incoming().reviewFlowMode in ['ai_drafted_instant', 'guided_questions']) &&
+            (!('allowClientFlowModeSwitch' in incoming()) || incoming().allowClientFlowModeSwitch == null || incoming().allowClientFlowModeSwitch is bool)
           ) ||
           (
+            isValidPublicProfile(incoming()) &&
+            incoming().createdAt == existing().createdAt &&
             exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
             isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
             (
