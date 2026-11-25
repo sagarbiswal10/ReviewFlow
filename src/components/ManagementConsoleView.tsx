@@ -354,8 +354,6 @@ export function ManagementConsoleView({
       qrStudio: selectedBiz.enabledFeatures.qrStudio ?? true,
       brandingSettings: selectedBiz.enabledFeatures.brandingSettings ?? true,
     });
-    setGovernanceNotice(null);
-    setGovernanceError(null);
   }, [
     selectedBiz?.id,
     selectedBiz?.clientEmail,
@@ -366,6 +364,11 @@ export function ManagementConsoleView({
     selectedBiz?.qrStandLimit,
     selectedBizFeaturesSig,
   ]);
+
+  useEffect(() => {
+    setGovernanceNotice(null);
+    setGovernanceError(null);
+  }, [selectedBiz?.id]);
 
   const aggregateStats = useMemo(() => {
     let totalScans = 0;
@@ -1390,8 +1393,29 @@ export function ManagementConsoleView({
                   </div>
 
                   {governanceError && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {governanceError}
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 space-y-2.5">
+                      <p>{governanceError}</p>
+                      {(governanceError.includes('firestore.rules') ||
+                        governanceError.toLowerCase().includes('permission')) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <a
+                            href="https://raw.githubusercontent.com/sagarbiswal10/ReviewFlow/main/firestore.rules"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white text-xs font-semibold"
+                          >
+                            1. Open Raw firestore.rules (Ctrl+A → Copy)
+                          </a>
+                          <a
+                            href="https://console.firebase.google.com/project/review-generator-1a999/firestore/rules"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-white border border-red-300 hover:bg-red-100 text-red-800 text-xs font-semibold"
+                          >
+                            2. Open Firebase Console Rules (Paste &amp; Publish)
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
                   {governanceNotice && (

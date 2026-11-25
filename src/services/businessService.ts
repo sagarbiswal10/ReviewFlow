@@ -313,12 +313,16 @@ function needsBrandingRepair(b?: Partial<BusinessBranding>): boolean {
   const keys = Object.keys(b);
   if (keys.some((k) => !ALLOWED_BRANDING_KEYS.has(k))) return true;
   return (
-    !b.primaryColor ||
+    typeof b.primaryColor !== 'string' ||
     b.primaryColor.length < 4 ||
-    !b.secondaryColor ||
+    b.primaryColor.length > 20 ||
+    typeof b.secondaryColor !== 'string' ||
     b.secondaryColor.length < 4 ||
+    b.secondaryColor.length > 20 ||
     typeof b.welcomeMessage !== 'string' ||
+    b.welcomeMessage.length > 240 ||
     typeof b.thankYouMessage !== 'string' ||
+    b.thankYouMessage.length > 240 ||
     (b.defaultReviewStyle !== 'short' &&
       b.defaultReviewStyle !== 'detailed' &&
       b.defaultReviewStyle !== 'professional')
@@ -331,12 +335,15 @@ function needsQrConfigRepair(q?: Partial<QrConfig>): boolean {
   if (keys.some((k) => !ALLOWED_QR_KEYS.has(k))) return true;
   return (
     typeof q.isActive !== 'boolean' ||
-    !q.fgColor ||
+    typeof q.fgColor !== 'string' ||
     q.fgColor.length < 4 ||
-    !q.bgColor ||
+    q.fgColor.length > 20 ||
+    typeof q.bgColor !== 'string' ||
     q.bgColor.length < 4 ||
-    !q.token ||
+    q.bgColor.length > 20 ||
+    typeof q.token !== 'string' ||
     q.token.length < 4 ||
+    q.token.length > 64 ||
     typeof q.includeLogo !== 'boolean'
   );
 }
@@ -375,6 +382,9 @@ function sanitizeBusinessCategory(cat: unknown): BusinessCategory {
 
 function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
   return (
+    typeof raw.name !== 'string' ||
+    raw.name.trim().length < 1 ||
+    raw.name.length > 120 ||
     typeof raw.address !== 'string' ||
     raw.address.length > 240 ||
     typeof raw.phone !== 'string' ||
@@ -386,6 +396,7 @@ function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
     typeof raw.logoDataUrl !== 'string' ||
     raw.logoDataUrl.length > 350000 ||
     !Array.isArray(raw.questions) ||
+    raw.questions.length > 25 ||
     !VALID_BUSINESS_CATEGORIES.has(raw.category as BusinessCategory)
   );
 }
@@ -395,6 +406,12 @@ function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
   clientUid: boolean;
   website: boolean;
   seoKeywords: boolean;
+  seoKeywordsByLanguage: boolean;
+  referenceReviews: boolean;
+  formTemplate: boolean;
+  locality: boolean;
+  city: boolean;
+  businessHighlights: boolean;
   qrStandLimit: boolean;
   gbpSettings: boolean;
   weeklyReportConfig: boolean;
@@ -404,8 +421,8 @@ function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
   const gbp = raw.gbpSettings as Record<string, unknown> | undefined;
   const gbpValid =
     gbp === undefined ||
+    gbp === null ||
     (typeof gbp === 'object' &&
-      gbp !== null &&
       (gbp.fiveStarMode === 'auto_publish' || gbp.fiveStarMode === 'approval_required') &&
       (gbp.midStarMode === 'auto_publish' || gbp.midStarMode === 'approval_required') &&
       gbp.lowStarMode === 'manual_approval_only' &&
@@ -419,33 +436,80 @@ function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
   const wrc = raw.weeklyReportConfig as Record<string, unknown> | undefined;
   const wrcValid =
     wrc === undefined ||
+    wrc === null ||
     (typeof wrc === 'object' &&
-      wrc !== null &&
       typeof wrc.enabled === 'boolean' &&
       Array.isArray(wrc.recipients) &&
+      wrc.recipients.length <= 10 &&
+      (wrc.recipients.length === 0 ||
+        (typeof wrc.recipients[0] === 'string' && wrc.recipients[0].length <= 120)) &&
       typeof wrc.autoMondayEnabled === 'boolean' &&
+      (!('lastGeneratedWeekKey' in wrc) ||
+        (typeof wrc.lastGeneratedWeekKey === 'string' && wrc.lastGeneratedWeekKey.length <= 24)) &&
       Object.keys(wrc).every((k) =>
         ['enabled', 'recipients', 'autoMondayEnabled', 'lastGeneratedWeekKey'].includes(k),
       ));
 
+  const rawSeoLang = raw.seoKeywordsByLanguage;
+  const seoByLangInvalid =
+    'seoKeywordsByLanguage' in raw &&
+    rawSeoLang !== null &&
+    (typeof rawSeoLang !== 'object' ||
+      Array.isArray(rawSeoLang) ||
+      Object.keys(rawSeoLang as Record<string, unknown>).some(
+        (k) => !['en', 'hi', 'mr', 'hinglish'].includes(k),
+      ));
+
   return {
-    ownerName: 'ownerName' in raw && (typeof raw.ownerName !== 'string' || raw.ownerName.length > 120),
-    clientUid: 'clientUid' in raw && (typeof raw.clientUid !== 'string' || raw.clientUid.length > 128),
-    website: 'website' in raw && (typeof raw.website !== 'string' || raw.website.length > 300),
+    ownerName:
+      'ownerName' in raw &&
+      raw.ownerName !== null &&
+      (typeof raw.ownerName !== 'string' || raw.ownerName.length > 120),
+    clientUid:
+      'clientUid' in raw &&
+      raw.clientUid !== null &&
+      (typeof raw.clientUid !== 'string' || raw.clientUid.length > 128),
+    website:
+      'website' in raw &&
+      raw.website !== null &&
+      (typeof raw.website !== 'string' || raw.website.length > 300),
     seoKeywords:
       'seoKeywords' in raw &&
+      raw.seoKeywords !== null &&
       (!Array.isArray(raw.seoKeywords) ||
         raw.seoKeywords.length > 15 ||
         raw.seoKeywords.some((k) => typeof k !== 'string' || k.length > 60)),
+    seoKeywordsByLanguage: seoByLangInvalid,
+    referenceReviews:
+      'referenceReviews' in raw &&
+      raw.referenceReviews !== null &&
+      (!Array.isArray(raw.referenceReviews) || raw.referenceReviews.length > 45),
+    formTemplate:
+      'formTemplate' in raw &&
+      raw.formTemplate !== null &&
+      sanitizeFormTemplate(raw.formTemplate) !== raw.formTemplate,
+    locality:
+      'locality' in raw &&
+      raw.locality !== null &&
+      (typeof raw.locality !== 'string' || raw.locality.length > 120),
+    city:
+      'city' in raw &&
+      raw.city !== null &&
+      (typeof raw.city !== 'string' || raw.city.length > 120),
+    businessHighlights:
+      'businessHighlights' in raw &&
+      raw.businessHighlights !== null &&
+      (typeof raw.businessHighlights !== 'string' || raw.businessHighlights.length > 600),
     qrStandLimit:
       'qrStandLimit' in raw &&
+      raw.qrStandLimit !== null &&
       (typeof raw.qrStandLimit !== 'number' ||
         !Number.isInteger(raw.qrStandLimit) ||
         raw.qrStandLimit < 1 ||
         raw.qrStandLimit > 100),
     gbpSettings: !gbpValid,
     weeklyReportConfig: !wrcValid,
-    clientEmail: typeof raw.clientEmail !== 'string',
+    clientEmail: typeof raw.clientEmail !== 'string' || raw.clientEmail.length > 120,
     clientAccessLevel:
       raw.clientAccessLevel !== 'read_only' &&
       raw.clientAccessLevel !== 'qr_and_questions' &&
@@ -1324,8 +1388,8 @@ export async function updateBusiness(
   );
 
   const nextClientEmail = isAdmin
-    ? normalizeEmail(updates.clientEmail ?? current.clientEmail)
-    : current.clientEmail;
+    ? clampString(normalizeEmail(updates.clientEmail ?? current.clientEmail), 120)
+    : clampString(current.clientEmail, 120);
   const nextAccessLevel = isAdmin
     ? sanitizeAccessLevel(updates.clientAccessLevel ?? current.clientAccessLevel)
     : current.clientAccessLevel;
@@ -1343,9 +1407,10 @@ export async function updateBusiness(
   if (slugChanged) {
     businessUpdates.slug = nextSlug;
   }
-  if (updates.name !== undefined) {
-    businessUpdates.name = nextName;
-    publicUpdates.name = nextName;
+  if (updates.name !== undefined || liveNeedsCoreRepair) {
+    const repairedName = clampString(nextName, 120) || 'Business';
+    businessUpdates.name = repairedName;
+    publicUpdates.name = repairedName;
   }
   if (updates.category !== undefined || liveNeedsCoreRepair || publicNeedsCategoryRepair) {
     businessUpdates.category = nextCategory;
@@ -1417,7 +1482,7 @@ export async function updateBusiness(
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;
   }
-  if (updates.formTemplate !== undefined) {
+  if (updates.formTemplate !== undefined || optionalRepairs?.formTemplate) {
     businessUpdates.formTemplate = nextFormTemplate;
     publicUpdates.formTemplate = nextFormTemplate;
   }
@@ -1425,13 +1490,15 @@ export async function updateBusiness(
     businessUpdates.seoKeywords = nextSeoKeywords;
     publicUpdates.seoKeywords = nextSeoKeywords;
   }
-  if (updates.seoKeywordsByLanguage !== undefined) {
-    const cleanSeoByLang = sanitizeSeoKeywordsByLanguageMap(updates.seoKeywordsByLanguage);
+  if (updates.seoKeywordsByLanguage !== undefined || optionalRepairs?.seoKeywordsByLanguage) {
+    const cleanSeoByLang = sanitizeSeoKeywordsByLanguageMap(
+      updates.seoKeywordsByLanguage ?? current.seoKeywordsByLanguage,
+    );
     businessUpdates.seoKeywordsByLanguage = cleanSeoByLang;
     publicUpdates.seoKeywordsByLanguage = cleanSeoByLang;
   }
-  if (updates.referenceReviews !== undefined) {
-    const cleanRefs = sanitizeReferenceReviewsList(updates.referenceReviews);
+  if (updates.referenceReviews !== undefined || optionalRepairs?.referenceReviews) {
+    const cleanRefs = sanitizeReferenceReviewsList(updates.referenceReviews ?? current.referenceReviews);
     businessUpdates.referenceReviews = cleanRefs;
     publicUpdates.referenceReviews = cleanRefs;
   }
@@ -1440,13 +1507,13 @@ export async function updateBusiness(
     businessUpdates.ownerName = cleanOwner;
     publicUpdates.ownerName = cleanOwner;
   }
-  if (updates.locality !== undefined) {
-    const cleanLocality = clampString(updates.locality, 120);
+  if (updates.locality !== undefined || optionalRepairs?.locality) {
+    const cleanLocality = clampString(updates.locality ?? current.locality, 120);
     businessUpdates.locality = cleanLocality;
     publicUpdates.locality = cleanLocality;
   }
-  if (updates.city !== undefined) {
-    const cleanCity = clampString(updates.city, 120);
+  if (updates.city !== undefined || optionalRepairs?.city) {
+    const cleanCity = clampString(updates.city ?? current.city, 120);
     businessUpdates.city = cleanCity;
     publicUpdates.city = cleanCity;
   }
@@ -1460,8 +1527,8 @@ export async function updateBusiness(
     businessUpdates.productsOffered = cleanProducts;
     publicUpdates.productsOffered = cleanProducts;
   }
-  if (updates.businessHighlights !== undefined) {
-    const cleanHighlights = clampString(updates.businessHighlights, 500);
+  if (updates.businessHighlights !== undefined || optionalRepairs?.businessHighlights) {
+    const cleanHighlights = clampString(updates.businessHighlights ?? current.businessHighlights, 500);
     businessUpdates.businessHighlights = cleanHighlights;
     publicUpdates.businessHighlights = cleanHighlights;
   }
