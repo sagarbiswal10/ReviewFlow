@@ -148,11 +148,15 @@ export const FORM_TEMPLATE_IDS = [
 
 export type FormTemplateId = (typeof FORM_TEMPLATE_IDS)[number];
 
+export type ReviewFlowMode = 'ai_drafted_instant' | 'guided_questions';
+
 export interface Business {
   id: string;
   ownerId: string;
   ownerName?: string;
   packageTier?: PackageTier;
+  reviewFlowMode?: ReviewFlowMode;
+  allowClientFlowModeSwitch?: boolean;
   clientEmail: string;
   clientUid?: string;
   clientAccessLevel: ClientAccessLevel;
@@ -190,6 +194,8 @@ export interface PublicProfile {
   ownerId: string;
   ownerName?: string;
   packageTier?: PackageTier;
+  reviewFlowMode?: ReviewFlowMode;
+  allowClientFlowModeSwitch?: boolean;
   clientUid?: string;
   slug: string;
   name: string;

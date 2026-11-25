@@ -118,6 +118,15 @@
           "description": "Growth plan package tier controlling language & SEO features.",
           "enum": ["standard", "standard_plus"]
         },
+        "reviewFlowMode": {
+          "type": "string",
+          "description": "QR landing experience: 5+ instant ready AI drafts or guided feedback questions.",
+          "enum": ["ai_drafted_instant", "guided_questions"]
+        },
+        "allowClientFlowModeSwitch": {
+          "type": "boolean",
+          "description": "Whether the business client may switch between instant AI drafts and guided questions."
+        },
         "locality": {
           "type": "string",
           "maxLength": 120
@@ -274,6 +283,13 @@
         "packageTier": {
           "type": "string",
           "enum": ["standard", "standard_plus"]
+        },
+        "reviewFlowMode": {
+          "type": "string",
+          "enum": ["ai_drafted_instant", "guided_questions"]
+        },
+        "allowClientFlowModeSwitch": {
+          "type": "boolean"
         },
         "ownerName": {
           "type": "string",

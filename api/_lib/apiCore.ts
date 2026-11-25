@@ -4,6 +4,10 @@ import path from 'node:path';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { composeGroundedFallbackReview } from './fallbackReviewComposer.js';
 import { validateReviewQuality, type QualityReviewLanguage, type ReviewQualityReport } from './reviewQualityCore.js';
+import {
+  getTrainingExemplarsFromBank,
+  selectContextualReadyDrafts,
+} from './reviewTemplateBank.js';
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
@@ -29,9 +33,13 @@ export interface GenerateReviewBody {
   businessId?: string;
   visitorId?: string;
   packageTier?: 'standard' | 'standard_plus';
+  mode?: 'guided' | 'instant_batch';
+  count?: number;
+  refreshWithAi?: boolean;
   businessName: string;
   ownerName?: string;
   category: string;
+  address?: string;
   locality?: string;
   city?: string;
   servicesOffered?: string[];
@@ -1096,12 +1104,172 @@ export async function processGenerateReview(
       : [];
     const referenceTexts = rawReferenceReviews.map((r) => r.text.trim().slice(0, 500));
     const langMatchedRefs = rawReferenceReviews.filter((r) => !r.language || r.language === language);
-    const referenceStylePatterns = (langMatchedRefs.length > 0 ? langMatchedRefs : rawReferenceReviews)
+    const bankExemplars = getTrainingExemplarsFromBank({
+      businessName,
+      category,
+      ownerName,
+      locality,
+      city,
+      address: typeof body.address === 'string' ? body.address : '',
+      servicesOffered,
+      productsOffered,
+      seoKeywords,
+      language,
+      count: 6,
+      seed: variationSeed,
+    });
+    const combinedRefs = (langMatchedRefs.length > 0 ? langMatchedRefs : rawReferenceReviews)
       .slice(0, 4)
       .map((r) => r.text.trim().slice(0, 240));
+    const referenceStylePatterns =
+      combinedRefs.length >= 3
+        ? combinedRefs
+        : [...combinedRefs, ...bankExemplars.slice(0, 4 - combinedRefs.length)];
 
     if (!businessName) {
       return { status: 400, data: { error: 'Business name is required.' } };
+    }
+
+    const mode = body.mode === 'instant_batch' ? 'instant_batch' : 'guided';
+    const businessId = typeof body.businessId === 'string' ? body.businessId.trim().slice(0, 128) : '';
+    const visitorId = typeof body.visitorId === 'string' ? body.visitorId.trim().slice(0, 128) : '';
+
+    if (mode === 'instant_batch') {
+      const targetCount = Math.max(5, Math.min(8, Math.round(Number(body.count ?? 6)) || 6));
+      const instantDrafts = selectContextualReadyDrafts({
+        businessName,
+        category,
+        ownerName,
+        locality,
+        city,
+        address: typeof body.address === 'string' ? body.address : '',
+        servicesOffered,
+        productsOffered,
+        seoKeywords,
+        referenceReviews: rawReferenceReviews,
+        language,
+        count: targetCount,
+        seed: variationSeed,
+      });
+
+      const wantsAiRefresh = Boolean(body.refreshWithAi);
+      const geminiKey = getGeminiApiKey();
+      const canUseAi =
+        wantsAiRefresh &&
+        (AI_PROVIDER === 'openai' || (Boolean(geminiKey) && geminiKey !== 'MY_GEMINI_API_KEY'));
+
+      if (canUseAi) {
+        try {
+          const langLabel =
+            language === 'hi'
+              ? 'Hindi (Devanagari script only)'
+              : language === 'mr'
+                ? 'Marathi (Devanagari script only)'
+                : language === 'hinglish'
+                  ? 'Hinglish (Natural everyday Roman Hindi only, NO English words)'
+                  : 'English (Natural conversational English)';
+
+          const batchSystem = [
+            'You generate authentic, human-written local business reviews for customers who want ready drafts to inspect, edit, and post manually.',
+            'Return ONLY valid JSON: {"drafts": string[]}. Provide 6 completely distinct, realistic drafts.',
+            `Target Language: ${langLabel}.`,
+            'CRITICAL RULES:',
+            '1. Never make every review follow the same structure, opening, or length.',
+            `2. Use business name "${businessName}" naturally in roughly 3-4 out of 6 drafts (not every sentence).`,
+            ownerName
+              ? `3. Use shop owner name "${ownerName}" ONLY if natural in AT MOST 1-2 out of 6 drafts — NEVER insert the owner name into all drafts.`
+              : '3. Do NOT invent any owner or staff names.',
+            locationSummary
+              ? `4. Mention location "${locationSummary}" in AT MOST 2-3 out of 6 drafts — NOT in every review.`
+              : '4. Do not force address strings into every review.',
+            seoKeywords.length > 0
+              ? `5. Smoothly weave 1 relevant SEO phrase (${seoKeywords.slice(0, 5).join(', ')}) into roughly 3 drafts. NEVER use hype words like "best", "top-rated", "number one", "#1", or "most popular".`
+              : '5. Never use promotional hype like "best", "top-rated", "number one", or "most popular".',
+            '6. Never copy complete sentences verbatim from the training samples below — learn only their natural human rhythm, everyday words, and brevity.',
+          ].join('\n');
+
+          const batchPrompt = [
+            `Business: ${businessName}${category ? ` (${category})` : ''}`,
+            locationSummary ? `Area/City: ${locationSummary}` : '',
+            servicesOffered.length > 0 ? `Services: ${servicesOffered.join(', ')}` : '',
+            productsOffered.length > 0 ? `Products: ${productsOffered.join(', ')}` : '',
+            businessHighlights ? `Business Notes: ${businessHighlights}` : '',
+            `Variation Seed: ${variationSeed}`,
+            `Trained Human Style Samples:\n${referenceStylePatterns.map((s, i) => `- ${i + 1}: "${s}"`).join('\n')}`,
+            previousDrafts.length > 0
+              ? `Avoid repeating previous drafts:\n${previousDrafts.map((d) => `- "${d}"`).join('\n')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+
+          const aiRaw =
+            AI_PROVIDER === 'openai'
+              ? await callOpenAIJson(batchSystem, batchPrompt)
+              : await generateGeminiContentWithFallback(
+                  batchPrompt,
+                  {
+                    systemInstruction: batchSystem,
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                      type: Type.OBJECT,
+                      properties: {
+                        drafts: {
+                          type: Type.ARRAY,
+                          items: { type: Type.STRING },
+                        },
+                      },
+                      required: ['drafts'],
+                    },
+                    temperature: 0.85,
+                    maxOutputTokens: 900,
+                  },
+                  1,
+                );
+
+          const parsed = JSON.parse(aiRaw.text || '{}') as { drafts?: unknown };
+          const aiDrafts = Array.isArray(parsed.drafts)
+            ? parsed.drafts
+                .filter((d): d is string => typeof d === 'string' && d.trim().length >= 20)
+                .map((d) => d.trim().replace(/^["']|["']$/g, ''))
+                .filter((d) => !/\b(best|top-rated|top rated|number one|#1|most popular)\b/i.test(d))
+            : [];
+
+          const merged = [...aiDrafts];
+          for (const bankItem of instantDrafts) {
+            if (merged.length >= targetCount) break;
+            if (!merged.includes(bankItem)) merged.push(bankItem);
+          }
+
+          if (merged.length >= 5) {
+            return {
+              status: 200,
+              data: {
+                drafts: merged.slice(0, targetCount),
+                review: merged[0],
+                alternates: merged.slice(1, targetCount),
+                language,
+                packageTier,
+                source: 'ai-trained-batch',
+              },
+            };
+          }
+        } catch {
+          // Fallback cleanly to instant curated bank below
+        }
+      }
+
+      return {
+        status: 200,
+        data: {
+          drafts: instantDrafts,
+          review: instantDrafts[0],
+          alternates: instantDrafts.slice(1),
+          language,
+          packageTier,
+          source: 'curated-bank-instant',
+        },
+      };
     }
 
     const formattedResponses = responses
@@ -1114,9 +1282,6 @@ export async function processGenerateReview(
       )
       .map((item) => `- ${item.question}: ${item.answers.join(', ')}`)
       .join('\n');
-
-    const businessId = typeof body.businessId === 'string' ? body.businessId.trim().slice(0, 128) : '';
-    const visitorId = typeof body.visitorId === 'string' ? body.visitorId.trim().slice(0, 128) : '';
 
     if (!formattedResponses && !additionalComments) {
       return {

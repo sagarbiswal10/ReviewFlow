@@ -272,6 +272,11 @@ export function sanitizePackageTier(tier?: unknown): PackageTier {
   return 'standard_plus';
 }
 
+export function sanitizeReviewFlowMode(mode?: unknown): 'ai_drafted_instant' | 'guided_questions' {
+  if (mode === 'ai_drafted_instant') return 'ai_drafted_instant';
+  return 'guided_questions';
+}
+
 export function getAllowedLanguagesForTier(tier?: unknown): ReviewLanguage[] {
   return sanitizePackageTier(tier) === 'standard' ? ['en'] : ['en', 'hi', 'mr', 'hinglish'];
 }

@@ -485,9 +485,19 @@ export function ClientPortalView({
     ? {
         businessId: activeBusiness.id,
         ownerId: activeBusiness.ownerId,
+        ownerName: activeBusiness.ownerName,
+        packageTier: activeBusiness.packageTier,
+        reviewFlowMode: activeBusiness.reviewFlowMode,
+        allowClientFlowModeSwitch: activeBusiness.allowClientFlowModeSwitch,
         slug: activeBusiness.slug,
         name: activeBusiness.name,
         category: activeBusiness.category,
+        address: activeBusiness.address,
+        locality: activeBusiness.locality,
+        city: activeBusiness.city,
+        servicesOffered: activeBusiness.servicesOffered,
+        productsOffered: activeBusiness.productsOffered,
+        businessHighlights: activeBusiness.businessHighlights,
         googleReviewUrl: activeBusiness.googleReviewUrl,
         logoDataUrl: activeBusiness.logoDataUrl,
         enabledFeatures: activeBusiness.enabledFeatures,
@@ -496,6 +506,8 @@ export function ClientPortalView({
         questions: activeBusiness.questions,
         formTemplate: activeBusiness.formTemplate,
         seoKeywords: activeBusiness.seoKeywords,
+        seoKeywordsByLanguage: activeBusiness.seoKeywordsByLanguage,
+        referenceReviews: activeBusiness.referenceReviews,
       }
     : null;
 

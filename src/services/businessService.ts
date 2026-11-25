@@ -46,6 +46,7 @@ import type {
   ReviewDraftStatus,
   ReviewEvent,
   ReviewEventType,
+  ReviewFlowMode,
   ReviewLanguage,
   ReviewStyle,
   WeeklyReportConfig,
@@ -60,6 +61,7 @@ import {
   sanitizeFormTemplate,
   sanitizeGbpSettings,
   sanitizePackageTier,
+  sanitizeReviewFlowMode,
   sanitizeShortTagList,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
@@ -456,6 +458,8 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
     packageTier: sanitizePackageTier(data.packageTier),
+    reviewFlowMode: sanitizeReviewFlowMode(data.reviewFlowMode),
+    allowClientFlowModeSwitch: data.allowClientFlowModeSwitch !== false,
     clientEmail: normalizedClientEmail,
     clientUid: clampString(data.clientUid, 128),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
@@ -959,6 +963,8 @@ export async function createBusiness(
   input: {
     ownerName?: string;
     packageTier?: PackageTier;
+    reviewFlowMode?: ReviewFlowMode;
+    allowClientFlowModeSwitch?: boolean;
     clientEmail?: string;
     clientAccessLevel?: ClientAccessLevel;
     enabledFeatures?: EnabledFeatures;
@@ -998,6 +1004,8 @@ export async function createBusiness(
   const cleanName = clampString(input.name, 120) || 'My Business';
   const cleanOwnerName = clampString(input.ownerName, 120);
   const cleanPackageTier = sanitizePackageTier(input.packageTier);
+  const cleanFlowMode = sanitizeReviewFlowMode(input.reviewFlowMode);
+  const cleanAllowFlowSwitch = input.allowClientFlowModeSwitch !== false;
   const cleanAddress = clampString(input.address, 240);
   const cleanLocality = clampString(input.locality, 120);
   const cleanCity = clampString(input.city, 120);
@@ -1049,6 +1057,8 @@ export async function createBusiness(
     ownerId: clampString(ownerId, 128),
     ...(cleanOwnerName ? { ownerName: cleanOwnerName } : {}),
     packageTier: cleanPackageTier,
+    reviewFlowMode: cleanFlowMode,
+    allowClientFlowModeSwitch: cleanAllowFlowSwitch,
     clientEmail: cleanClientEmail,
     clientAccessLevel: cleanAccessLevel,
     enabledFeatures: cleanFeatures,
@@ -1085,6 +1095,8 @@ export async function createBusiness(
     ownerId: clampString(ownerId, 128),
     ...(cleanOwnerName ? { ownerName: cleanOwnerName } : {}),
     packageTier: cleanPackageTier,
+    reviewFlowMode: cleanFlowMode,
+    allowClientFlowModeSwitch: cleanAllowFlowSwitch,
     slug: finalSlug,
     name: cleanName,
     category: input.category,
@@ -1141,6 +1153,8 @@ export async function updateBusiness(
   updates: Partial<{
     ownerName: string;
     packageTier: PackageTier;
+    reviewFlowMode: ReviewFlowMode;
+    allowClientFlowModeSwitch: boolean;
     clientEmail: string;
     clientAccessLevel: ClientAccessLevel;
     enabledFeatures: EnabledFeatures;
@@ -1455,12 +1469,26 @@ export async function updateBusiness(
     );
   }
 
+  if (
+    updates.reviewFlowMode !== undefined &&
+    (isAdmin || current.allowClientFlowModeSwitch !== false)
+  ) {
+    const cleanMode = sanitizeReviewFlowMode(updates.reviewFlowMode);
+    businessUpdates.reviewFlowMode = cleanMode;
+    publicUpdates.reviewFlowMode = cleanMode;
+  }
+
   const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
     if (updates.packageTier !== undefined) {
       const cleanTier = sanitizePackageTier(updates.packageTier);
       businessUpdates.packageTier = cleanTier;
       publicUpdates.packageTier = cleanTier;
+    }
+    if (updates.allowClientFlowModeSwitch !== undefined) {
+      const cleanAllowSwitch = Boolean(updates.allowClientFlowModeSwitch);
+      businessUpdates.allowClientFlowModeSwitch = cleanAllowSwitch;
+      publicUpdates.allowClientFlowModeSwitch = cleanAllowSwitch;
     }
     if (updates.clientEmail !== undefined || optionalRepairs?.clientEmail) {
       businessUpdates.clientEmail = nextClientEmail;
@@ -1498,6 +1526,15 @@ export async function updateBusiness(
   const nextPackageTier = sanitizePackageTier(
     isAdmin && updates.packageTier !== undefined ? updates.packageTier : current.packageTier,
   );
+  const nextFlowMode = sanitizeReviewFlowMode(
+    updates.reviewFlowMode !== undefined && (isAdmin || current.allowClientFlowModeSwitch !== false)
+      ? updates.reviewFlowMode
+      : current.reviewFlowMode,
+  );
+  const nextAllowFlowSwitch =
+    isAdmin && updates.allowClientFlowModeSwitch !== undefined
+      ? Boolean(updates.allowClientFlowModeSwitch)
+      : current.allowClientFlowModeSwitch !== false;
   const nextSeoByLang = sanitizeSeoKeywordsByLanguageMap(
     updates.seoKeywordsByLanguage ?? current.seoKeywordsByLanguage,
   );
@@ -1508,6 +1545,8 @@ export async function updateBusiness(
     ownerId: current.ownerId,
     ...(nextOwnerName ? { ownerName: nextOwnerName } : {}),
     packageTier: nextPackageTier,
+    reviewFlowMode: nextFlowMode,
+    allowClientFlowModeSwitch: nextAllowFlowSwitch,
     clientUid: clientEmailChanged ? '' : current.clientUid || '',
     slug: targetSlug,
     name: nextName,
@@ -1669,6 +1708,8 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       ownerId: raw.ownerId || '',
       ownerName: clampString(raw.ownerName, 120),
       packageTier: sanitizePackageTier(raw.packageTier),
+      reviewFlowMode: sanitizeReviewFlowMode(raw.reviewFlowMode),
+      allowClientFlowModeSwitch: raw.allowClientFlowModeSwitch !== false,
       clientUid: clampString(raw.clientUid, 128),
       slug: raw.slug || normalized,
       name: raw.name || 'Business',

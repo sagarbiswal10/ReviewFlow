@@ -5,6 +5,7 @@ import {
   type Business,
   type BusinessCategory,
   type ReferenceReviewItem,
+  type ReviewFlowMode,
   type ReviewLanguage,
   type ReviewStyle,
 } from '../types';
@@ -24,7 +25,11 @@ import {
   sanitizeSlug,
   updateBusiness,
 } from '../services/businessService';
-import { getAllowedLanguagesForTier, sanitizePackageTier } from '../utils/domainHelpers';
+import {
+  getAllowedLanguagesForTier,
+  sanitizePackageTier,
+  sanitizeReviewFlowMode,
+} from '../utils/domainHelpers';
 import { compressLogoFile } from '../utils/qrAndPdf';
 import { sanitizeSeoKeywordPhrase } from '../utils/seoKeywordEngine';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
@@ -45,11 +50,15 @@ const LANGUAGE_TABS: { id: ReviewLanguage; label: string }[] = [
 
 export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTabProps) {
   const packageTier = sanitizePackageTier(business.packageTier);
+  const canSwitchFlowMode = isAdmin || business.allowClientFlowModeSwitch !== false;
   const allowedLanguages = useMemo(
     () => getAllowedLanguagesForTier(packageTier),
     [packageTier],
   );
 
+  const [reviewFlowMode, setReviewFlowMode] = useState<ReviewFlowMode>(
+    sanitizeReviewFlowMode(business.reviewFlowMode),
+  );
   const [name, setName] = useState(business.name);
   const [ownerName, setOwnerName] = useState(business.ownerName || '');
   const [category, setCategory] = useState<BusinessCategory>(business.category);
@@ -129,6 +138,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
     }
     lastBusinessIdRef.current = business.id;
     isDirtyRef.current = false;
+    setReviewFlowMode(sanitizeReviewFlowMode(business.reviewFlowMode));
     setName(business.name);
     setOwnerName(business.ownerName || '');
     setCategory(business.category);
@@ -222,6 +232,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         {
           name: name.trim(),
           ownerName: ownerName.trim(),
+          ...(canSwitchFlowMode ? { reviewFlowMode } : {}),
           category,
           ...(canEditSlug ? { slug: sanitizeSlug(slug || name) } : {}),
           address: address.trim(),
@@ -791,6 +802,83 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         </div>
       </div>
 
+      {/* Customer QR Experience Mode Switcher */}
+      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-900">
+              Customer QR Review Experience
+            </h2>
+            <p className="text-sm text-slate-600 mt-0.5">
+              Choose whether scanning your QR shows 5+ instant tailored AI drafts or guided feedback questions first.
+            </p>
+          </div>
+          <span
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+              packageTier === 'standard'
+                ? 'bg-indigo-100 text-indigo-800'
+                : 'bg-teal-100 text-teal-800'
+            }`}
+          >
+            {packageTier === 'standard'
+              ? '₹3,000 Standard Plan · English Only'
+              : '₹4,000 Standard Plus · EN / HI / MR / Hinglish'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            disabled={!canSwitchFlowMode}
+            onClick={() => {
+              isDirtyRef.current = true;
+              setReviewFlowMode('ai_drafted_instant');
+            }}
+            className={`p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+              reviewFlowMode === 'ai_drafted_instant'
+                ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <p className="text-sm font-bold text-slate-900">
+              Instant AI-Drafted Reviews (5+ Options → Google)
+            </p>
+            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              {packageTier === 'standard'
+                ? 'Guests see at least 5 tailored English drafts right away, can edit if they like, copy, and post directly on Google.'
+                : 'Guests pick any language (English, Hindi, Marathi, Hinglish), choose from 5+ tailored drafts, and post directly on Google.'}
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={!canSwitchFlowMode}
+            onClick={() => {
+              isDirtyRef.current = true;
+              setReviewFlowMode('guided_questions');
+            }}
+            className={`p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+              reviewFlowMode === 'guided_questions'
+                ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <p className="text-sm font-bold text-slate-900">
+              Guided Questions Mode (Questions → AI Draft)
+            </p>
+            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              Guests tap answers to quick feedback questions first, then AI generates a personalized review from their experience.
+            </p>
+          </button>
+        </div>
+
+        {!canSwitchFlowMode && (
+          <p className="text-xs text-slate-500">
+            Mode switching is managed by Business Management permissions for your account.
+          </p>
+        )}
+      </div>
+
       {/* Contextual SEO Keyword Engine */}
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -807,8 +895,8 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
                 }`}
               >
                 {packageTier === 'standard'
-                  ? 'Standard Plan · English SEO Only'
-                  : 'Standard Plus · EN / HI / MR / Hinglish SEO'}
+                  ? '₹3,000 Plan · English SEO Only'
+                  : '₹4,000 Plan · EN / HI / MR / Hinglish SEO'}
               </span>
             </div>
             <p className="text-sm text-slate-600">

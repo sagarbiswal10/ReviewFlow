@@ -54,6 +54,7 @@ import type {
   QrStandRequest,
   ReviewEvaluation,
   ReviewEvent,
+  ReviewFlowMode,
   WeeklyReport,
 } from '../types';
 import {
@@ -223,6 +224,10 @@ export function ManagementConsoleView({
   const [clientEmailInput, setClientEmailInput] = useState('');
   const [accessLevelInput, setAccessLevelInput] = useState<ClientAccessLevel>('full');
   const [packageTierInput, setPackageTierInput] = useState<PackageTier>('standard_plus');
+  const [reviewFlowModeInput, setReviewFlowModeInput] =
+    useState<ReviewFlowMode>('guided_questions');
+  const [allowClientFlowModeSwitchInput, setAllowClientFlowModeSwitchInput] =
+    useState<boolean>(true);
   const [qrStandLimitInput, setQrStandLimitInput] = useState<number>(4);
   const [featuresInput, setFeaturesInput] = useState<EnabledFeatures>({
     aiReviewDrafts: true,
@@ -329,6 +334,12 @@ export function ManagementConsoleView({
     setClientEmailInput(selectedBiz.clientEmail || '');
     setAccessLevelInput(selectedBiz.clientAccessLevel || 'full');
     setPackageTierInput(selectedBiz.packageTier === 'standard' ? 'standard' : 'standard_plus');
+    setReviewFlowModeInput(
+      selectedBiz.reviewFlowMode === 'ai_drafted_instant'
+        ? 'ai_drafted_instant'
+        : 'guided_questions',
+    );
+    setAllowClientFlowModeSwitchInput(selectedBiz.allowClientFlowModeSwitch !== false);
     setQrStandLimitInput(selectedBiz.qrStandLimit ?? 4);
     setFeaturesInput({
       aiReviewDrafts: selectedBiz.enabledFeatures.aiReviewDrafts,
@@ -349,6 +360,8 @@ export function ManagementConsoleView({
     selectedBiz?.clientEmail,
     selectedBiz?.clientAccessLevel,
     selectedBiz?.packageTier,
+    selectedBiz?.reviewFlowMode,
+    selectedBiz?.allowClientFlowModeSwitch,
     selectedBiz?.qrStandLimit,
     selectedBizFeaturesSig,
   ]);
@@ -683,6 +696,8 @@ export function ManagementConsoleView({
           clientEmail: normalizeEmail(clientEmailInput),
           clientAccessLevel: accessLevelInput,
           packageTier: packageTierInput,
+          reviewFlowMode: reviewFlowModeInput,
+          allowClientFlowModeSwitch: allowClientFlowModeSwitchInput,
           qrStandLimit: Math.min(100, Math.max(1, Math.round(qrStandLimitInput) || 4)),
           enabledFeatures: featuresInput,
         },
@@ -801,6 +816,8 @@ export function ManagementConsoleView({
         ownerId: selectedBiz.ownerId,
         ownerName: selectedBiz.ownerName,
         packageTier: selectedBiz.packageTier,
+        reviewFlowMode: selectedBiz.reviewFlowMode,
+        allowClientFlowModeSwitch: selectedBiz.allowClientFlowModeSwitch,
         slug: selectedBiz.slug,
         name: selectedBiz.name,
         category: selectedBiz.category,
@@ -1422,49 +1439,122 @@ export function ManagementConsoleView({
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-200">
-                    <label className="block text-xs font-medium text-slate-700 mb-2">
-                      Growth Plan Package Tier (Enforced on AI Reviews &amp; SEO Suggestions)
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPackageTierInput('standard')}
-                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          packageTierInput === 'standard'
-                            ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
-                            : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-bold text-slate-900">Standard</span>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                            ₹2,999 / Yr
-                          </span>
+                  <div className="pt-4 border-t border-slate-200 space-y-5">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-2">
+                        Plan Permissions (In-Person Payment Activated — Zero Online Checkout)
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPackageTierInput('standard');
+                            setReviewFlowModeInput('ai_drafted_instant');
+                          }}
+                          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                            packageTierInput === 'standard'
+                              ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold text-slate-900">
+                              ₹3,000 Plan · Standard
+                            </span>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                              English Only
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-xs text-slate-600 leading-relaxed">
+                            English AI-drafted reviews only (at least 5+ ready drafts tailored to business name, optional owner, address &amp; English SEO keywords) → Direct post to Google.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPackageTierInput('standard_plus');
+                            setReviewFlowModeInput('ai_drafted_instant');
+                          }}
+                          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                            packageTierInput === 'standard_plus'
+                              ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold text-slate-900">
+                              ₹4,000 Plan · Standard Plus
+                            </span>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                              All 4 Languages
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-xs text-slate-600 leading-relaxed">
+                            English, Hindi, Marathi &amp; Hinglish AI-drafted reviews (at least 5+ ready drafts per language using contextual SEO) → Direct post to Google.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 space-y-3">
+                      <label className="block text-xs font-medium text-slate-700">
+                        Active Customer QR Experience Mode
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setReviewFlowModeInput('ai_drafted_instant')}
+                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                            reviewFlowModeInput === 'ai_drafted_instant'
+                              ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <p className="text-xs font-bold text-slate-900">
+                            1. Ready AI-Drafted Reviews (5+ Options → Google)
+                          </p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {packageTierInput === 'standard'
+                              ? 'Customers scan QR → pick/edit from 5+ English AI drafts → directly post to Google.'
+                              : 'Customers scan QR → pick English / Hindi / Marathi / Hinglish → 5+ AI drafts → post to Google.'}
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setReviewFlowModeInput('guided_questions')}
+                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                            reviewFlowModeInput === 'guided_questions'
+                              ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <p className="text-xs font-bold text-slate-900">
+                            2. Guided Questions Mode (Questions → AI Draft)
+                          </p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            Customers answer quick store feedback questions first, then generate a custom review.
+                          </p>
+                        </button>
+                      </div>
+
+                      <label className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3 cursor-pointer">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">
+                            Allow Business Client to Switch Mode (AI Drafts ↔ Questions)
+                          </p>
+                          <p className="text-[11px] text-slate-600">
+                            When enabled, the client can switch their QR scan experience between 5+ Ready AI Drafts and Questions mode in their Client Portal.
+                          </p>
                         </div>
-                        <p className="mt-1 text-xs text-slate-600">
-                          English AI review drafting &amp; contextual English SEO keyword suggestions only.
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPackageTierInput('standard_plus')}
-                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          packageTierInput === 'standard_plus'
-                            ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
-                            : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-bold text-slate-900">Standard Plus</span>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
-                            ₹3,999 / Yr
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-600">
-                          English, Hindi, Marathi &amp; Hinglish AI drafting + language-specific SEO suggestions.
-                        </p>
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={allowClientFlowModeSwitchInput}
+                          onChange={(e) => setAllowClientFlowModeSwitchInput(e.target.checked)}
+                          className="w-4 h-4 rounded border-slate-300 text-teal-700 shrink-0"
+                        />
+                      </label>
                     </div>
                   </div>
 

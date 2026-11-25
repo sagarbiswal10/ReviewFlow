@@ -15,6 +15,7 @@ import {
   type BusinessCategory,
   type EnabledFeatures,
   type PackageTier,
+  type ReviewFlowMode,
   type ReviewLanguage,
 } from '../types';
 import {
@@ -61,6 +62,8 @@ export function OnboardingModal({
   const [clientEmail, setClientEmail] = useState(isAdmin ? '' : userEmail);
   const [clientAccessLevel, setClientAccessLevel] = useState<'read_only' | 'qr_and_questions' | 'full'>('full');
   const [packageTier, setPackageTier] = useState<PackageTier>('standard_plus');
+  const [reviewFlowMode, setReviewFlowMode] = useState<ReviewFlowMode>('ai_drafted_instant');
+  const [allowClientFlowModeSwitch, setAllowClientFlowModeSwitch] = useState<boolean>(true);
   const [enabledFeatures, setEnabledFeatures] = useState<EnabledFeatures>({
     ...DEFAULT_ENABLED_FEATURES,
   });
@@ -242,6 +245,8 @@ export function OnboardingModal({
       const businessId = await createBusiness(ownerId, {
         ownerName: ownerName.trim(),
         packageTier: effectiveTier,
+        reviewFlowMode: isAdmin ? reviewFlowMode : 'ai_drafted_instant',
+        allowClientFlowModeSwitch: isAdmin ? allowClientFlowModeSwitch : true,
         clientEmail: isAdmin ? clientEmail : userEmail,
         clientAccessLevel: isAdmin ? clientAccessLevel : 'full',
         enabledFeatures: isAdmin ? enabledFeatures : undefined,
@@ -731,7 +736,7 @@ export function OnboardingModal({
                   </div>
                   <div className="min-w-0">
                     <label htmlFor="onboarding-package-tier" className="block text-xs font-medium text-slate-700 mb-1.5">
-                      Growth Plan Tier
+                      Plan Permissions (₹3,000 / ₹4,000)
                     </label>
                     <select
                       id="onboarding-package-tier"
@@ -739,10 +744,36 @@ export function OnboardingModal({
                       onChange={(e) => setPackageTier(e.target.value as PackageTier)}
                       className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
                     >
-                      <option value="standard">Standard (₹2,999 — English Only)</option>
-                      <option value="standard_plus">Standard Plus (₹3,999 — EN/HI/MR/Hinglish)</option>
+                      <option value="standard">₹3,000 Plan · Standard (English 5+ AI Drafts)</option>
+                      <option value="standard_plus">₹4,000 Plan · Standard Plus (All 4 Languages 5+ AI Drafts)</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div className="min-w-0">
+                    <label htmlFor="onboarding-flow-mode" className="block text-xs font-medium text-slate-700 mb-1.5">
+                      QR Scan Experience Mode
+                    </label>
+                    <select
+                      id="onboarding-flow-mode"
+                      value={reviewFlowMode}
+                      onChange={(e) => setReviewFlowMode(e.target.value as ReviewFlowMode)}
+                      className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
+                    >
+                      <option value="ai_drafted_instant">5+ Ready AI Reviews → Direct Post to Google</option>
+                      <option value="guided_questions">Guided Questions → Custom AI Draft</option>
+                    </select>
+                  </div>
+                  <label className="min-w-0 px-3 py-2 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs font-medium text-slate-700 cursor-pointer self-end h-10">
+                    <span>Allow client to switch mode later</span>
+                    <input
+                      type="checkbox"
+                      checked={allowClientFlowModeSwitch}
+                      onChange={(e) => setAllowClientFlowModeSwitch(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-teal-700"
+                    />
+                  </label>
                 </div>
 
                 <div className="pt-3 border-t border-slate-200/80 space-y-2.5">

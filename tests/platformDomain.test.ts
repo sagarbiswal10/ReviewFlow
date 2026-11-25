@@ -20,6 +20,7 @@ import {
   sanitizeFormTemplate,
   sanitizeGbpSettings,
   sanitizePackageTier,
+  sanitizeReviewFlowMode,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
 } from '../src/utils/domainHelpers.ts';
@@ -31,6 +32,10 @@ import {
   INDIA_SALON_REAL_REVIEW_DATASET,
   buildWritingStyleProfile,
 } from '../src/data/realReviewDatasets.ts';
+import {
+  BACKEND_REVIEW_TEMPLATE_COUNTS,
+  selectContextualReadyDrafts,
+} from '../api/_lib/reviewTemplateBank.ts';
 import {
   FORM_TEMPLATES,
   classifyQuestionsForTemplate,
@@ -308,5 +313,47 @@ test('TC-LIB-01: INDIA_SALON_REAL_REVIEW_DATASET covers all 4 languages and dist
     });
     assert.ok(profile.sampleCount >= 2, `Expected reference samples for ${lang}`);
     assert.ok(profile.avgWordsPerSentence > 0);
+  }
+});
+
+test('TC-DOM-12: sanitizeReviewFlowMode accepts ai_drafted_instant and defaults safely to guided_questions', () => {
+  assert.equal(sanitizeReviewFlowMode('ai_drafted_instant'), 'ai_drafted_instant');
+  assert.equal(sanitizeReviewFlowMode('guided_questions'), 'guided_questions');
+  assert.equal(sanitizeReviewFlowMode(undefined), 'guided_questions');
+  assert.equal(sanitizeReviewFlowMode('unknown'), 'guided_questions');
+});
+
+test('TC-LIB-02: Backend training bank has 50-60+ reviews per language and generates 5+ varied drafts without repeating owner/location everywhere', () => {
+  for (const lang of ['en', 'hi', 'mr', 'hinglish'] as const) {
+    assert.ok(
+      BACKEND_REVIEW_TEMPLATE_COUNTS[lang] >= 50,
+      `Expected >= 50 templates for ${lang}, got ${BACKEND_REVIEW_TEMPLATE_COUNTS[lang]}`,
+    );
+
+    const drafts = selectContextualReadyDrafts({
+      businessName: 'Lumina Hair Studio',
+      category: 'Hair Salons',
+      ownerName: 'Rahul',
+      locality: 'Andheri West',
+      city: 'Mumbai',
+      servicesOffered: ['Haircut', 'Keratin'],
+      seoKeywords: ['best hair salon in Andheri West', 'keratin treatment Andheri West'],
+      language: lang,
+      count: 6,
+      seed: 1,
+    });
+
+    assert.ok(drafts.length >= 5, `Expected >= 5 ready drafts for ${lang}`);
+    assert.equal(new Set(drafts).size, drafts.length, `Expected unique drafts for ${lang}`);
+
+    const ownerCount = drafts.filter((d) => d.includes('Rahul')).length;
+    const areaCount = drafts.filter((d) => d.includes('Andheri West')).length;
+    assert.ok(ownerCount <= 2, `Owner name should appear sparingly (${ownerCount}/6) in ${lang}`);
+    assert.ok(areaCount <= 3, `Location should not appear in every draft (${areaCount}/6) in ${lang}`);
+    assert.equal(
+      drafts.some((d) => /\bbest\b/i.test(d)),
+      false,
+      `Superlative hype "best" must be stripped from ready drafts in ${lang}`,
+    );
   }
 });

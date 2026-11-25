@@ -35,6 +35,7 @@ import {
 } from '../services/platformFeaturesService';
 import { apiFetch, formatApiError } from '../utils/apiClient';
 import { composeGroundedFallbackReview, validateReviewQuality } from '../utils/reviewQuality';
+import { selectContextualReadyDrafts } from '../../api/_lib/reviewTemplateBank';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import {
   formatQuotaCountdown,
@@ -43,6 +44,7 @@ import {
   resolveVisitorQuotaState,
   sanitizeFormTemplate,
   sanitizePackageTier,
+  sanitizeReviewFlowMode,
   VISITOR_QUOTA_WINDOW_MS,
 } from '../utils/domainHelpers';
 import {
@@ -188,6 +190,7 @@ export function CustomerReviewFlow({
     activeTemplate === 'emoji_checklist_light' || activeTemplate === 'emoji_checklist_dark';
 
   const packageTier = sanitizePackageTier(profile.packageTier);
+  const reviewFlowMode = sanitizeReviewFlowMode(profile.reviewFlowMode);
   const allowedLanguages = useMemo(
     () => getAllowedLanguagesForTier(packageTier),
     [packageTier],
@@ -226,11 +229,86 @@ export function CustomerReviewFlow({
     profile.branding?.defaultReviewStyle || 'short',
   );
 
+  // Instant Ready AI Drafts Mode state (minimum 5+ tailored drafts per permitted language)
+  const [instantSeed, setInstantSeed] = useState<number>(1);
+  const [instantDrafts, setInstantDrafts] = useState<string[]>(() =>
+    selectContextualReadyDrafts({
+      businessName: profile.name,
+      category: profile.category,
+      ownerName: profile.ownerName,
+      locality: profile.locality,
+      city: profile.city,
+      address: profile.address,
+      servicesOffered: profile.servicesOffered,
+      productsOffered: profile.productsOffered,
+      seoKeywords:
+        profile.seoKeywordsByLanguage?.[initialLang]?.length
+          ? profile.seoKeywordsByLanguage[initialLang]
+          : profile.seoKeywords,
+      referenceReviews: profile.referenceReviews,
+      language: initialLang,
+      count: 6,
+      seed: 1,
+    }),
+  );
+  const [editingInstantIdx, setEditingInstantIdx] = useState<number | null>(null);
+  const [copiedInstantIdx, setCopiedInstantIdx] = useState<number | null>(null);
+  const [isRefreshingInstantAi, setIsRefreshingInstantAi] = useState<boolean>(false);
+
   useEffect(() => {
     if (!isLanguageAllowedForTier(selectedLanguage, packageTier)) {
       setSelectedLanguage('en');
     }
   }, [packageTier, selectedLanguage]);
+
+  const effectiveInstantLanguage: ReviewLanguage = isLanguageAllowedForTier(
+    selectedLanguage,
+    packageTier,
+  )
+    ? selectedLanguage
+    : 'en';
+
+  useEffect(() => {
+    if (reviewFlowMode !== 'ai_drafted_instant') return;
+    const seoForLang =
+      profile.seoKeywordsByLanguage?.[effectiveInstantLanguage]?.length
+        ? profile.seoKeywordsByLanguage[effectiveInstantLanguage]
+        : profile.seoKeywords;
+    setInstantDrafts(
+      selectContextualReadyDrafts({
+        businessName: profile.name,
+        category: profile.category,
+        ownerName: profile.ownerName,
+        locality: profile.locality,
+        city: profile.city,
+        address: profile.address,
+        servicesOffered: profile.servicesOffered,
+        productsOffered: profile.productsOffered,
+        seoKeywords: seoForLang,
+        referenceReviews: profile.referenceReviews,
+        language: effectiveInstantLanguage,
+        count: 6,
+        seed: instantSeed,
+      }),
+    );
+    setEditingInstantIdx(null);
+    setCopiedInstantIdx(null);
+  }, [
+    reviewFlowMode,
+    effectiveInstantLanguage,
+    instantSeed,
+    profile.name,
+    profile.category,
+    profile.ownerName,
+    profile.locality,
+    profile.city,
+    profile.address,
+    profile.servicesOffered,
+    profile.productsOffered,
+    profile.seoKeywords,
+    profile.seoKeywordsByLanguage,
+    profile.referenceReviews,
+  ]);
 
   const [draftText, setDraftText] = useState(persistedInitial?.draftText || '');
   const [currentDraftId, setCurrentDraftId] = useState(persistedInitial?.currentDraftId || '');
@@ -1238,6 +1316,319 @@ export function CustomerReviewFlow({
   };
 
   const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
+
+  const handleRefreshInstantAiDrafts = async () => {
+    const nextSeed = instantSeed + 1;
+    setInstantSeed(nextSeed);
+    setEditingInstantIdx(null);
+    setCopiedInstantIdx(null);
+
+    const seoForLang =
+      profile.seoKeywordsByLanguage?.[effectiveInstantLanguage]?.length
+        ? profile.seoKeywordsByLanguage[effectiveInstantLanguage]
+        : profile.seoKeywords;
+
+    setIsRefreshingInstantAi(true);
+    try {
+      const res = await apiFetch('/api/generate-review', {
+        method: 'POST',
+        body: JSON.stringify({
+          businessId: profile.businessId,
+          visitorId,
+          businessName: profile.name,
+          ownerName: profile.ownerName,
+          category: profile.category,
+          address: profile.address,
+          locality: profile.locality,
+          city: profile.city,
+          servicesOffered: profile.servicesOffered,
+          productsOffered: profile.productsOffered,
+          businessHighlights: profile.businessHighlights,
+          packageTier,
+          mode: 'instant_batch',
+          refreshWithAi: true,
+          count: 6,
+          seoKeywords: (seoForLang || []).slice(0, 15),
+          referenceReviews: (profile.referenceReviews || []).slice(0, 25),
+          responses: [],
+          style: selectedStyle,
+          language: effectiveInstantLanguage,
+          variationSeed: nextSeed,
+          previousDrafts: instantDrafts.slice(0, 5),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { drafts?: unknown };
+      if (res.ok && Array.isArray(data.drafts) && data.drafts.length >= 5) {
+        const cleanBatch = data.drafts
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 10)
+          .map((item) => item.trim());
+        if (cleanBatch.length >= 5) {
+          setInstantDrafts(cleanBatch);
+        }
+      }
+    } catch {
+      // Bank rotation via instantSeed already provides 5+ instant contextual drafts cleanly
+    } finally {
+      setIsRefreshingInstantAi(false);
+    }
+  };
+
+  const handleCopyAndOpenInstantReview = async (idx: number, textToCopy: string) => {
+    const cleanText = textToCopy.trim();
+    if (!cleanText) return;
+    setEditingInstantIdx(null);
+    try {
+      await navigator.clipboard.writeText(cleanText);
+    } catch {
+      // Fallback textarea selection copy if clipboard API unavailable
+      const el = document.createElement('textarea');
+      el.value = cleanText;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand('copy');
+      } finally {
+        document.body.removeChild(el);
+      }
+    }
+    setCopiedInstantIdx(idx);
+
+    if (!isPreview) {
+      recordReviewEvent(profile, 'generate', {
+        reviewStyle: selectedStyle,
+        sentiment: 'positive',
+        language: effectiveInstantLanguage,
+        selectedHighlights: ['instant-ai-draft'],
+        standId: standContext.standId,
+        standCode: standContext.standCode,
+        standName: standContext.standName,
+        sessionId: standContext.sessionId,
+      });
+      recordReviewEvent(profile, 'copy_redirect', {
+        reviewStyle: selectedStyle,
+        sentiment: 'positive',
+        language: effectiveInstantLanguage,
+        selectedHighlights: ['instant-ai-draft'],
+        standId: standContext.standId,
+        standCode: standContext.standCode,
+        standName: standContext.standName,
+        sessionId: standContext.sessionId,
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      window.open(googleUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const renderInstantReadyReviewsView = () => (
+    <div className="space-y-5">
+      <div
+        className={`rounded-2xl p-5 sm:p-6 space-y-4 ${
+          isDarkTemplate
+            ? 'bg-[#131C31] border border-slate-800 text-white'
+            : 'bg-white border border-slate-200 shadow-xs text-slate-900'
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-xl sm:text-2xl font-bold">
+              Choose &amp; Post Your Review
+            </h1>
+            <p
+              className={`text-xs sm:text-sm mt-1 ${
+                isDarkTemplate ? 'text-slate-300' : 'text-slate-600'
+              }`}
+            >
+              Pick any ready draft that matches your visit (edit if you wish), tap Copy &amp; Post to Google, and submit directly on Google.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={isRefreshingInstantAi}
+            onClick={handleRefreshInstantAiDrafts}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60 ${
+              isDarkTemplate
+                ? 'border-slate-700 bg-[#0F172A] text-slate-200 hover:bg-slate-800'
+                : 'border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRefreshingInstantAi ? 'animate-spin' : ''}`}
+            />
+            <span>{isRefreshingInstantAi ? 'Refreshing AI...' : 'New Human AI Set'}</span>
+          </button>
+        </div>
+
+        {/* Plan-enforced Language Selector (Standard = English only; Standard Plus = All 4 languages) */}
+        <div className="space-y-1.5">
+          <span
+            className={`text-xs font-medium block ${
+              isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
+            }`}
+          >
+            {packageTier === 'standard'
+              ? 'Available Language (Standard Plan · English)'
+              : 'Select Review Language'}
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Select Instant Review Language"
+            className={`grid gap-2 ${
+              visibleLanguageOptions.length === 1
+                ? 'grid-cols-1 max-w-[200px]'
+                : 'grid-cols-2 sm:grid-cols-4'
+            }`}
+          >
+            {visibleLanguageOptions.map((lang) => {
+              const active = effectiveInstantLanguage === lang.id;
+              return (
+                <button
+                  key={lang.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setSelectedLanguage(lang.id)}
+                  style={
+                    active
+                      ? {
+                          borderColor: templateAccentColor,
+                          backgroundColor: isDarkTemplate
+                            ? `${templateAccentColor}26`
+                            : `${templateAccentColor}12`,
+                          color: isDarkTemplate ? '#FFFFFF' : secondaryColor,
+                        }
+                      : undefined
+                  }
+                  className={`min-h-[42px] px-3 py-2 rounded-xl border text-center text-sm transition-colors cursor-pointer ${
+                    active
+                      ? 'font-semibold'
+                      : isDarkTemplate
+                        ? 'bg-[#0F172A] border-slate-700 text-slate-300 hover:border-slate-500'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span lang={lang.id}>{lang.nativeLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Minimum 5+ Ready AI Draft Cards */}
+      <div className="space-y-3.5">
+        {instantDrafts.map((draft, idx) => {
+          const isEditingThis = editingInstantIdx === idx;
+          const isCopiedThis = copiedInstantIdx === idx;
+          return (
+            <div
+              key={`${effectiveInstantLanguage}-${instantSeed}-${idx}`}
+              className={`rounded-2xl p-4 sm:p-5 space-y-3 transition-all ${
+                isDarkTemplate
+                  ? 'bg-[#131C31] border border-slate-800 text-slate-100'
+                  : 'bg-white border border-slate-200 shadow-xs text-slate-900'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`text-[11px] font-semibold uppercase tracking-wider ${
+                    isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  Option {idx + 1} · {getLanguageDisplayName(effectiveInstantLanguage)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditingInstantIdx(isEditingThis ? null : idx)}
+                  className={`px-2.5 py-1 rounded-lg border text-xs font-medium inline-flex items-center gap-1 cursor-pointer ${
+                    isEditingThis
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : isDarkTemplate
+                        ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>{isEditingThis ? 'Done' : 'Edit'}</span>
+                </button>
+              </div>
+
+              {isEditingThis ? (
+                <textarea
+                  rows={4}
+                  lang={effectiveInstantLanguage}
+                  value={draft}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setInstantDrafts((prev) =>
+                      prev.map((item, itemIdx) => (itemIdx === idx ? nextVal : item)),
+                    );
+                    if (copiedInstantIdx === idx) setCopiedInstantIdx(null);
+                  }}
+                  className={`w-full rounded-xl p-3 text-sm sm:text-base review-text-multilingual resize-y ${
+                    isDarkTemplate
+                      ? 'bg-[#0F172A] text-white border border-blue-400'
+                      : 'bg-white text-slate-900 border-2 border-slate-900'
+                  }`}
+                />
+              ) : (
+                <p
+                  lang={effectiveInstantLanguage}
+                  className={`text-sm sm:text-[15px] leading-relaxed review-text-multilingual ${
+                    isDarkTemplate ? 'text-slate-100' : 'text-slate-800'
+                  }`}
+                >
+                  {draft}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={!draft.trim()}
+                  onClick={() => handleCopyAndOpenInstantReview(idx, draft)}
+                  style={{ backgroundColor: isCopiedThis ? '#0F766E' : templateAccentColor }}
+                  className="flex-1 min-w-[200px] min-h-[44px] px-4 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-95 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isCopiedThis ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Copied! Opening Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy &amp; Post on Google</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-90" />
+                    </>
+                  )}
+                </button>
+
+                {isCopiedThis && (
+                  <a
+                    href={googleUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`min-h-[44px] px-4 py-2.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 ${
+                      isDarkTemplate
+                        ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-300'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    }`}
+                  >
+                    <span>Open Google Review</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   const outerShellClass =
     activeTemplate === 'emoji_checklist_dark'
@@ -2841,7 +3232,11 @@ export function CustomerReviewFlow({
               </span>
             )}
             <span className="tabular-nums whitespace-nowrap font-medium">
-              {step === 'feedback' ? 'Step 1 of 2' : 'Step 2 of 2'}
+              {reviewFlowMode === 'ai_drafted_instant'
+                ? 'Quick Post'
+                : step === 'feedback'
+                  ? 'Step 1 of 2'
+                  : 'Step 2 of 2'}
             </span>
           </div>
         </div>
@@ -2854,9 +3249,13 @@ export function CustomerReviewFlow({
           </div>
         )}
 
-        {step === 'feedback' && renderFeedbackFormBody()}
+        {reviewFlowMode === 'ai_drafted_instant' ? (
+          renderInstantReadyReviewsView()
+        ) : (
+          <>
+            {step === 'feedback' && renderFeedbackFormBody()}
 
-        {step === 'draft' && (
+            {step === 'draft' && (
           <div className="space-y-5">
             <div className="px-1">
               <button
@@ -3347,6 +3746,8 @@ export function CustomerReviewFlow({
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </main>
 

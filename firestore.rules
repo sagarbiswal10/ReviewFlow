@@ -121,6 +121,7 @@ service cloud.firestore {
 
     function canClientEditFeatureFields(bizData, changedKeys) {
       return (!changedKeys.hasAny(['formTemplate']) || !('formTemplates' in bizData.enabledFeatures) || bizData.enabledFeatures.formTemplates == true) &&
+        (!changedKeys.hasAny(['reviewFlowMode']) || !('allowClientFlowModeSwitch' in bizData) || bizData.allowClientFlowModeSwitch == true) &&
         (!changedKeys.hasAny(['questions']) || bizData.enabledFeatures.customQuestions == true) &&
         (!changedKeys.hasAny(['qrConfig']) || !('qrStudio' in bizData.enabledFeatures) || bizData.enabledFeatures.qrStudio == true) &&
         (!changedKeys.hasAny([
@@ -233,7 +234,8 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'ownerId', 'ownerName', 'packageTier', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+          'ownerId', 'ownerName', 'packageTier', 'reviewFlowMode', 'allowClientFlowModeSwitch',
+          'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
           'slug', 'name', 'category', 'address', 'locality', 'city',
           'servicesOffered', 'productsOffered', 'businessHighlights',
           'phone', 'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
@@ -244,6 +246,8 @@ service cloud.firestore {
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 120)) &&
         (!('packageTier' in data) || data.packageTier == null || data.packageTier in ['standard', 'standard_plus']) &&
+        (!('reviewFlowMode' in data) || data.reviewFlowMode == null || data.reviewFlowMode in ['ai_drafted_instant', 'guided_questions']) &&
+        (!('allowClientFlowModeSwitch' in data) || data.allowClientFlowModeSwitch == null || data.allowClientFlowModeSwitch is bool) &&
         data.clientEmail is string && data.clientEmail.size() <= 120 &&
         (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         data.clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
@@ -285,7 +289,8 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'businessId', 'ownerId', 'ownerName', 'packageTier', 'clientUid', 'slug', 'name', 'category',
+          'businessId', 'ownerId', 'ownerName', 'packageTier', 'reviewFlowMode', 'allowClientFlowModeSwitch',
+          'clientUid', 'slug', 'name', 'category',
           'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
           'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
           'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
@@ -296,6 +301,8 @@ service cloud.firestore {
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 120)) &&
         (!('packageTier' in data) || data.packageTier == null || data.packageTier in ['standard', 'standard_plus']) &&
+        (!('reviewFlowMode' in data) || data.reviewFlowMode == null || data.reviewFlowMode in ['ai_drafted_instant', 'guided_questions']) &&
+        (!('allowClientFlowModeSwitch' in data) || data.allowClientFlowModeSwitch == null || data.allowClientFlowModeSwitch is bool) &&
         (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
@@ -782,7 +789,8 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'ownerName', 'packageTier', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+              'ownerName', 'packageTier', 'reviewFlowMode', 'allowClientFlowModeSwitch',
+              'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
               'name', 'category', 'address', 'locality', 'city',
               'servicesOffered', 'productsOffered', 'businessHighlights',
               'phone', 'contactEmail', 'website',
@@ -801,9 +809,10 @@ service cloud.firestore {
             incoming().enabledFeatures == existing().enabledFeatures &&
             (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
             (!('packageTier' in incoming()) || ('packageTier' in existing() && incoming().packageTier == existing().packageTier)) &&
+            (!('allowClientFlowModeSwitch' in incoming()) || ('allowClientFlowModeSwitch' in existing() && incoming().allowClientFlowModeSwitch == existing().allowClientFlowModeSwitch)) &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'ownerName', 'name', 'category', 'address', 'locality', 'city',
+              'ownerName', 'reviewFlowMode', 'name', 'category', 'address', 'locality', 'city',
               'servicesOffered', 'productsOffered', 'businessHighlights',
               'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
@@ -821,7 +830,7 @@ service cloud.firestore {
             incoming().enabledFeatures == existing().enabledFeatures &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'qrConfig', 'questions', 'formTemplate', 'updatedAt'
+              'qrConfig', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
             ])
           ) ||
           // Action 4: Assigned Client links verified clientUid for Portal event history
@@ -871,7 +880,8 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'clientUid', 'ownerName', 'packageTier', 'name', 'category',
+              'clientUid', 'ownerName', 'packageTier', 'reviewFlowMode', 'allowClientFlowModeSwitch',
+              'name', 'category',
               'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
               'googleReviewUrl', 'logoDataUrl',
               'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate',
@@ -891,7 +901,7 @@ service cloud.firestore {
                   incoming().diff(existing()).affectedKeys()
                 ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
-                  'ownerName', 'name', 'category',
+                  'ownerName', 'reviewFlowMode', 'name', 'category',
                   'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
                   'googleReviewUrl', 'logoDataUrl',
                   'branding', 'qrConfig', 'questions', 'formTemplate',
@@ -907,7 +917,7 @@ service cloud.firestore {
                   incoming().diff(existing()).affectedKeys()
                 ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
-                  'qrConfig', 'questions', 'formTemplate', 'updatedAt'
+                  'qrConfig', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
                 ])
               ) ||
               (
