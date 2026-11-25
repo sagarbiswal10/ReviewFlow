@@ -376,10 +376,15 @@ function sanitizeBusinessCategory(cat: unknown): BusinessCategory {
 function needsCoreBusinessStringsRepair(raw: Record<string, unknown>): boolean {
   return (
     typeof raw.address !== 'string' ||
+    raw.address.length > 240 ||
     typeof raw.phone !== 'string' ||
+    raw.phone.length > 40 ||
     typeof raw.contactEmail !== 'string' ||
+    raw.contactEmail.length > 120 ||
     typeof raw.googleReviewUrl !== 'string' ||
+    raw.googleReviewUrl.length > 500 ||
     typeof raw.logoDataUrl !== 'string' ||
+    raw.logoDataUrl.length > 350000 ||
     !Array.isArray(raw.questions) ||
     !VALID_BUSINESS_CATEGORIES.has(raw.category as BusinessCategory)
   );
@@ -405,6 +410,7 @@ function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
       (gbp.midStarMode === 'auto_publish' || gbp.midStarMode === 'approval_required') &&
       gbp.lowStarMode === 'manual_approval_only' &&
       typeof gbp.brandVoice === 'string' &&
+      gbp.brandVoice.length <= 400 &&
       typeof gbp.autoSyncEnabled === 'boolean' &&
       Object.keys(gbp).every((k) =>
         ['fiveStarMode', 'midStarMode', 'lowStarMode', 'brandVoice', 'autoSyncEnabled'].includes(k),
@@ -423,14 +429,14 @@ function needsOptionalBusinessFieldRepair(raw: Record<string, unknown>): {
       ));
 
   return {
-    ownerName: 'ownerName' in raw && typeof raw.ownerName !== 'string',
-    clientUid: 'clientUid' in raw && typeof raw.clientUid !== 'string',
-    website: 'website' in raw && typeof raw.website !== 'string',
+    ownerName: 'ownerName' in raw && (typeof raw.ownerName !== 'string' || raw.ownerName.length > 120),
+    clientUid: 'clientUid' in raw && (typeof raw.clientUid !== 'string' || raw.clientUid.length > 128),
+    website: 'website' in raw && (typeof raw.website !== 'string' || raw.website.length > 300),
     seoKeywords:
       'seoKeywords' in raw &&
       (!Array.isArray(raw.seoKeywords) ||
         raw.seoKeywords.length > 15 ||
-        raw.seoKeywords.some((k) => typeof k !== 'string')),
+        raw.seoKeywords.some((k) => typeof k !== 'string' || k.length > 60)),
     qrStandLimit:
       'qrStandLimit' in raw &&
       (typeof raw.qrStandLimit !== 'number' ||

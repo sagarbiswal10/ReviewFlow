@@ -38,6 +38,7 @@ import { BusinessLogo } from './BusinessLogo';
 interface BrandingTabProps {
   business: Business;
   isAdmin?: boolean;
+  sectionMode?: 'all' | 'seo_library';
   onDeleted: () => void;
 }
 
@@ -48,7 +49,12 @@ const LANGUAGE_TABS: { id: ReviewLanguage; label: string }[] = [
   { id: 'hinglish', label: 'Hinglish' },
 ];
 
-export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTabProps) {
+export function BrandingTab({
+  business,
+  isAdmin = false,
+  sectionMode = 'all',
+  onDeleted,
+}: BrandingTabProps) {
   const packageTier = sanitizePackageTier(business.packageTier);
   const canSwitchFlowMode = isAdmin || business.allowClientFlowModeSwitch !== false;
   const allowedLanguages = useMemo(
@@ -421,10 +427,14 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">
-              Business Profile &amp; Google Review Link
+              {sectionMode === 'seo_library'
+                ? 'Business Identity, SEO & Real Review Library'
+                : 'Business Profile & Google Review Link'}
             </h2>
             <p className="text-sm text-slate-600 mt-0.5">
-              Update your public URL slug, contact details, and Google Business Profile link.
+              {sectionMode === 'seo_library'
+                ? `Configure owner details, locality, services, contextual SEO keywords, and isolated real customer review samples for ${business.name}.`
+                : 'Update your public URL slug, contact details, and Google Business Profile link.'}
             </p>
           </div>
           <button
@@ -433,7 +443,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
             className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer whitespace-nowrap disabled:opacity-60"
           >
             {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <span>Save Changes</span>
+            <span>{sectionMode === 'seo_library' ? 'Save SEO & Library' : 'Save Changes'}</span>
           </button>
         </div>
 
@@ -448,7 +458,9 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
           </div>
         )}
 
-        {/* Logo Section */}
+        {sectionMode === 'all' && (
+          <>
+            {/* Logo Section */}
         <div className="flex flex-wrap items-center gap-5">
           <BusinessLogo
             src={logoDataUrl}
@@ -612,10 +624,12 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
                 isDirtyRef.current = true;
                 setContactEmail(e.target.value);
               }}
-              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
+            className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
             />
           </div>
         </div>
+          </>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -803,6 +817,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
       </div>
 
       {/* Customer QR Experience Mode Switcher */}
+      {sectionMode === 'all' && (
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -878,6 +893,7 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
           </p>
         )}
       </div>
+      )}
 
       {/* Contextual SEO Keyword Engine */}
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
@@ -1139,6 +1155,8 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
       </div>
 
       {/* Customer Experience Branding */}
+      {sectionMode === 'all' && (
+        <>
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
         <div>
           <h2 className="font-display text-lg font-bold text-slate-900">
@@ -1295,6 +1313,8 @@ export function BrandingTab({ business, isAdmin = false, onDeleted }: BrandingTa
           </div>
         )}
       </div>
+        </>
+      )}
     </form>
   );
 }

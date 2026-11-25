@@ -106,6 +106,7 @@ type AdminSection =
   | 'team';
 type BusinessDetailTab =
   | 'access'
+  | 'seo_ai'
   | 'overview'
   | 'stands'
   | 'gbp_reply'
@@ -1331,6 +1332,7 @@ export function ManagementConsoleView({
                     {(
                       [
                         { id: 'access', label: 'Client Access & Features', icon: UserCheck },
+                        { id: 'seo_ai', label: 'SEO & Writing Library', icon: Sparkles },
                         { id: 'overview', label: 'Analytics', icon: Activity },
                         { id: 'stands', label: 'QR Stands', icon: Layers },
                         { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
@@ -1655,28 +1657,6 @@ export function ManagementConsoleView({
                       ))}
                     </div>
                   </div>
-
-                  {governanceError && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {governanceError}
-                    </div>
-                  )}
-                  {governanceNotice && (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                      {governanceNotice}
-                    </div>
-                  )}
-
-                  <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
-                    <button
-                      type="submit"
-                      disabled={isSavingGovernance}
-                      className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer whitespace-nowrap disabled:opacity-60"
-                    >
-                      {isSavingGovernance && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <span>Save Permissions</span>
-                    </button>
-                  </div>
                 </form>
               )}
 
@@ -1736,6 +1716,14 @@ export function ManagementConsoleView({
                   business={selectedBiz}
                   isAdmin
                   onOpenPreview={() => setDetailTab('preview')}
+                />
+              )}
+              {detailTab === 'seo_ai' && (
+                <BrandingTab
+                  business={selectedBiz}
+                  isAdmin
+                  sectionMode="seo_library"
+                  onDeleted={() => setSelectedBizId(null)}
                 />
               )}
               {detailTab === 'branding' && (
