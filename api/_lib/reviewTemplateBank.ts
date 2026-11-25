@@ -42,22 +42,60 @@ function sanitizePhraseNoSuperlatives(raw?: string): string {
     .trim();
 }
 
+export function extractLocationCandidates(
+  locality?: string,
+  city?: string,
+  address?: string,
+): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const push = (val: string) => {
+    const clean = val.replace(/\s+/g, ' ').trim();
+    if (clean.length < 3 || clean.length > 44) return;
+    if (/^\d+$/.test(clean)) return;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push(clean);
+    }
+  };
+
+  const cleanLocality = (locality || '').trim();
+  if (cleanLocality && cleanLocality.length <= 40) push(cleanLocality);
+
+  if (address) {
+    const rawParts = address
+      .split(',')
+      .map((p) => p.replace(/\b\d{5,6}\b/g, '').trim())
+      .filter((p) => p.length >= 3 && p.length <= 44 && !/^\d+$/.test(p));
+
+    // Prioritize natural landmarks: Sector / Phase / Building / Plaza / Complex / Mall / Tower / Road
+    const prioritized = rawParts.filter((p) =>
+      /\b(sector|sec|phase|plaza|arcade|complex|mall|tower|residency|heights|building|chawl|road|marg|colony|nagar|vihar|enclave|chowk|square|corner|landmark|centre|center|point)\b/i.test(
+        p,
+      ),
+    );
+    for (const item of prioritized) push(item);
+    for (const item of rawParts) {
+      if (!/^(shop|plot|flat|unit|office|room|gala|sr\.?\s*no|no\.?)\s*[\dA-Za-z/-]+$/i.test(item)) {
+        push(item);
+      }
+    }
+  }
+
+  const cleanCity = (city || '').trim();
+  if (cleanCity && cleanCity.length <= 35) push(cleanCity);
+
+  return candidates.slice(0, 6);
+}
+
 export function extractShortArea(
   locality?: string,
   city?: string,
   address?: string,
 ): string {
-  const cleanLocality = (locality || '').trim();
-  if (cleanLocality && cleanLocality.length <= 40) return cleanLocality;
-  const cleanCity = (city || '').trim();
-  if (cleanCity && cleanCity.length <= 35) return cleanCity;
-  if (!address) return '';
-  const parts = address
-    .split(',')
-    .map((p) => p.replace(/\b\d{5,6}\b/g, '').trim())
-    .filter((p) => p.length >= 3 && p.length <= 32 && !/^\d+$/.test(p));
-  if (parts.length === 0) return '';
-  return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+  const candidates = extractLocationCandidates(locality, city, address);
+  return candidates[0] || '';
 }
 
 function defaultServiceNoun(category: string | undefined, language: QualityReviewLanguage): string {
@@ -598,7 +636,7 @@ export function selectContextualReadyDrafts(
 
   const cleanBiz = (input.businessName || '').trim() || 'this business';
   const cleanOwner = (input.ownerName || '').trim();
-  const cleanArea = extractShortArea(input.locality, input.city, input.address);
+  const areaPool = extractLocationCandidates(input.locality, input.city, input.address);
 
   const servicePool = [
     ...(Array.isArray(input.servicesOffered) ? input.servicesOffered : []),
@@ -633,15 +671,16 @@ export function selectContextualReadyDrafts(
         ? servicePool[(seed + i) % servicePool.length]
         : defaultServiceNoun(input.category, input.language);
     const seo = seoPool.length > 0 ? seoPool[(seed + i * 2) % seoPool.length] : '';
+    const areaChoice = areaPool.length > 0 ? areaPool[(seed + i) % areaPool.length] : '';
 
     // Never force owner name into every review (max 1-2 out of 5-6)
     const allowOwnerThisCard =
       Boolean(cleanOwner) && ownerMentionsUsed < 2 && (idx + seed + i) % 4 === 0;
     if (allowOwnerThisCard) ownerMentionsUsed += 1;
 
-    // Never force area/address into every review (max 2-3 out of 5-6)
+    // Never force area/address into every review (max 2-3 out of 5-6, varying sector/building/locality)
     const allowAreaThisCard =
-      Boolean(cleanArea) && areaMentionsUsed < 3 && (idx + i) % 2 === 0;
+      Boolean(areaChoice) && areaMentionsUsed < 3 && (idx + i) % 2 === 0;
     if (allowAreaThisCard) areaMentionsUsed += 1;
 
     // Include business name in ~70% of drafts for natural variety
@@ -654,7 +693,7 @@ export function selectContextualReadyDrafts(
       {
         biz: cleanBiz,
         service: svc,
-        area: cleanArea,
+        area: areaChoice,
         owner: cleanOwner,
         seo,
       },

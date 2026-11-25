@@ -229,8 +229,20 @@ export function CustomerReviewFlow({
     profile.branding?.defaultReviewStyle || 'short',
   );
 
-  // Instant Ready AI Drafts Mode state (minimum 5+ tailored drafts per permitted language)
-  const [instantSeed, setInstantSeed] = useState<number>(1);
+  // Instant Ready AI Drafts Mode state (rotates across the 55+ review bank on every QR scan)
+  const [instantSeed, setInstantSeed] = useState<number>(() => {
+    const freshSeed = ((Math.floor(Math.random() * 55) + Date.now()) % 55) + 1;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return freshSeed;
+      const key = `reviewflow_instant_seed_${profile.slug || 'default'}`;
+      const prev = Number.parseInt(window.localStorage.getItem(key) || '', 10);
+      const next = Number.isFinite(prev) && prev >= 1 ? (prev % 55) + 1 : freshSeed;
+      window.localStorage.setItem(key, String(next));
+      return next;
+    } catch {
+      return freshSeed;
+    }
+  });
   const [instantDrafts, setInstantDrafts] = useState<string[]>(() =>
     selectContextualReadyDrafts({
       businessName: profile.name,
@@ -248,7 +260,7 @@ export function CustomerReviewFlow({
       referenceReviews: profile.referenceReviews,
       language: initialLang,
       count: 6,
-      seed: 1,
+      seed: instantSeed,
     }),
   );
   const [editingInstantIdx, setEditingInstantIdx] = useState<number | null>(null);
