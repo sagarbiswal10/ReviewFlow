@@ -103,6 +103,7 @@ export function classifyAuthError(
     mode?: 'signin' | 'signup' | 'reset' | 'link';
     email?: string;
     methods?: string[];
+    projectId?: string;
   } = {},
 ): AuthActionableError {
   const raw = err instanceof Error ? err.message : String(err);
@@ -122,10 +123,13 @@ export function classifyAuthError(
 
   if (raw.includes('auth/unauthorized-domain')) {
     const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    const projectNote = context.projectId
+      ? ` (Active Firebase project: "${context.projectId}" — if this is wrong on dev/preview, enable Preview environment variables in Vercel and redeploy)`
+      : '';
     return {
       kind: 'unauthorized_domain',
       email: cleanEmail || undefined,
-      message: `This domain (${host}) is not listed in Firebase Authentication -> Settings -> Authorized domains. Add it in Firebase Console or sign in from an authorized domain.`,
+      message: `This domain (${host}) is not listed in Firebase Authentication -> Settings -> Authorized domains${projectNote}. Add it in Firebase Console or sign in from an authorized domain.`,
     };
   }
 
