@@ -49,6 +49,7 @@ import type {
   ClientAccessLevel,
   ConsentedExample,
   EnabledFeatures,
+  PackageTier,
   PublicProfile,
   QrStandRequest,
   ReviewEvaluation,
@@ -221,6 +222,7 @@ export function ManagementConsoleView({
   );
   const [clientEmailInput, setClientEmailInput] = useState('');
   const [accessLevelInput, setAccessLevelInput] = useState<ClientAccessLevel>('full');
+  const [packageTierInput, setPackageTierInput] = useState<PackageTier>('standard_plus');
   const [qrStandLimitInput, setQrStandLimitInput] = useState<number>(4);
   const [featuresInput, setFeaturesInput] = useState<EnabledFeatures>({
     aiReviewDrafts: true,
@@ -326,6 +328,7 @@ export function ManagementConsoleView({
     if (!selectedBiz) return;
     setClientEmailInput(selectedBiz.clientEmail || '');
     setAccessLevelInput(selectedBiz.clientAccessLevel || 'full');
+    setPackageTierInput(selectedBiz.packageTier === 'standard' ? 'standard' : 'standard_plus');
     setQrStandLimitInput(selectedBiz.qrStandLimit ?? 4);
     setFeaturesInput({
       aiReviewDrafts: selectedBiz.enabledFeatures.aiReviewDrafts,
@@ -345,6 +348,7 @@ export function ManagementConsoleView({
     selectedBiz?.id,
     selectedBiz?.clientEmail,
     selectedBiz?.clientAccessLevel,
+    selectedBiz?.packageTier,
     selectedBiz?.qrStandLimit,
     selectedBizFeaturesSig,
   ]);
@@ -678,6 +682,7 @@ export function ManagementConsoleView({
         {
           clientEmail: normalizeEmail(clientEmailInput),
           clientAccessLevel: accessLevelInput,
+          packageTier: packageTierInput,
           qrStandLimit: Math.min(100, Math.max(1, Math.round(qrStandLimitInput) || 4)),
           enabledFeatures: featuresInput,
         },
@@ -794,9 +799,17 @@ export function ManagementConsoleView({
     ? {
         businessId: selectedBiz.id,
         ownerId: selectedBiz.ownerId,
+        ownerName: selectedBiz.ownerName,
+        packageTier: selectedBiz.packageTier,
         slug: selectedBiz.slug,
         name: selectedBiz.name,
         category: selectedBiz.category,
+        address: selectedBiz.address,
+        locality: selectedBiz.locality,
+        city: selectedBiz.city,
+        servicesOffered: selectedBiz.servicesOffered,
+        productsOffered: selectedBiz.productsOffered,
+        businessHighlights: selectedBiz.businessHighlights,
         googleReviewUrl: selectedBiz.googleReviewUrl,
         logoDataUrl: selectedBiz.logoDataUrl,
         enabledFeatures: selectedBiz.enabledFeatures,
@@ -805,6 +818,8 @@ export function ManagementConsoleView({
         questions: selectedBiz.questions,
         formTemplate: selectedBiz.formTemplate,
         seoKeywords: selectedBiz.seoKeywords,
+        seoKeywordsByLanguage: selectedBiz.seoKeywordsByLanguage,
+        referenceReviews: selectedBiz.referenceReviews,
       }
     : null;
 
@@ -1404,6 +1419,52 @@ export function ManagementConsoleView({
                       <p className="mt-1.5 text-xs text-slate-500">
                         Strictly enforced by backend API &amp; Firestore Security Rules.
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200">
+                    <label className="block text-xs font-medium text-slate-700 mb-2">
+                      Growth Plan Package Tier (Enforced on AI Reviews &amp; SEO Suggestions)
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPackageTierInput('standard')}
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          packageTierInput === 'standard'
+                            ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-slate-900">Standard</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            ₹2,999 / Yr
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          English AI review drafting &amp; contextual English SEO keyword suggestions only.
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPackageTierInput('standard_plus')}
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          packageTierInput === 'standard_plus'
+                            ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-slate-900">Standard Plus</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                            ₹3,999 / Yr
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          English, Hindi, Marathi &amp; Hinglish AI drafting + language-specific SEO suggestions.
+                        </p>
+                      </button>
                     </div>
                   </div>
 

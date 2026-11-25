@@ -4,7 +4,9 @@ import {
   type EnabledFeatures,
   type FormTemplateId,
   type GbpReplySettings,
+  type PackageTier,
   type ReviewEventType,
+  type ReviewLanguage,
   type WeeklyReportConfig,
 } from '../types';
 
@@ -263,4 +265,35 @@ export function getPortalTimeGreeting(date: Date = new Date()): string {
   if (hour >= 12 && hour < 17) return 'Good afternoon';
   if (hour >= 17 && hour < 21) return 'Good evening';
   return 'Hello';
+}
+
+export function sanitizePackageTier(tier?: unknown): PackageTier {
+  if (tier === 'standard') return 'standard';
+  return 'standard_plus';
+}
+
+export function getAllowedLanguagesForTier(tier?: unknown): ReviewLanguage[] {
+  return sanitizePackageTier(tier) === 'standard' ? ['en'] : ['en', 'hi', 'mr', 'hinglish'];
+}
+
+export function isLanguageAllowedForTier(language: unknown, tier?: unknown): boolean {
+  const lang = typeof language === 'string' ? (language as ReviewLanguage) : 'en';
+  return getAllowedLanguagesForTier(tier).includes(lang);
+}
+
+export function sanitizeShortTagList(val: unknown, maxItems = 15, maxLen = 60): string[] {
+  if (!Array.isArray(val)) return [];
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const item of val) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim().slice(0, maxLen);
+    const key = trimmed.toLowerCase();
+    if (trimmed && !seen.has(key)) {
+      seen.add(key);
+      clean.push(trimmed);
+      if (clean.length >= maxItems) break;
+    }
+  }
+  return clean;
 }

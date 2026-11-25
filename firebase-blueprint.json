@@ -113,9 +113,42 @@
             "clay_soft_3d"
           ]
         },
+        "packageTier": {
+          "type": "string",
+          "description": "Growth plan package tier controlling language & SEO features.",
+          "enum": ["standard", "standard_plus"]
+        },
+        "locality": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "servicesOffered": {
+          "type": "array",
+          "description": "Services offered by this business for contextual SEO."
+        },
+        "productsOffered": {
+          "type": "array",
+          "description": "Products offered by this business for contextual SEO."
+        },
+        "businessHighlights": {
+          "type": "string",
+          "maxLength": 500
+        },
         "seoKeywords": {
           "type": "array",
           "description": "Auto-generated Google Maps & Search SEO keywords tailored to business name and category."
+        },
+        "seoKeywordsByLanguage": {
+          "type": "object",
+          "description": "Language-specific contextual SEO keyword lists keyed by en/hi/mr/hinglish."
+        },
+        "referenceReviews": {
+          "type": "array",
+          "description": "Isolated genuine customer reviews used as writing style reference per business."
         },
         "qrStandLimit": {
           "type": "integer",
@@ -238,7 +271,43 @@
             "clay_soft_3d"
           ]
         },
+        "packageTier": {
+          "type": "string",
+          "enum": ["standard", "standard_plus"]
+        },
+        "ownerName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "locality": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "servicesOffered": {
+          "type": "array"
+        },
+        "productsOffered": {
+          "type": "array"
+        },
+        "businessHighlights": {
+          "type": "string",
+          "maxLength": 500
+        },
         "seoKeywords": {
+          "type": "array"
+        },
+        "seoKeywordsByLanguage": {
+          "type": "object"
+        },
+        "referenceReviews": {
           "type": "array"
         },
         "lifecycleStatus": {

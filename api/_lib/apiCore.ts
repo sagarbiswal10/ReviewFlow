@@ -19,12 +19,26 @@ export interface FewShotExampleInput {
   finalReview: string;
 }
 
+export interface ReferenceReviewPatternInput {
+  language?: ReviewLanguage;
+  sentiment?: string;
+  text: string;
+}
+
 export interface GenerateReviewBody {
   businessId?: string;
   visitorId?: string;
+  packageTier?: 'standard' | 'standard_plus';
   businessName: string;
+  ownerName?: string;
   category: string;
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
   seoKeywords?: string[];
+  referenceReviews?: ReferenceReviewPatternInput[];
   responses: QuestionResponseInput[];
   additionalComments?: string;
   style: ReviewStyle;
@@ -38,6 +52,13 @@ export interface GenerateSeoKeywordsBody {
   businessName: string;
   category: string;
   address?: string;
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
+  packageTier?: 'standard' | 'standard_plus';
+  language?: ReviewLanguage;
 }
 
 export interface GenerateReplyBody {
@@ -812,6 +833,37 @@ export function getHealthPayload() {
   };
 }
 
+const SEO_HYPE_STRIP_REGEX =
+  /\b(best|top-rated|top rated|number one|#1|no\.?\s*1|most popular|world class|finest|unmatched)\b/gi;
+
+function cleanSeoPhrase(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const cleaned = raw
+    .replace(SEO_HYPE_STRIP_REGEX, '')
+    .replace(/[#*@]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,.\-–—\s]+|[,.\-–—\s]+$/g, '')
+    .trim()
+    .slice(0, 55);
+  return cleaned.length >= 3 ? cleaned : '';
+}
+
+function sanitizeSeoPhraseArray(items: unknown, max = 10): string[] {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const clean = cleanSeoPhrase(item);
+    const key = clean.toLowerCase();
+    if (clean && !seen.has(key)) {
+      seen.add(key);
+      out.push(clean);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
+}
+
 export async function processGenerateSeoKeywords(
   body: Partial<GenerateSeoKeywordsBody>,
 ): Promise<{ status: number; data: Record<string, unknown> }> {
@@ -819,6 +871,17 @@ export async function processGenerateSeoKeywords(
     const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : '';
     const category = typeof body.category === 'string' ? body.category.trim() : '';
     const address = typeof body.address === 'string' ? body.address.trim() : '';
+    const locality = typeof body.locality === 'string' ? body.locality.trim() : '';
+    const city = typeof body.city === 'string' ? body.city.trim() : '';
+    const servicesOffered = Array.isArray(body.servicesOffered)
+      ? body.servicesOffered.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, 10)
+      : [];
+    const productsOffered = Array.isArray(body.productsOffered)
+      ? body.productsOffered.filter((p): p is string => typeof p === 'string' && p.trim().length > 0).slice(0, 10)
+      : [];
+    const businessHighlights =
+      typeof body.businessHighlights === 'string' ? body.businessHighlights.trim().slice(0, 300) : '';
+    const packageTier = body.packageTier === 'standard' ? 'standard' : 'standard_plus';
 
     if (!businessName) {
       return {
@@ -828,24 +891,34 @@ export async function processGenerateSeoKeywords(
     }
 
     const baseTerms = getCategoryKeywords(category);
+    const locLine = [locality, city, address].filter(Boolean).join(', ');
+    const isStandardPlus = packageTier === 'standard_plus';
     const prompt = [
       `Business Name: ${businessName}`,
       category ? `Category: ${category}` : '',
-      address ? `Location / Address: ${address}` : '',
+      locLine ? `Location / Locality: ${locLine}` : '',
+      servicesOffered.length > 0 ? `Services: ${servicesOffered.join(', ')}` : '',
+      productsOffered.length > 0 ? `Products: ${productsOffered.join(', ')}` : '',
+      businessHighlights ? `Business Details: ${businessHighlights}` : '',
       `Baseline Category Terms: ${baseTerms.join(', ')}`,
+      isStandardPlus
+        ? 'Plan Tier: STANDARD PLUS — generate natural local search keywords in English (en), Hindi Devanagari (hi), Marathi Devanagari (mr), and Roman-script Hinglish (hinglish).'
+        : 'Plan Tier: STANDARD — generate natural local search keywords in English (en) ONLY.',
     ]
       .filter(Boolean)
       .join('\n');
 
     const systemInstruction = [
       'You are a Google Business Profile & Local Search SEO strategist.',
-      'Generate 8 to 10 high-intent Google Maps search keywords tailored to this specific business name, category, and optional location.',
-      'Return valid JSON matching {"keywords": ["..."]}.',
-      'Rules:',
-      '1. Infer specialties directly from the business name + category.',
-      '2. Include the primary category search term and top natural service phrases customers search on Google Maps.',
-      '3. If a city or neighborhood appears in the address, include 1-2 natural local search phrases combining the category + area.',
-      '4. Keep each keyword concise (1 to 4 words, max 45 characters), lowercase or clean natural phrase, no hashtags, no spammy stuffing.',
+      isStandardPlus
+        ? 'Return valid JSON matching {"en": string[], "hi": string[], "mr": string[], "hinglish": string[]} with 6-8 clean local search phrases per language.'
+        : 'Return valid JSON matching {"en": string[]} with 8-10 clean English local search phrases.',
+      'Strict SEO Rules:',
+      '1. Derive terms ONLY from business name, category, actual locality/city, and real services or products.',
+      '2. NEVER include unrelated categories or unsupported superlative claims ("best", "top-rated", "number one", "#1", "most popular").',
+      '3. Combine service + locality/city accurately where location info is provided.',
+      '4. Keep each keyword concise (1 to 4 words, max 50 chars), natural search style, zero hashtags.',
+      '5. In hi/mr use natural Devanagari search terms; in hinglish use natural Roman Hindi terms.',
     ].join('\n');
 
     let genResult: GeminiGenerationResult;
@@ -865,18 +938,26 @@ export async function processGenerateSeoKeywords(
         {
           systemInstruction,
           responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              keywords: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description:
-                  '8 to 10 Google Maps local search keywords tailored to this business.',
+          responseSchema: isStandardPlus
+            ? {
+                type: Type.OBJECT,
+                properties: {
+                  en: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  hi: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  mr: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  hinglish: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ['en', 'hi', 'mr', 'hinglish'],
+              }
+            : {
+                type: Type.OBJECT,
+                properties: {
+                  en: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ['en'],
               },
-            },
-            required: ['keywords'],
-          },
+          temperature: 0.5,
+          maxOutputTokens: 450,
         },
         1,
       );
@@ -889,29 +970,33 @@ export async function processGenerateSeoKeywords(
       };
     }
 
-    let keywords: string[] = [];
+    const keywordsByLanguage: Partial<Record<ReviewLanguage, string[]>> = {};
     try {
-      const parsed = JSON.parse(genResult.text) as { keywords?: unknown };
-      if (Array.isArray(parsed.keywords)) {
-        const seen = new Set<string>();
-        for (const item of parsed.keywords) {
-          if (typeof item !== 'string') continue;
-          const clean = item.trim().slice(0, 60);
-          const key = clean.toLowerCase();
-          if (clean && !seen.has(key)) {
-            seen.add(key);
-            keywords.push(clean);
-          }
-        }
+      const parsed = JSON.parse(genResult.text) as {
+        keywords?: unknown;
+        en?: unknown;
+        hi?: unknown;
+        mr?: unknown;
+        hinglish?: unknown;
+      };
+      const enList = sanitizeSeoPhraseArray(parsed.en ?? parsed.keywords, 12);
+      keywordsByLanguage.en = enList.length > 0 ? enList : sanitizeSeoPhraseArray(baseTerms, 10);
+      if (isStandardPlus) {
+        keywordsByLanguage.hi = sanitizeSeoPhraseArray(parsed.hi, 10);
+        keywordsByLanguage.mr = sanitizeSeoPhraseArray(parsed.mr, 10);
+        keywordsByLanguage.hinglish = sanitizeSeoPhraseArray(parsed.hinglish, 10);
       }
     } catch {
-      keywords = baseTerms;
+      keywordsByLanguage.en = sanitizeSeoPhraseArray(baseTerms, 10);
     }
+
+    const primaryKeywords = keywordsByLanguage.en || sanitizeSeoPhraseArray(baseTerms, 10);
 
     return {
       status: 200,
       data: {
-        keywords: keywords.slice(0, 12),
+        keywords: primaryKeywords.slice(0, 12),
+        keywordsByLanguage,
         aiTelemetry: {
           provider: AI_PROVIDER,
           modelId: genResult.modelId,
@@ -944,17 +1029,37 @@ export async function processGenerateReview(
 ): Promise<{ status: number; data: Record<string, unknown> }> {
   try {
     const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : '';
+    const ownerName = typeof body.ownerName === 'string' ? body.ownerName.trim().slice(0, 120) : '';
     const category = typeof body.category === 'string' ? body.category.trim() : '';
+    const locality = typeof body.locality === 'string' ? body.locality.trim().slice(0, 120) : '';
+    const city = typeof body.city === 'string' ? body.city.trim().slice(0, 120) : '';
+    const locationSummary = [locality, city].filter(Boolean).join(', ');
+    const servicesOffered = Array.isArray(body.servicesOffered)
+      ? body.servicesOffered
+          .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+          .map((s) => s.trim().slice(0, 60))
+          .slice(0, 12)
+      : [];
+    const productsOffered = Array.isArray(body.productsOffered)
+      ? body.productsOffered
+          .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+          .map((p) => p.trim().slice(0, 60))
+          .slice(0, 12)
+      : [];
+    const businessHighlights =
+      typeof body.businessHighlights === 'string' ? body.businessHighlights.trim().slice(0, 400) : '';
+    const packageTier = body.packageTier === 'standard' ? 'standard' : 'standard_plus';
     const additionalComments =
       typeof body.additionalComments === 'string' ? body.additionalComments.trim() : '';
     const style: ReviewStyle =
       body.style === 'short' || body.style === 'detailed' || body.style === 'professional'
         ? body.style
         : 'short';
-    const language: ReviewLanguage =
+    const requestedLanguage: ReviewLanguage =
       body.language === 'hi' || body.language === 'mr' || body.language === 'hinglish'
         ? body.language
         : 'en';
+    const language: ReviewLanguage = packageTier === 'standard' ? 'en' : requestedLanguage;
     const responses = Array.isArray(body.responses) ? body.responses : [];
     const variationSeed =
       typeof body.variationSeed === 'number' && Number.isFinite(body.variationSeed)
@@ -984,6 +1089,16 @@ export async function processGenerateReview(
           .map((kw) => kw.trim().slice(0, 60))
           .slice(0, 15)
       : [];
+    const rawReferenceReviews = Array.isArray(body.referenceReviews)
+      ? body.referenceReviews
+          .filter((r): r is ReferenceReviewPatternInput => Boolean(r) && typeof r.text === 'string' && r.text.trim().length > 0)
+          .slice(0, 40)
+      : [];
+    const referenceTexts = rawReferenceReviews.map((r) => r.text.trim().slice(0, 500));
+    const langMatchedRefs = rawReferenceReviews.filter((r) => !r.language || r.language === language);
+    const referenceStylePatterns = (langMatchedRefs.length > 0 ? langMatchedRefs : rawReferenceReviews)
+      .slice(0, 4)
+      .map((r) => r.text.trim().slice(0, 240));
 
     if (!businessName) {
       return { status: 400, data: { error: 'Business name is required.' } };
@@ -1130,11 +1245,19 @@ export async function processGenerateReview(
     const calibrationBlock =
       fewShotExamples.length > 0
         ? [
-            'Curated Style Exemplars (learn natural tone & brevity ONLY; NEVER copy facts from them):',
+            'Curated Style Exemplars (learn natural tone & brevity ONLY; NEVER copy facts or complete sentences):',
             ...fewShotExamples.map(
               (ex, idx) =>
                 `Example ${idx + 1} Feedback: ${ex.responsesSummary}\nExample ${idx + 1} Natural Review: "${ex.finalReview}"`,
             ),
+          ].join('\n')
+        : '';
+
+    const referenceStyleBlock =
+      referenceStylePatterns.length > 0
+        ? [
+            `Isolated Writing Library for ${businessName} (study sentence rhythm, everyday vocabulary, and conversational expressions in ${languageLabel} ONLY — NEVER copy complete sentences or phrases):`,
+            ...referenceStylePatterns.map((txt, idx) => `- Style Ref ${idx + 1}: "${txt}"`),
           ].join('\n')
         : '';
 
@@ -1149,12 +1272,23 @@ export async function processGenerateReview(
     const seoKeywordsBlock =
       seoKeywords.length > 0
         ? language === 'hinglish'
-          ? `Business Local SEO Context (express naturally in Roman Hindi meaning ONLY if directly relevant to what the customer experienced — do NOT insert raw English buzzwords): ${seoKeywords.join(', ')}`
-          : `Target Local SEO Keywords for ${businessName}: ${seoKeywords.join(', ')} (naturally weave 1-2 relevant keywords that genuinely fit what the customer experienced without stuffing or inventing unmentioned services).`
+          ? `Business Local SEO Context (express naturally in Roman Hindi meaning ONLY if directly relevant to what the customer experienced — NEVER force English buzzwords or superlatives): ${seoKeywords.join(', ')}`
+          : `Target Local SEO Keywords for ${businessName}: ${seoKeywords.join(', ')} (naturally weave 1-2 relevant phrases ONLY when compatible with the customer's actual feedback — NEVER force keywords, NEVER repeat business name/keyword in every sentence, and NEVER add unsupported superlatives like "best", "top-rated", "number one", or "most popular").`
         : '';
 
+    const identityLines = [
+      `Business Name: ${businessName}${category ? ` (${category})` : ''}`,
+      locationSummary ? `Location / Locality: ${locationSummary}` : '',
+      ownerName
+        ? `Shop Owner Name (OPTIONAL context): ${ownerName} — ONLY mention ${ownerName} if the customer's answers or written note explicitly say ${ownerName} personally helped or assisted them. NEVER invent an owner interaction or mention ${ownerName} automatically.`
+        : '',
+      servicesOffered.length > 0 ? `Services Offered: ${servicesOffered.join(', ')}` : '',
+      productsOffered.length > 0 ? `Products Offered: ${productsOffered.join(', ')}` : '',
+      businessHighlights ? `Business Notes: ${businessHighlights}` : '',
+    ].filter(Boolean);
+
     const prompt = [
-      `Business Context: ${businessName}${category ? ` (${category})` : ''}`,
+      `Business Identity Context:\n${identityLines.join('\n')}`,
       seoKeywordsBlock,
       `Requested Language: ${languageLabel}`,
       `Length/Flow Preference: ${styleGuidance[style]}`,
@@ -1162,6 +1296,7 @@ export async function processGenerateReview(
       'Customer Feedback (use ONLY this information):',
       formattedResponses || '(No multiple-choice selections)',
       additionalComments ? `Customer Written Note: "${additionalComments}"` : '',
+      referenceStyleBlock,
       calibrationBlock,
       previousDraftsBlock,
     ]
@@ -1172,13 +1307,15 @@ export async function processGenerateReview(
       'You are ReviewFlow\'s authentic customer review-writing assistant.',
       'Return ONLY valid JSON: {"review": string, "alternates": [string, string], "sentiment": "very_positive" | "positive" | "neutral" | "mixed" | "negative" | "very_negative", "keywordsUsed": string[]}.',
       languageRules[language],
-      'Strict Authenticity & Grounding Rules:',
-      '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment (plus naturally phrasing 1-2 fitting business SEO keywords if compatible). NEVER invent specific services purchased, food items ordered, staff names, conversations, pricing/discounts, facilities, or unmentioned incidents.',
-      '2. Preserve exact customer meaning and sentiment accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
-      '3. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and readable; 2-4 natural sentences.',
-      '4. NEVER use generic AI clichés or promotional language ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever").',
-      '5. No quotation marks wrapping the review, no bullet points, no titles/headings, no hashtags, no emojis (unless supplied by customer).',
-      '6. In alternates, write 2 distinctly phrased variations using the EXACT same language, script, and grounded facts so switching drafts sounds fresh. In keywordsUsed, list 0-3 short natural keywords used cleanly.',
+      'Strict Authenticity, Originality & Grounding Rules:',
+      '1. Use ONLY information supplied in the customer\'s questionnaire answers, custom fields, and written comment (plus naturally phrasing 1-2 fitting business SEO keywords if compatible). NEVER invent specific services purchased, food items ordered, staff/owner interactions, conversations, pricing/discounts, facilities, or unmentioned incidents.',
+      '2. Owner Name Rule: NEVER assume the customer interacted with the shop owner unless the customer explicitly mentioned the owner in their answers or comment.',
+      '3. Zero-Copying Rule: Learn natural tone, rhythm, and everyday phrasing from the isolated writing library, NEVER copy complete sentences or phrases from reference reviews or previous drafts.',
+      '4. No SEO Hype / Superlatives: NEVER add unsupported claims such as "best", "top-rated", "number one", "#1", or "most popular" unless the customer themselves wrote it.',
+      '5. Preserve exact customer meaning and sentiment accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
+      '6. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and readable; 2-4 natural sentences.',
+      '7. NEVER use generic AI clichés ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever"). No quotes, no bullet points, no headings, no hashtags, no unrequested emojis.',
+      '8. In alternates, write 2 distinctly phrased original variations using the EXACT same language, script, and grounded facts. In keywordsUsed, list 0-3 short natural keywords used cleanly.',
     ].join('\n');
 
     const reviewResponseSchema = {
@@ -1517,9 +1654,11 @@ export async function processGenerateReview(
       language,
       businessName,
       category,
+      ownerName,
       responses,
       additionalComments,
       previousDrafts,
+      referenceReviews: referenceTexts,
       autoRepaired: false,
     });
 
@@ -1531,6 +1670,8 @@ export async function processGenerateReview(
       qualityReport.inventedClaimCount > 0 ||
       qualityReport.contradictionCount > 0 ||
       qualityReport.clicheCount > 0 ||
+      (qualityReport.copiedReferenceCount ?? 0) > 0 ||
+      (qualityReport.ownerHallucinationCount ?? 0) > 0 ||
       needsModelValidationRepair;
     if (hasCriticalQualityIssue) {
       const repairIssues = [
@@ -1558,7 +1699,7 @@ export async function processGenerateReview(
         `Detected Quality Issues:\n${repairIssues}`,
         `Customer Feedback (ONLY allowed facts):\n${formattedResponses || '(None)'}`,
         additionalComments ? `Customer Written Note: "${additionalComments}"` : '',
-        `Rewrite the review cleanly in ${languageLabel} fixing EVERY issue above while staying natural and strictly grounded.`,
+        `Rewrite the review cleanly in ${languageLabel} fixing EVERY issue above while staying natural, original (never copying reference wording), and strictly grounded.`,
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -1577,9 +1718,11 @@ export async function processGenerateReview(
             language,
             businessName,
             category,
+            ownerName,
             responses,
             additionalComments,
             previousDrafts,
+            referenceReviews: referenceTexts,
             autoRepaired: true,
           });
           if (
@@ -1616,12 +1759,20 @@ export async function processGenerateReview(
         language,
         businessName,
         category,
+        ownerName,
         responses,
         additionalComments,
         previousDrafts: [...previousDrafts, reviewText, ...verifiedAlternates],
+        referenceReviews: referenceTexts,
         autoRepaired: false,
       });
-      if (altQuality.scriptCompliant && altQuality.inventedClaimCount === 0 && altQuality.contradictionCount === 0) {
+      if (
+        altQuality.scriptCompliant &&
+        altQuality.inventedClaimCount === 0 &&
+        altQuality.contradictionCount === 0 &&
+        (altQuality.copiedReferenceCount ?? 0) === 0 &&
+        (altQuality.ownerHallucinationCount ?? 0) === 0
+      ) {
         seenTexts.add(normalizedAlt);
         verifiedAlternates.push(cleanAlt);
         if (verifiedAlternates.length >= 2) break;

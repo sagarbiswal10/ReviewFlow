@@ -38,8 +38,10 @@ import type {
   FeedbackSubmissionResponse,
   FormTemplateId,
   GbpReplySettings,
+  PackageTier,
   PublicProfile,
   QrConfig,
+  ReferenceReviewItem,
   ReviewDraft,
   ReviewDraftStatus,
   ReviewEvent,
@@ -51,14 +53,21 @@ import type {
 
 import {
   clampString,
+  getAllowedLanguagesForTier,
   normalizeEmail,
   sanitizeAccessLevel,
   sanitizeEnabledFeatures,
   sanitizeFormTemplate,
   sanitizeGbpSettings,
+  sanitizePackageTier,
+  sanitizeShortTagList,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
 } from '../utils/domainHelpers';
+import {
+  buildContextualSeoSuggestions,
+  sanitizeSeoSuggestionList,
+} from '../utils/seoKeywordEngine';
 
 export {
   normalizeEmail,
@@ -130,27 +139,88 @@ function sanitizeQuestions(questions: FeedbackQuestion[]): FeedbackQuestion[] {
 }
 
 function sanitizeSeoKeywords(keywords?: unknown): string[] {
-  if (!Array.isArray(keywords)) return [];
-  const seen = new Set<string>();
-  const clean: string[] = [];
-  for (const item of keywords) {
-    if (typeof item !== 'string') continue;
-    const trimmed = clampString(item, 60);
-    const key = trimmed.toLowerCase();
-    if (trimmed && !seen.has(key)) {
-      seen.add(key);
-      clean.push(trimmed);
-      if (clean.length >= 15) break;
+  return sanitizeSeoSuggestionList(keywords, 15);
+}
+
+function sanitizeSeoKeywordsByLanguageMap(
+  raw?: unknown,
+): Partial<Record<ReviewLanguage, string[]>> {
+  if (!raw || typeof raw !== 'object') return {};
+  const source = raw as Record<string, unknown>;
+  const result: Partial<Record<ReviewLanguage, string[]>> = {};
+  const langs: ReviewLanguage[] = ['en', 'hi', 'mr', 'hinglish'];
+  for (const lang of langs) {
+    const cleaned = sanitizeSeoSuggestionList(source[lang], 10);
+    if (cleaned.length > 0) {
+      result[lang] = cleaned;
     }
+  }
+  return result;
+}
+
+function sanitizeReferenceReviewsList(raw?: unknown): ReferenceReviewItem[] {
+  if (!Array.isArray(raw)) return [];
+  const clean: ReferenceReviewItem[] = [];
+  const seenText = new Set<string>();
+  for (let idx = 0; idx < raw.length; idx += 1) {
+    const item = raw[idx];
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Partial<ReferenceReviewItem>;
+    const text = clampString(obj.text, 500);
+    if (text.length < 10) continue;
+    const key = text.toLowerCase();
+    if (seenText.has(key)) continue;
+    seenText.add(key);
+
+    const lang: ReviewLanguage =
+      obj.language === 'hi' || obj.language === 'mr' || obj.language === 'hinglish'
+        ? obj.language
+        : 'en';
+    const sentiment =
+      obj.sentiment === 'neutral' || obj.sentiment === 'mixed' || obj.sentiment === 'negative'
+        ? obj.sentiment
+        : 'positive';
+
+    clean.push({
+      id: clampString(obj.id, 64) || `ref-${idx + 1}`,
+      language: lang,
+      sentiment,
+      text,
+      ...(obj.source ? { source: clampString(obj.source, 80) } : {}),
+    });
+    if (clean.length >= 25) break;
   }
   return clean;
 }
 
-export async function fetchAutoSeoKeywords(input: {
+export async function fetchContextualSeoKeywords(input: {
   businessName: string;
   category: BusinessCategory;
   address?: string;
-}): Promise<string[]> {
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
+  packageTier?: PackageTier;
+}): Promise<{
+  keywords: string[];
+  keywordsByLanguage: Partial<Record<ReviewLanguage, string[]>>;
+  allowedLanguages: ReviewLanguage[];
+}> {
+  const cleanTier = sanitizePackageTier(input.packageTier);
+  const allowedLanguages = getAllowedLanguagesForTier(cleanTier);
+  const localByLang = buildContextualSeoSuggestions({
+    businessName: input.businessName,
+    category: input.category,
+    locality: input.locality,
+    city: input.city,
+    address: input.address,
+    servicesOffered: input.servicesOffered,
+    productsOffered: input.productsOffered,
+    packageTier: cleanTier,
+  });
+  const localKeywords = localByLang.en || [];
   try {
     const res = await apiFetch('/api/generate-seo-keywords', {
       method: 'POST',
@@ -159,19 +229,55 @@ export async function fetchAutoSeoKeywords(input: {
         businessName: input.businessName,
         category: input.category,
         address: input.address ?? '',
+        locality: input.locality ?? '',
+        city: input.city ?? '',
+        servicesOffered: input.servicesOffered ?? [],
+        productsOffered: input.productsOffered ?? [],
+        businessHighlights: input.businessHighlights ?? '',
+        packageTier: cleanTier,
       }),
     });
-    if (!res.ok) {
-      return DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
+    if (res.ok) {
+      const parsed = await parseApiJson<{
+        keywords?: unknown;
+        keywordsByLanguage?: unknown;
+      }>(res);
+      const apiKeywords = sanitizeSeoKeywords(parsed.data?.keywords);
+      const apiByLang = sanitizeSeoKeywordsByLanguageMap(parsed.data?.keywordsByLanguage);
+      if (apiKeywords.length > 0) {
+        return {
+          keywords: apiKeywords,
+          keywordsByLanguage:
+            Object.keys(apiByLang).length > 0 ? apiByLang : localByLang,
+          allowedLanguages,
+        };
+      }
     }
-    const parsed = await parseApiJson<{ keywords?: unknown }>(res);
-    const cleaned = sanitizeSeoKeywords(parsed.data?.keywords);
-    return cleaned.length > 0
-      ? cleaned
-      : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
   } catch {
-    return DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
+    // Fallback cleanly to deterministic contextual SEO engine
   }
+  return {
+    keywords: localKeywords,
+    keywordsByLanguage: localByLang,
+    allowedLanguages,
+  };
+}
+
+export async function fetchAutoSeoKeywords(input: {
+  businessName: string;
+  category: BusinessCategory;
+  address?: string;
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
+  packageTier?: PackageTier;
+}): Promise<string[]> {
+  const result = await fetchContextualSeoKeywords(input);
+  return result.keywords.length > 0
+    ? result.keywords
+    : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
 }
 
 const ALLOWED_BRANDING_KEYS = new Set([
@@ -349,6 +455,7 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     id,
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
+    packageTier: sanitizePackageTier(data.packageTier),
     clientEmail: normalizedClientEmail,
     clientUid: clampString(data.clientUid, 128),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
@@ -357,6 +464,11 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
     name: data.name || 'Business',
     category,
     address: data.address || '',
+    locality: clampString(data.locality, 120),
+    city: clampString(data.city, 120),
+    servicesOffered: sanitizeShortTagList(data.servicesOffered, 15, 60),
+    productsOffered: sanitizeShortTagList(data.productsOffered, 15, 60),
+    businessHighlights: clampString(data.businessHighlights, 500),
     phone: data.phone || '',
     contactEmail: data.contactEmail || '',
     website: clampString(data.website, 300),
@@ -370,6 +482,8 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
       hydratedKeywords.length > 0
         ? hydratedKeywords
         : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[category] ?? [],
+    seoKeywordsByLanguage: sanitizeSeoKeywordsByLanguageMap(data.seoKeywordsByLanguage),
+    referenceReviews: sanitizeReferenceReviewsList(data.referenceReviews),
     qrStandLimit: Number.isInteger(rawLimit) && rawLimit >= 1 ? rawLimit : 4,
     gbpSettings: sanitizeGbpSettings(data.gbpSettings),
     weeklyReportConfig: sanitizeWeeklyReportConfig(data.weeklyReportConfig, normalizedClientEmail),
@@ -844,6 +958,7 @@ export async function createBusiness(
   ownerId: string,
   input: {
     ownerName?: string;
+    packageTier?: PackageTier;
     clientEmail?: string;
     clientAccessLevel?: ClientAccessLevel;
     enabledFeatures?: EnabledFeatures;
@@ -851,6 +966,11 @@ export async function createBusiness(
     slug: string;
     category: BusinessCategory;
     address: string;
+    locality?: string;
+    city?: string;
+    servicesOffered?: string[];
+    productsOffered?: string[];
+    businessHighlights?: string;
     phone: string;
     contactEmail: string;
     website?: string;
@@ -861,6 +981,8 @@ export async function createBusiness(
     questions: FeedbackQuestion[];
     formTemplate?: FormTemplateId;
     seoKeywords?: string[];
+    seoKeywordsByLanguage?: Partial<Record<ReviewLanguage, string[]>>;
+    referenceReviews?: ReferenceReviewItem[];
   },
 ): Promise<string> {
   const businessRef = doc(collection(db, 'businesses'));
@@ -875,6 +997,13 @@ export async function createBusiness(
   const now = serverTimestamp();
   const cleanName = clampString(input.name, 120) || 'My Business';
   const cleanOwnerName = clampString(input.ownerName, 120);
+  const cleanPackageTier = sanitizePackageTier(input.packageTier);
+  const cleanAddress = clampString(input.address, 240);
+  const cleanLocality = clampString(input.locality, 120);
+  const cleanCity = clampString(input.city, 120);
+  const cleanServices = sanitizeShortTagList(input.servicesOffered, 15, 60);
+  const cleanProducts = sanitizeShortTagList(input.productsOffered, 15, 60);
+  const cleanHighlights = clampString(input.businessHighlights, 500);
   const cleanWebsite = clampString(
     input.website ? sanitizeExternalUrl(input.website, '') : '',
     300,
@@ -892,21 +1021,46 @@ export async function createBusiness(
   const cleanQuestions = sanitizeQuestions(input.questions);
   const cleanFormTemplate = sanitizeFormTemplate(input.formTemplate);
   const providedKeywords = sanitizeSeoKeywords(input.seoKeywords);
+  const contextualSeed = buildContextualSeoSuggestions({
+    businessName: cleanName,
+    category: input.category,
+    locality: cleanLocality,
+    city: cleanCity,
+    address: cleanAddress,
+    servicesOffered: cleanServices,
+    productsOffered: cleanProducts,
+    packageTier: cleanPackageTier,
+  });
+  const seedEnglish = contextualSeed.en || [];
   const cleanSeoKeywords =
     providedKeywords.length > 0
       ? providedKeywords
-      : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
+      : seedEnglish.length > 0
+        ? seedEnglish
+        : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[input.category] ?? [];
+  const providedSeoByLang = sanitizeSeoKeywordsByLanguageMap(input.seoKeywordsByLanguage);
+  const cleanSeoByLang =
+    Object.keys(providedSeoByLang).length > 0
+      ? providedSeoByLang
+      : contextualSeed;
+  const cleanReferenceReviews = sanitizeReferenceReviewsList(input.referenceReviews);
 
   const businessPayload = {
     ownerId: clampString(ownerId, 128),
     ...(cleanOwnerName ? { ownerName: cleanOwnerName } : {}),
+    packageTier: cleanPackageTier,
     clientEmail: cleanClientEmail,
     clientAccessLevel: cleanAccessLevel,
     enabledFeatures: cleanFeatures,
     slug: finalSlug,
     name: cleanName,
     category: input.category,
-    address: clampString(input.address, 240),
+    address: cleanAddress,
+    ...(cleanLocality ? { locality: cleanLocality } : {}),
+    ...(cleanCity ? { city: cleanCity } : {}),
+    ...(cleanServices.length > 0 ? { servicesOffered: cleanServices } : {}),
+    ...(cleanProducts.length > 0 ? { productsOffered: cleanProducts } : {}),
+    ...(cleanHighlights ? { businessHighlights: cleanHighlights } : {}),
     phone: clampString(input.phone, 40),
     contactEmail: clampString(input.contactEmail, 120),
     ...(cleanWebsite ? { website: cleanWebsite } : {}),
@@ -917,6 +1071,8 @@ export async function createBusiness(
     questions: cleanQuestions,
     formTemplate: cleanFormTemplate,
     seoKeywords: cleanSeoKeywords,
+    ...(Object.keys(cleanSeoByLang).length > 0 ? { seoKeywordsByLanguage: cleanSeoByLang } : {}),
+    ...(cleanReferenceReviews.length > 0 ? { referenceReviews: cleanReferenceReviews } : {}),
     qrStandLimit: 4,
     gbpSettings: sanitizeGbpSettings(),
     weeklyReportConfig: sanitizeWeeklyReportConfig(undefined, cleanClientEmail),
@@ -927,9 +1083,17 @@ export async function createBusiness(
   const publicPayload = {
     businessId,
     ownerId: clampString(ownerId, 128),
+    ...(cleanOwnerName ? { ownerName: cleanOwnerName } : {}),
+    packageTier: cleanPackageTier,
     slug: finalSlug,
     name: cleanName,
     category: input.category,
+    ...(cleanAddress ? { address: cleanAddress } : {}),
+    ...(cleanLocality ? { locality: cleanLocality } : {}),
+    ...(cleanCity ? { city: cleanCity } : {}),
+    ...(cleanServices.length > 0 ? { servicesOffered: cleanServices } : {}),
+    ...(cleanProducts.length > 0 ? { productsOffered: cleanProducts } : {}),
+    ...(cleanHighlights ? { businessHighlights: cleanHighlights } : {}),
     googleReviewUrl: cleanGoogleUrl,
     logoDataUrl: cleanLogo,
     enabledFeatures: cleanFeatures,
@@ -938,6 +1102,8 @@ export async function createBusiness(
     questions: cleanQuestions,
     formTemplate: cleanFormTemplate,
     seoKeywords: cleanSeoKeywords,
+    ...(Object.keys(cleanSeoByLang).length > 0 ? { seoKeywordsByLanguage: cleanSeoByLang } : {}),
+    ...(cleanReferenceReviews.length > 0 ? { referenceReviews: cleanReferenceReviews } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -974,6 +1140,7 @@ export async function updateBusiness(
   current: Business,
   updates: Partial<{
     ownerName: string;
+    packageTier: PackageTier;
     clientEmail: string;
     clientAccessLevel: ClientAccessLevel;
     enabledFeatures: EnabledFeatures;
@@ -981,6 +1148,11 @@ export async function updateBusiness(
     name: string;
     category: BusinessCategory;
     address: string;
+    locality: string;
+    city: string;
+    servicesOffered: string[];
+    productsOffered: string[];
+    businessHighlights: string;
     phone: string;
     contactEmail: string;
     website: string;
@@ -991,6 +1163,8 @@ export async function updateBusiness(
     questions: FeedbackQuestion[];
     formTemplate: FormTemplateId;
     seoKeywords: string[];
+    seoKeywordsByLanguage: Partial<Record<ReviewLanguage, string[]>>;
+    referenceReviews: ReferenceReviewItem[];
     qrStandLimit: number;
     gbpSettings: GbpReplySettings;
     weeklyReportConfig: WeeklyReportConfig;
@@ -1158,7 +1332,11 @@ export async function updateBusiness(
     publicUpdates.category = nextCategory;
   }
   if (updates.address !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
-    businessUpdates.address = clampString(updates.address ?? current.address, 240);
+    const cleanAddr = clampString(updates.address ?? current.address, 240);
+    businessUpdates.address = cleanAddr;
+    if (updates.address !== undefined) {
+      publicUpdates.address = cleanAddr;
+    }
   }
   if (updates.phone !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
     businessUpdates.phone = clampString(updates.phone ?? current.phone, 40);
@@ -1227,8 +1405,45 @@ export async function updateBusiness(
     businessUpdates.seoKeywords = nextSeoKeywords;
     publicUpdates.seoKeywords = nextSeoKeywords;
   }
+  if (updates.seoKeywordsByLanguage !== undefined) {
+    const cleanSeoByLang = sanitizeSeoKeywordsByLanguageMap(updates.seoKeywordsByLanguage);
+    businessUpdates.seoKeywordsByLanguage = cleanSeoByLang;
+    publicUpdates.seoKeywordsByLanguage = cleanSeoByLang;
+  }
+  if (updates.referenceReviews !== undefined) {
+    const cleanRefs = sanitizeReferenceReviewsList(updates.referenceReviews);
+    businessUpdates.referenceReviews = cleanRefs;
+    publicUpdates.referenceReviews = cleanRefs;
+  }
   if (updates.ownerName !== undefined || optionalRepairs?.ownerName) {
-    businessUpdates.ownerName = clampString(updates.ownerName ?? current.ownerName, 120);
+    const cleanOwner = clampString(updates.ownerName ?? current.ownerName, 120);
+    businessUpdates.ownerName = cleanOwner;
+    publicUpdates.ownerName = cleanOwner;
+  }
+  if (updates.locality !== undefined) {
+    const cleanLocality = clampString(updates.locality, 120);
+    businessUpdates.locality = cleanLocality;
+    publicUpdates.locality = cleanLocality;
+  }
+  if (updates.city !== undefined) {
+    const cleanCity = clampString(updates.city, 120);
+    businessUpdates.city = cleanCity;
+    publicUpdates.city = cleanCity;
+  }
+  if (updates.servicesOffered !== undefined) {
+    const cleanServices = sanitizeShortTagList(updates.servicesOffered, 15, 60);
+    businessUpdates.servicesOffered = cleanServices;
+    publicUpdates.servicesOffered = cleanServices;
+  }
+  if (updates.productsOffered !== undefined) {
+    const cleanProducts = sanitizeShortTagList(updates.productsOffered, 15, 60);
+    businessUpdates.productsOffered = cleanProducts;
+    publicUpdates.productsOffered = cleanProducts;
+  }
+  if (updates.businessHighlights !== undefined) {
+    const cleanHighlights = clampString(updates.businessHighlights, 500);
+    businessUpdates.businessHighlights = cleanHighlights;
+    publicUpdates.businessHighlights = cleanHighlights;
   }
   if (updates.gbpSettings !== undefined || optionalRepairs?.gbpSettings) {
     businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings ?? current.gbpSettings);
@@ -1242,6 +1457,11 @@ export async function updateBusiness(
 
   const clientEmailChanged = isAdmin && nextClientEmail !== current.clientEmail;
   if (isAdmin) {
+    if (updates.packageTier !== undefined) {
+      const cleanTier = sanitizePackageTier(updates.packageTier);
+      businessUpdates.packageTier = cleanTier;
+      publicUpdates.packageTier = cleanTier;
+    }
     if (updates.clientEmail !== undefined || optionalRepairs?.clientEmail) {
       businessUpdates.clientEmail = nextClientEmail;
     }
@@ -1268,13 +1488,36 @@ export async function updateBusiness(
     }
   }
 
+  const nextOwnerName = clampString(updates.ownerName ?? current.ownerName, 120);
+  const nextAddress = clampString(updates.address ?? current.address, 240);
+  const nextLocality = clampString(updates.locality ?? current.locality, 120);
+  const nextCity = clampString(updates.city ?? current.city, 120);
+  const nextServices = sanitizeShortTagList(updates.servicesOffered ?? current.servicesOffered, 15, 60);
+  const nextProducts = sanitizeShortTagList(updates.productsOffered ?? current.productsOffered, 15, 60);
+  const nextHighlights = clampString(updates.businessHighlights ?? current.businessHighlights, 500);
+  const nextPackageTier = sanitizePackageTier(
+    isAdmin && updates.packageTier !== undefined ? updates.packageTier : current.packageTier,
+  );
+  const nextSeoByLang = sanitizeSeoKeywordsByLanguageMap(
+    updates.seoKeywordsByLanguage ?? current.seoKeywordsByLanguage,
+  );
+  const nextRefs = sanitizeReferenceReviewsList(updates.referenceReviews ?? current.referenceReviews);
+
   const buildFreshPublicProfilePayload = (targetSlug: string) => ({
     businessId: current.id,
     ownerId: current.ownerId,
+    ...(nextOwnerName ? { ownerName: nextOwnerName } : {}),
+    packageTier: nextPackageTier,
     clientUid: clientEmailChanged ? '' : current.clientUid || '',
     slug: targetSlug,
     name: nextName,
     category: nextCategory,
+    ...(nextAddress ? { address: nextAddress } : {}),
+    ...(nextLocality ? { locality: nextLocality } : {}),
+    ...(nextCity ? { city: nextCity } : {}),
+    ...(nextServices.length > 0 ? { servicesOffered: nextServices } : {}),
+    ...(nextProducts.length > 0 ? { productsOffered: nextProducts } : {}),
+    ...(nextHighlights ? { businessHighlights: nextHighlights } : {}),
     googleReviewUrl: nextGoogleUrl,
     logoDataUrl: nextLogo,
     enabledFeatures: nextFeatures,
@@ -1283,6 +1526,8 @@ export async function updateBusiness(
     questions: nextQuestions,
     formTemplate: nextFormTemplate,
     seoKeywords: nextSeoKeywords,
+    seoKeywordsByLanguage: nextSeoByLang,
+    referenceReviews: nextRefs,
     createdAt: now,
     updatedAt: now,
   });
@@ -1417,13 +1662,23 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       return { status: 'not_found' };
     }
     const raw = snap.data() as Partial<PublicProfile>;
+    const cat = (raw.category as BusinessCategory) || 'Other Businesses';
+    const kw = sanitizeSeoKeywords(raw.seoKeywords);
     const profile: PublicProfile = {
       businessId: raw.businessId || '',
       ownerId: raw.ownerId || '',
+      ownerName: clampString(raw.ownerName, 120),
+      packageTier: sanitizePackageTier(raw.packageTier),
       clientUid: clampString(raw.clientUid, 128),
       slug: raw.slug || normalized,
       name: raw.name || 'Business',
-      category: raw.category || 'Other Businesses',
+      category: cat,
+      address: clampString(raw.address, 240),
+      locality: clampString(raw.locality, 120),
+      city: clampString(raw.city, 120),
+      servicesOffered: sanitizeShortTagList(raw.servicesOffered, 15, 60),
+      productsOffered: sanitizeShortTagList(raw.productsOffered, 15, 60),
+      businessHighlights: clampString(raw.businessHighlights, 500),
       googleReviewUrl: raw.googleReviewUrl || '',
       logoDataUrl: sanitizeLogoDataUrl(raw.logoDataUrl),
       enabledFeatures: sanitizeEnabledFeatures(raw.enabledFeatures),
@@ -1431,11 +1686,9 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       qrConfig: sanitizeQrConfig(raw.qrConfig, 'v1token'),
       questions: Array.isArray(raw.questions) ? raw.questions : [],
       formTemplate: sanitizeFormTemplate(raw.formTemplate),
-      seoKeywords: (() => {
-        const kw = sanitizeSeoKeywords(raw.seoKeywords);
-        const cat = (raw.category as BusinessCategory) || 'Other Businesses';
-        return kw.length > 0 ? kw : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[cat] ?? [];
-      })(),
+      seoKeywords: kw.length > 0 ? kw : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[cat] ?? [],
+      seoKeywordsByLanguage: sanitizeSeoKeywordsByLanguageMap(raw.seoKeywordsByLanguage),
+      referenceReviews: sanitizeReferenceReviewsList(raw.referenceReviews),
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
     };

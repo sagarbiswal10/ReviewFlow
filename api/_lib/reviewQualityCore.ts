@@ -27,6 +27,9 @@ export interface ReviewQualityReport {
   clicheCount: number;
   groundedFactCount: number;
   autoRepaired: boolean;
+  copiedReferenceCount?: number;
+  ownerHallucinationCount?: number;
+  originalityPassed?: boolean;
   issues: QualityIssue[];
 }
 
@@ -35,9 +38,11 @@ export interface QualityValidationInput {
   language: QualityReviewLanguage;
   businessName?: string;
   category?: string;
+  ownerName?: string;
   responses: Array<{ question: string; answers: string[] }>;
   additionalComments?: string;
   previousDrafts?: string[];
+  referenceReviews?: string[];
   autoRepaired?: boolean;
 }
 
@@ -417,6 +422,21 @@ function jaccardSimilarity(a: string, b: string): number {
   }
   const union = setA.size + setB.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+function findCopiedNgramPhrase(candidate: string, reference: string, minWords = 6): string | null {
+  const candWords = tokenizeNormalized(candidate);
+  const refWords = tokenizeNormalized(reference);
+  if (candWords.length < minWords || refWords.length < minWords) return null;
+  const refShingles = new Set<string>();
+  for (let i = 0; i <= refWords.length - minWords; i += 1) {
+    refShingles.add(refWords.slice(i, i + minWords).join(' '));
+  }
+  for (let i = 0; i <= candWords.length - minWords; i += 1) {
+    const shingle = candWords.slice(i, i + minWords).join(' ');
+    if (refShingles.has(shingle)) return shingle;
+  }
+  return null;
 }
 
 export function validateReviewQuality(input: QualityValidationInput): ReviewQualityReport {
@@ -826,6 +846,77 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
     }
   }
 
+  // 5. Reference review zero-copying originality check
+  let copiedReferenceCount = 0;
+  if (Array.isArray(input.referenceReviews)) {
+    for (const refText of input.referenceReviews) {
+      if (!refText || !refText.trim()) continue;
+      const copiedPhrase = findCopiedNgramPhrase(reviewText, refText, 6);
+      const sim = jaccardSimilarity(reviewText, refText);
+      if (copiedPhrase || sim > 0.65) {
+        copiedReferenceCount += 1;
+        repetitionCount += 1;
+        issues.push({
+          type: 'repetition',
+          severity: 'error',
+          message: 'Draft reused wording from a reference review instead of composing independently.',
+          evidence: copiedPhrase || refText.slice(0, 60),
+        });
+        break;
+      }
+    }
+  }
+
+  // 6. Owner Name Intelligence check: never invent personal owner interaction
+  let ownerHallucinationCount = 0;
+  const trimmedOwner = (input.ownerName || '').trim();
+  if (trimmedOwner.length >= 2) {
+    const ownerTokens = trimmedOwner
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 3);
+    const fullBizLower = (input.businessName || '').toLowerCase();
+    for (const token of ownerTokens) {
+      // Skip if owner's name is also part of the business's own brand name
+      if (fullBizLower.includes(token)) continue;
+      const escaped = token.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const tokenRegex = new RegExp(`\\b${escaped}\\b`, 'i');
+      if (tokenRegex.test(lowerReview) && !tokenRegex.test(userFactsCorpus)) {
+        ownerHallucinationCount += 1;
+        inventedClaimCount += 1;
+        issues.push({
+          type: 'invented_claim',
+          severity: 'error',
+          message: `Mentioned owner "${trimmedOwner}" even though customer feedback did not mention interacting with the owner.`,
+          evidence: token,
+        });
+        break;
+      }
+    }
+  }
+
+  // 7. Unsupported superlative SEO hype check
+  const DISALLOWED_SUPERLATIVE_PATTERNS = [
+    /\btop-rated\b/i,
+    /\bnumber one\b/i,
+    /\bmost popular\b/i,
+    /#1\b/i,
+    /\bbest\s+(?:in|out there|salon|studio|restaurant|clinic|hotel|place)\b/i,
+  ];
+  for (const supPattern of DISALLOWED_SUPERLATIVE_PATTERNS) {
+    const supMatch = reviewText.match(supPattern);
+    if (supMatch && !supPattern.test(userFactsCorpus)) {
+      inventedClaimCount += 1;
+      issues.push({
+        type: 'invented_claim',
+        severity: 'error',
+        message: 'Avoid unsupported superlative claims like "best", "top-rated", "number one", or "most popular".',
+        evidence: supMatch[0],
+      });
+      break;
+    }
+  }
+
   // Score calculation
   let score = 100;
   for (const issue of issues) {
@@ -838,6 +929,7 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
   score = Math.max(0, Math.min(100, score));
   const hasErrors = issues.some((i) => i.severity === 'error');
   const passed = !hasErrors && score >= 75;
+  const originalityPassed = copiedReferenceCount === 0 && repetitionCount === 0;
 
   return {
     score,
@@ -850,6 +942,9 @@ export function validateReviewQuality(input: QualityValidationInput): ReviewQual
     clicheCount,
     groundedFactCount: groundedFacts.size,
     autoRepaired: Boolean(input.autoRepaired),
+    copiedReferenceCount,
+    ownerHallucinationCount,
+    originalityPassed,
     issues,
   };
 }

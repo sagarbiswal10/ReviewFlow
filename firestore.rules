@@ -123,7 +123,12 @@ service cloud.firestore {
       return (!changedKeys.hasAny(['formTemplate']) || !('formTemplates' in bizData.enabledFeatures) || bizData.enabledFeatures.formTemplates == true) &&
         (!changedKeys.hasAny(['questions']) || bizData.enabledFeatures.customQuestions == true) &&
         (!changedKeys.hasAny(['qrConfig']) || !('qrStudio' in bizData.enabledFeatures) || bizData.enabledFeatures.qrStudio == true) &&
-        (!changedKeys.hasAny(['ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding', 'seoKeywords', 'slug']) || !('brandingSettings' in bizData.enabledFeatures) || bizData.enabledFeatures.brandingSettings == true);
+        (!changedKeys.hasAny([
+          'ownerName', 'name', 'category', 'address', 'locality', 'city',
+          'servicesOffered', 'productsOffered', 'businessHighlights',
+          'phone', 'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl',
+          'branding', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews', 'slug'
+        ]) || !('brandingSettings' in bizData.enabledFeatures) || bizData.enabledFeatures.brandingSettings == true);
     }
 
     function isValidBranding(b) {
@@ -182,6 +187,30 @@ service cloud.firestore {
         (keywords.size() == 0 || (keywords[0] is string && keywords[0].size() <= 60));
     }
 
+    function isValidSeoKeywordsByLanguage(m) {
+      return m is map &&
+        m.keys().hasOnly(['en', 'hi', 'mr', 'hinglish']) &&
+        (!('en' in m) || isValidSeoKeywords(m.en)) &&
+        (!('hi' in m) || isValidSeoKeywords(m.hi)) &&
+        (!('mr' in m) || isValidSeoKeywords(m.mr)) &&
+        (!('hinglish' in m) || isValidSeoKeywords(m.hinglish));
+    }
+
+    function isValidReferenceReviews(refs) {
+      return refs is list &&
+        refs.size() <= 45 &&
+        (refs.size() == 0 || (
+          refs[0] is map &&
+          refs[0].keys().hasOnly(['id', 'language', 'sentiment', 'text', 'source'])
+        ));
+    }
+
+    function isValidShortTagList(tags) {
+      return tags is list &&
+        tags.size() <= 20 &&
+        (tags.size() == 0 || (tags[0] is string && tags[0].size() <= 80));
+    }
+
     function isAssignedClient(data) {
       return isVerifiedUser() && (
         data.ownerId == request.auth.uid ||
@@ -204,14 +233,17 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'ownerId', 'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
-          'slug', 'name', 'category', 'address', 'phone',
-          'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
-          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+          'ownerId', 'ownerName', 'packageTier', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+          'slug', 'name', 'category', 'address', 'locality', 'city',
+          'servicesOffered', 'productsOffered', 'businessHighlights',
+          'phone', 'contactEmail', 'website', 'googleReviewUrl', 'logoDataUrl', 'branding',
+          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
+          'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
           'lifecycleStatus', 'tenantFirebase', 'createdAt', 'updatedAt'
         ]) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 120)) &&
+        (!('packageTier' in data) || data.packageTier == null || data.packageTier in ['standard', 'standard_plus']) &&
         data.clientEmail is string && data.clientEmail.size() <= 120 &&
         (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         data.clientAccessLevel in ['read_only', 'qr_and_questions', 'full'] &&
@@ -220,6 +252,11 @@ service cloud.firestore {
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         isValidCategory(data.category) &&
         data.address is string && data.address.size() <= 240 &&
+        (!('locality' in data) || data.locality == null || (data.locality is string && data.locality.size() <= 120)) &&
+        (!('city' in data) || data.city == null || (data.city is string && data.city.size() <= 120)) &&
+        (!('servicesOffered' in data) || data.servicesOffered == null || isValidShortTagList(data.servicesOffered)) &&
+        (!('productsOffered' in data) || data.productsOffered == null || isValidShortTagList(data.productsOffered)) &&
+        (!('businessHighlights' in data) || data.businessHighlights == null || (data.businessHighlights is string && data.businessHighlights.size() <= 600)) &&
         data.phone is string && data.phone.size() <= 40 &&
         data.contactEmail is string && data.contactEmail.size() <= 120 &&
         (!('website' in data) || data.website == null || (data.website is string && data.website.size() <= 300)) &&
@@ -230,6 +267,8 @@ service cloud.firestore {
         isValidQuestions(data.questions) &&
         (!('formTemplate' in data) || data.formTemplate == null || isValidFormTemplate(data.formTemplate)) &&
         (!('seoKeywords' in data) || data.seoKeywords == null || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('seoKeywordsByLanguage' in data) || data.seoKeywordsByLanguage == null || isValidSeoKeywordsByLanguage(data.seoKeywordsByLanguage)) &&
+        (!('referenceReviews' in data) || data.referenceReviews == null || isValidReferenceReviews(data.referenceReviews)) &&
         (!('qrStandLimit' in data) || data.qrStandLimit == null || (data.qrStandLimit is int && data.qrStandLimit >= 1 && data.qrStandLimit <= 100)) &&
         (!('gbpSettings' in data) || data.gbpSettings == null || isValidGbpSettings(data.gbpSettings)) &&
         (!('weeklyReportConfig' in data) || data.weeklyReportConfig == null || isValidWeeklyReportConfig(data.weeklyReportConfig)) &&
@@ -246,17 +285,27 @@ service cloud.firestore {
           'qrConfig', 'questions', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'businessId', 'ownerId', 'clientUid', 'slug', 'name', 'category',
+          'businessId', 'ownerId', 'ownerName', 'packageTier', 'clientUid', 'slug', 'name', 'category',
+          'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
           'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
-          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'lifecycleStatus', 'tenantFirebase',
+          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
+          'lifecycleStatus', 'tenantFirebase',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.businessId) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 120)) &&
+        (!('packageTier' in data) || data.packageTier == null || data.packageTier in ['standard', 'standard_plus']) &&
         (!('clientUid' in data) || data.clientUid == null || (data.clientUid is string && data.clientUid.size() <= 128)) &&
         isValidSlug(data.slug) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         isValidCategory(data.category) &&
+        (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 240)) &&
+        (!('locality' in data) || data.locality == null || (data.locality is string && data.locality.size() <= 120)) &&
+        (!('city' in data) || data.city == null || (data.city is string && data.city.size() <= 120)) &&
+        (!('servicesOffered' in data) || data.servicesOffered == null || isValidShortTagList(data.servicesOffered)) &&
+        (!('productsOffered' in data) || data.productsOffered == null || isValidShortTagList(data.productsOffered)) &&
+        (!('businessHighlights' in data) || data.businessHighlights == null || (data.businessHighlights is string && data.businessHighlights.size() <= 600)) &&
         data.googleReviewUrl is string && data.googleReviewUrl.size() <= 500 &&
         data.logoDataUrl is string && data.logoDataUrl.size() <= 350000 &&
         isValidEnabledFeatures(data.enabledFeatures) &&
@@ -265,6 +314,8 @@ service cloud.firestore {
         isValidQuestions(data.questions) &&
         (!('formTemplate' in data) || data.formTemplate == null || isValidFormTemplate(data.formTemplate)) &&
         (!('seoKeywords' in data) || data.seoKeywords == null || isValidSeoKeywords(data.seoKeywords)) &&
+        (!('seoKeywordsByLanguage' in data) || data.seoKeywordsByLanguage == null || isValidSeoKeywordsByLanguage(data.seoKeywordsByLanguage)) &&
+        (!('referenceReviews' in data) || data.referenceReviews == null || isValidReferenceReviews(data.referenceReviews)) &&
         (!('lifecycleStatus' in data) || data.lifecycleStatus == null || isValidLifecycleStatus(data.lifecycleStatus)) &&
         (!('tenantFirebase' in data) || isValidTenantFirebase(data.tenantFirebase)) &&
         data.createdAt is timestamp &&
@@ -731,14 +782,17 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'ownerName', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
-              'name', 'category', 'address', 'phone', 'contactEmail', 'website',
+              'ownerName', 'packageTier', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+              'name', 'category', 'address', 'locality', 'city',
+              'servicesOffered', 'productsOffered', 'businessHighlights',
+              'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'formTemplate', 'seoKeywords', 'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
+              'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
+              'slug', 'qrStandLimit', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
-          // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit or permissions)
+          // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit, packageTier, or permissions)
           (
             isAssignedClient(existing()) &&
             existing().clientAccessLevel == 'full' &&
@@ -746,11 +800,15 @@ service cloud.firestore {
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
             (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
+            (!('packageTier' in incoming()) || ('packageTier' in existing() && incoming().packageTier == existing().packageTier)) &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'ownerName', 'name', 'category', 'address', 'phone', 'contactEmail', 'website',
+              'ownerName', 'name', 'category', 'address', 'locality', 'city',
+              'servicesOffered', 'productsOffered', 'businessHighlights',
+              'phone', 'contactEmail', 'website',
               'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
-              'questions', 'formTemplate', 'seoKeywords', 'slug', 'gbpSettings', 'weeklyReportConfig',
+              'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
+              'slug', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
@@ -813,8 +871,11 @@ service cloud.firestore {
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'clientUid', 'name', 'category', 'googleReviewUrl', 'logoDataUrl',
-              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate', 'seoKeywords',
+              'clientUid', 'ownerName', 'packageTier', 'name', 'category',
+              'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
+              'googleReviewUrl', 'logoDataUrl',
+              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate',
+              'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ])
           ) ||
@@ -830,8 +891,11 @@ service cloud.firestore {
                   incoming().diff(existing()).affectedKeys()
                 ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
-                  'name', 'category', 'googleReviewUrl', 'logoDataUrl',
-                  'branding', 'qrConfig', 'questions', 'formTemplate', 'seoKeywords',
+                  'ownerName', 'name', 'category',
+                  'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
+                  'googleReviewUrl', 'logoDataUrl',
+                  'branding', 'qrConfig', 'questions', 'formTemplate',
+                  'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
                   'lifecycleStatus', 'tenantFirebase', 'updatedAt'
                 ])
               ) ||

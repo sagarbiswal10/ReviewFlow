@@ -38,8 +38,11 @@ import { composeGroundedFallbackReview, validateReviewQuality } from '../utils/r
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import {
   formatQuotaCountdown,
+  getAllowedLanguagesForTier,
+  isLanguageAllowedForTier,
   resolveVisitorQuotaState,
   sanitizeFormTemplate,
+  sanitizePackageTier,
   VISITOR_QUOTA_WINDOW_MS,
 } from '../utils/domainHelpers';
 import {
@@ -184,6 +187,22 @@ export function CustomerReviewFlow({
   const isEmojiChecklist =
     activeTemplate === 'emoji_checklist_light' || activeTemplate === 'emoji_checklist_dark';
 
+  const packageTier = sanitizePackageTier(profile.packageTier);
+  const allowedLanguages = useMemo(
+    () => getAllowedLanguagesForTier(packageTier),
+    [packageTier],
+  );
+  const visibleLanguageOptions = useMemo(
+    () => LANGUAGE_OPTIONS.filter((opt) => allowedLanguages.includes(opt.id)),
+    [allowedLanguages],
+  );
+  const initialLang: ReviewLanguage = isLanguageAllowedForTier(
+    persistedInitial?.selectedLanguage || 'en',
+    packageTier,
+  )
+    ? persistedInitial?.selectedLanguage || 'en'
+    : 'en';
+
   const [step, setStep] = useState<FlowStep>('feedback');
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [textInputs, setTextInputs] = useState<Record<string, string>>({});
@@ -201,12 +220,17 @@ export function CustomerReviewFlow({
   );
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>(
-    persistedInitial?.selectedLanguage || 'en',
-  );
+  const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>(initialLang);
+  const [includeBusinessName, setIncludeBusinessName] = useState<boolean>(true);
   const [selectedStyle] = useState<ReviewStyle>(
     profile.branding?.defaultReviewStyle || 'short',
   );
+
+  useEffect(() => {
+    if (!isLanguageAllowedForTier(selectedLanguage, packageTier)) {
+      setSelectedLanguage('en');
+    }
+  }, [packageTier, selectedLanguage]);
 
   const [draftText, setDraftText] = useState(persistedInitial?.draftText || '');
   const [currentDraftId, setCurrentDraftId] = useState(persistedInitial?.currentDraftId || '');
@@ -654,6 +678,16 @@ export function CustomerReviewFlow({
         }
       };
 
+      const langSeoKeywords =
+        (Array.isArray(profile.seoKeywordsByLanguage?.[languageToUse]) &&
+        profile.seoKeywordsByLanguage?.[languageToUse]!.length > 0
+          ? profile.seoKeywordsByLanguage?.[languageToUse]
+          : profile.seoKeywords) || [];
+      const isolatedRefTexts = (profile.referenceReviews || [])
+        .map((item) => item.text)
+        .filter(Boolean)
+        .slice(0, 20);
+
       const applyFinalDraft = async (
         generatedText: string,
         qualityReportOverride?: ReviewQualityReport,
@@ -674,10 +708,12 @@ export function CustomerReviewFlow({
             reviewText: generatedText,
             language: languageToUse,
             businessName: profile.name,
+            ownerName: profile.ownerName,
             category: profile.category,
             responses,
             additionalComments,
             previousDrafts: previousDrafts.slice(-4),
+            referenceReviews: isolatedRefTexts,
           });
 
         setDraftText(generatedText);
@@ -721,8 +757,18 @@ export function CustomerReviewFlow({
           businessId: profile.businessId,
           visitorId,
           businessName: profile.name,
+          ownerName: profile.ownerName,
           category: profile.category,
-          seoKeywords: Array.isArray(profile.seoKeywords) ? profile.seoKeywords.slice(0, 15) : [],
+          locality: profile.locality,
+          city: profile.city,
+          address: profile.address,
+          servicesOffered: profile.servicesOffered,
+          productsOffered: profile.productsOffered,
+          businessHighlights: profile.businessHighlights,
+          packageTier,
+          includeBusinessName,
+          seoKeywords: langSeoKeywords.slice(0, 15),
+          referenceReviews: (profile.referenceReviews || []).slice(0, 20),
           responses,
           additionalComments,
           style: selectedStyle,
@@ -817,14 +863,20 @@ export function CustomerReviewFlow({
           language: languageToUse,
           variationSeed: seed,
         });
+        const isolatedRefTexts = (profile.referenceReviews || [])
+          .map((item) => item.text)
+          .filter(Boolean)
+          .slice(0, 20);
         const fallbackQuality = validateReviewQuality({
           reviewText: composed.reviewText,
           language: languageToUse,
           businessName: profile.name,
+          ownerName: profile.ownerName,
           category: profile.category,
           responses,
           additionalComments,
           previousDrafts: previousDrafts.slice(-4),
+          referenceReviews: isolatedRefTexts,
         });
         setDraftText(composed.reviewText);
         setInitialGeneratedText(composed.reviewText);
@@ -935,14 +987,20 @@ export function CustomerReviewFlow({
       const [nextDraftText, ...restAlts] = queued;
       queuedAlternatesRef.current[selectedLanguage] = restAlts;
       const { responses, additionalComments } = buildStructuredPayload();
+      const isolatedRefTexts = (profile.referenceReviews || [])
+        .map((item) => item.text)
+        .filter(Boolean)
+        .slice(0, 20);
       const computedQuality = validateReviewQuality({
         reviewText: nextDraftText,
         language: selectedLanguage,
         businessName: profile.name,
+        ownerName: profile.ownerName,
         category: profile.category,
         responses,
         additionalComments,
         previousDrafts: previousDrafts.slice(-4),
+        referenceReviews: isolatedRefTexts,
       });
       setGenerateError(null);
       setCopied(false);
@@ -1240,7 +1298,7 @@ export function CustomerReviewFlow({
             aria-label="Review Language"
             className="grid grid-cols-2 sm:grid-cols-4 gap-2"
           >
-            {LANGUAGE_OPTIONS.map((lang) => {
+            {visibleLanguageOptions.map((lang) => {
               const active = selectedLanguage === lang.id;
               return (
                 <button
@@ -1315,7 +1373,7 @@ export function CustomerReviewFlow({
           aria-label="Review Language"
           className="grid grid-cols-2 sm:grid-cols-4 gap-2"
         >
-          {LANGUAGE_OPTIONS.map((lang) => {
+          {visibleLanguageOptions.map((lang) => {
             const active = selectedLanguage === lang.id;
             return (
               <button
@@ -2885,7 +2943,7 @@ export function CustomerReviewFlow({
                     Select Language
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {LANGUAGE_OPTIONS.map((lang) => {
+                    {visibleLanguageOptions.map((lang) => {
                       const active = selectedLanguage === lang.id;
                       return (
                         <button
@@ -2993,7 +3051,7 @@ export function CustomerReviewFlow({
                       isDarkTemplate ? 'bg-[#0F172A]' : 'bg-slate-100/80'
                     }`}
                   >
-                    {LANGUAGE_OPTIONS.map((lang) => {
+                    {visibleLanguageOptions.map((lang) => {
                       const active = selectedLanguage === lang.id;
                       const disabledBtn =
                         isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs && !active);
@@ -3024,7 +3082,7 @@ export function CustomerReviewFlow({
 
                 {/* Review Textarea */}
                 <div className="relative">
-                  <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <label
                       htmlFor="review-draft-textarea"
                       className={`text-xs font-medium ${
@@ -3038,6 +3096,51 @@ export function CustomerReviewFlow({
                         isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
                       }`}
                     >
+                      <button
+                        type="button"
+                        disabled={isGenerating}
+                        onClick={() => {
+                          const nextInclude = !includeBusinessName;
+                          setIncludeBusinessName(nextInclude);
+                          const bizName = profile.name.trim();
+                          if (!bizName || !draftText.trim()) return;
+                          const escaped = bizName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                          if (!nextInclude) {
+                            const stripped = draftText
+                              .replace(new RegExp(`\\s*(?:at|with|by|from|about)?\\s*${escaped}\\b`, 'gi'), '')
+                              .replace(/\s{2,}/g, ' ')
+                              .replace(/\s+([.,!?])/g, '$1')
+                              .replace(/^[.,!?\s]+/, '')
+                              .trim();
+                            if (stripped) {
+                              setDraftText(stripped);
+                            }
+                          } else if (!draftText.toLowerCase().includes(bizName.toLowerCase())) {
+                            if (
+                              initialGeneratedText &&
+                              initialGeneratedText.toLowerCase().includes(bizName.toLowerCase())
+                            ) {
+                              setDraftText(initialGeneratedText);
+                            } else {
+                              setDraftText((prev) =>
+                                prev.replace(/([.!?])(\s|$)/, ` at ${bizName}$1$2`),
+                              );
+                            }
+                          }
+                        }}
+                        aria-pressed={includeBusinessName}
+                        className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                          includeBusinessName
+                            ? isDarkTemplate
+                              ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-300'
+                              : 'border-teal-200 bg-teal-50 text-teal-800'
+                            : isDarkTemplate
+                              ? 'border-slate-700 bg-slate-800 text-slate-400'
+                              : 'border-slate-200 bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {includeBusinessName ? 'Business name included' : 'Include business name'}
+                      </button>
                       <span>{draftText.length} characters</span>
                     </div>
                   </div>

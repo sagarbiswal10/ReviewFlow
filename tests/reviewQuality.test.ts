@@ -272,3 +272,77 @@ test('TC-QUAL-12: CustomerReviewFlow removes Hinglish sub-label, starts QR visit
   assert.ok(flowSource.includes('Back to Questions'));
   assert.ok(flowSource.includes('MAX_USER_REVIEW_GENERATIONS = 5'));
 });
+
+test('TC-QUAL-13: Owner Name Intelligence blocks fabricated owner mentions unless customer named them', () => {
+  const fabricatedOwner = validateReviewQuality({
+    reviewText:
+      'Had a great haircut at ABC Tattoo Studio. Rahul personally guided me through the custom tattoo design cleanly.',
+    language: 'en',
+    businessName: 'ABC Tattoo Studio',
+    ownerName: 'Rahul',
+    category: 'Other Businesses',
+    responses: [{ question: 'Experience', answers: ['Great'] }],
+    additionalComments: 'Clean studio and neat finish.',
+  });
+  assert.ok((fabricatedOwner.ownerHallucinationCount ?? 0) >= 1);
+  assert.equal(fabricatedOwner.passed, false);
+
+  const genuineOwnerMention = validateReviewQuality({
+    reviewText:
+      'Visited ABC Tattoo Studio for a custom piece and Rahul personally walked me through the placement and aftercare.',
+    language: 'en',
+    businessName: 'ABC Tattoo Studio',
+    ownerName: 'Rahul',
+    category: 'Other Businesses',
+    responses: [{ question: 'Experience', answers: ['Great'] }],
+    additionalComments: 'Rahul personally helped me finalize the custom tattoo sketch.',
+  });
+  assert.equal(genuineOwnerMention.ownerHallucinationCount, 0);
+  assert.equal(genuineOwnerMention.passed, true);
+});
+
+test('TC-QUAL-14: Zero-Copying validation rejects verbatim phrase reuse from referenceReviews and passes original writing', () => {
+  const referenceReviews = [
+    'The salon is super clean, peaceful atmosphere, and the stylists take time to understand what haircut suits your face.',
+  ];
+  const copiedDraft = validateReviewQuality({
+    reviewText:
+      'Really liked the visit because the stylists take time to understand what haircut suits your face properly.',
+    language: 'en',
+    businessName: 'Enrich Salon',
+    category: 'Hair Salons',
+    responses: [{ question: 'Experience', answers: ['Great'] }],
+    referenceReviews,
+  });
+  assert.ok((copiedDraft.copiedReferenceCount ?? 0) >= 1);
+  assert.equal(copiedDraft.originalityPassed, false);
+  assert.equal(copiedDraft.passed, false);
+
+  const originalDraft = validateReviewQuality({
+    reviewText:
+      'My appointment at Enrich Salon went smoothly. The staff listened carefully to my styling preferences and kept the station neat.',
+    language: 'en',
+    businessName: 'Enrich Salon',
+    category: 'Hair Salons',
+    responses: [{ question: 'Experience', answers: ['Great'] }],
+    referenceReviews,
+  });
+  assert.equal(originalDraft.copiedReferenceCount, 0);
+  assert.equal(originalDraft.originalityPassed, true);
+  assert.equal(originalDraft.passed, true);
+});
+
+test('TC-QUAL-15: Rejects unsupported SEO superlative claims such as best, top-rated, number one, or most popular', () => {
+  const hypedDraft = validateReviewQuality({
+    reviewText:
+      'This is the best tattoo studio and top-rated salon in Andheri West with great service.',
+    language: 'en',
+    businessName: 'ABC Tattoo Studio',
+    category: 'Hair Salons',
+    responses: [{ question: 'Service', answers: ['Great'] }],
+  });
+  assert.ok(hypedDraft.inventedClaimCount >= 1);
+  assert.ok(hypedDraft.issues.some((i) => i.type === 'invented_claim'));
+  assert.equal(hypedDraft.passed, false);
+});
+

@@ -13,13 +13,24 @@ import {
   isMondayToday,
   normalizeEmail,
   resolveVisitorQuotaState,
+  getAllowedLanguagesForTier,
+  isLanguageAllowedForTier,
   sanitizeAccessLevel,
   sanitizeEnabledFeatures,
   sanitizeFormTemplate,
   sanitizeGbpSettings,
+  sanitizePackageTier,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
 } from '../src/utils/domainHelpers.ts';
+import {
+  buildContextualSeoSuggestions,
+  sanitizeSeoKeywordPhrase,
+} from '../src/utils/seoKeywordEngine.ts';
+import {
+  INDIA_SALON_REAL_REVIEW_DATASET,
+  buildWritingStyleProfile,
+} from '../src/data/realReviewDatasets.ts';
 import {
   FORM_TEMPLATES,
   classifyQuestionsForTemplate,
@@ -243,4 +254,59 @@ test('TC-DOM-10: getPortalTimeGreeting returns morning, afternoon, evening, and 
   assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 18, 45)), 'Good evening');
   assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 22, 15)), 'Hello');
   assert.equal(getPortalTimeGreeting(new Date(2026, 0, 1, 2, 0)), 'Hello');
+});
+
+test('TC-DOM-11: Package tier gating restricts standard to English and standard_plus to all 4 languages', () => {
+  assert.equal(sanitizePackageTier('standard'), 'standard');
+  assert.equal(sanitizePackageTier('standard_plus'), 'standard_plus');
+  assert.equal(sanitizePackageTier(undefined), 'standard_plus');
+
+  assert.deepEqual(getAllowedLanguagesForTier('standard'), ['en']);
+  assert.deepEqual(getAllowedLanguagesForTier('standard_plus'), ['en', 'hi', 'mr', 'hinglish']);
+  assert.equal(isLanguageAllowedForTier('hi', 'standard'), false);
+  assert.equal(isLanguageAllowedForTier('en', 'standard'), true);
+  assert.equal(isLanguageAllowedForTier('mr', 'standard_plus'), true);
+});
+
+test('TC-SEO-01: Contextual SEO Keyword Engine builds non-superlative location+service phrases and enforces package tier', () => {
+  assert.equal(sanitizeSeoKeywordPhrase('best salon in mumbai'), 'salon in mumbai');
+  assert.equal(sanitizeSeoKeywordPhrase('top-rated hair studio'), 'hair studio');
+  assert.equal(sanitizeSeoKeywordPhrase('best'), '');
+  assert.equal(sanitizeSeoKeywordPhrase('Haircut in Andheri West'), 'Haircut in Andheri West');
+
+  const standardByLang = buildContextualSeoSuggestions({
+    businessName: 'Urban Glow Salon',
+    category: 'Hair Salons',
+    locality: 'Andheri West',
+    city: 'Mumbai',
+    servicesOffered: ['Haircut', 'Hair Spa'],
+    packageTier: 'standard',
+  });
+  assert.ok((standardByLang.en || []).some((k) => k.toLowerCase().includes('andheri west')));
+  assert.equal(standardByLang.hi, undefined);
+  assert.equal(standardByLang.mr, undefined);
+
+  const plusByLang = buildContextualSeoSuggestions({
+    businessName: 'Urban Glow Salon',
+    category: 'Hair Salons',
+    locality: 'Andheri West',
+    city: 'Mumbai',
+    servicesOffered: ['Haircut', 'Hair Spa'],
+    packageTier: 'standard_plus',
+  });
+  assert.ok((plusByLang.en || []).length > 0);
+  assert.ok((plusByLang.hi || []).length > 0);
+  assert.ok((plusByLang.mr || []).length > 0);
+  assert.ok((plusByLang.hinglish || []).length > 0);
+});
+
+test('TC-LIB-01: INDIA_SALON_REAL_REVIEW_DATASET covers all 4 languages and distills style metrics cleanly', () => {
+  for (const lang of ['en', 'hi', 'mr', 'hinglish'] as const) {
+    const profile = buildWritingStyleProfile({
+      language: lang,
+      referenceReviews: INDIA_SALON_REAL_REVIEW_DATASET,
+    });
+    assert.ok(profile.sampleCount >= 2, `Expected reference samples for ${lang}`);
+    assert.ok(profile.avgWordsPerSentence > 0);
+  }
 });

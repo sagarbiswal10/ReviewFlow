@@ -10,19 +10,27 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { BUSINESS_CATEGORIES, type BusinessCategory, type EnabledFeatures } from '../types';
+import {
+  BUSINESS_CATEGORIES,
+  type BusinessCategory,
+  type EnabledFeatures,
+  type PackageTier,
+  type ReviewLanguage,
+} from '../types';
 import {
   createCategoryQuestions,
   DEFAULT_ENABLED_FEATURES,
   DEMO_BISTRO_LOGO,
   DEMO_SALON_LOGO,
 } from '../data/categoryPresets';
+import { getStarterReferenceReviewsForCategory } from '../data/realReviewDatasets';
 import {
   createBusiness,
-  fetchAutoSeoKeywords,
+  fetchContextualSeoKeywords,
   generateRandomToken,
   sanitizeSlug,
 } from '../services/businessService';
+import { sanitizePackageTier } from '../utils/domainHelpers';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { compressLogoFile } from '../utils/qrAndPdf';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
@@ -52,10 +60,13 @@ export function OnboardingModal({
   const [category, setCategory] = useState<BusinessCategory>('Hair Salons');
   const [clientEmail, setClientEmail] = useState(isAdmin ? '' : userEmail);
   const [clientAccessLevel, setClientAccessLevel] = useState<'read_only' | 'qr_and_questions' | 'full'>('full');
+  const [packageTier, setPackageTier] = useState<PackageTier>('standard_plus');
   const [enabledFeatures, setEnabledFeatures] = useState<EnabledFeatures>({
     ...DEFAULT_ENABLED_FEATURES,
   });
   const [address, setAddress] = useState('');
+  const [locality, setLocality] = useState('');
+  const [city, setCity] = useState('');
   const [phone, setPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(userEmail);
   const [website, setWebsite] = useState('');
@@ -63,6 +74,9 @@ export function OnboardingModal({
   const [logoDataUrl, setLogoDataUrl] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#0F766E');
   const [seoKeywords, setSeoKeywords] = useState<string[]>([]);
+  const [seoKeywordsByLanguage, setSeoKeywordsByLanguage] = useState<
+    Partial<Record<ReviewLanguage, string[]>>
+  >({});
   const [newKeyword, setNewKeyword] = useState('');
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [keywordsTouched, setKeywordsTouched] = useState(false);
@@ -100,19 +114,26 @@ export function OnboardingModal({
     targetName: string,
     targetCategory: BusinessCategory,
     targetAddress: string,
+    targetLocality: string = locality,
+    targetCity: string = city,
+    targetTier: PackageTier = packageTier,
   ) => {
     const cleanName = targetName.trim();
     if (cleanName.length < 2) return;
     setIsGeneratingKeywords(true);
     try {
-      const generated = await fetchAutoSeoKeywords({
+      const result = await fetchContextualSeoKeywords({
         businessName: cleanName,
         category: targetCategory,
         address: targetAddress,
+        locality: targetLocality,
+        city: targetCity,
+        packageTier: sanitizePackageTier(targetTier),
       });
       if (!mountedRef.current) return;
-      setSeoKeywords(generated);
-      lastAutoKeyRef.current = `${cleanName.toLowerCase()}|${targetCategory}|${targetAddress.trim().toLowerCase()}`;
+      setSeoKeywords(result.keywords);
+      setSeoKeywordsByLanguage(result.keywordsByLanguage);
+      lastAutoKeyRef.current = `${cleanName.toLowerCase()}|${targetCategory}|${targetAddress.trim().toLowerCase()}|${targetLocality.trim().toLowerCase()}|${targetCity.trim().toLowerCase()}|${targetTier}`;
     } finally {
       if (mountedRef.current) {
         setIsGeneratingKeywords(false);
@@ -123,14 +144,14 @@ export function OnboardingModal({
   useEffect(() => {
     const cleanName = name.trim();
     if (cleanName.length < 3 || keywordsTouched) return;
-    const signature = `${cleanName.toLowerCase()}|${category}|${address.trim().toLowerCase()}`;
+    const signature = `${cleanName.toLowerCase()}|${category}|${address.trim().toLowerCase()}|${locality.trim().toLowerCase()}|${city.trim().toLowerCase()}|${packageTier}`;
     if (signature === lastAutoKeyRef.current) return;
 
     const timer = setTimeout(() => {
-      runAutoKeywordGeneration(cleanName, category, address);
+      runAutoKeywordGeneration(cleanName, category, address, locality, city, packageTier);
     }, 650);
     return () => clearTimeout(timer);
-  }, [name, category, address, keywordsTouched]);
+  }, [name, category, address, locality, city, packageTier, keywordsTouched]);
 
   const handleNameChange = (val: string) => {
     setName(val);
@@ -201,17 +222,26 @@ export function OnboardingModal({
     setIsSubmitting(true);
     try {
       let finalKeywords = seoKeywords;
+      let finalKeywordsByLang = seoKeywordsByLanguage;
       if (finalKeywords.length === 0) {
-        finalKeywords = await fetchAutoSeoKeywords({
+        const contextual = await fetchContextualSeoKeywords({
           businessName: name.trim(),
           category,
           address: address.trim(),
+          locality: locality.trim(),
+          city: city.trim(),
+          packageTier: isAdmin ? packageTier : 'standard_plus',
         });
+        finalKeywords = contextual.keywords;
+        finalKeywordsByLang = contextual.keywordsByLanguage;
       }
 
+      const effectiveTier: PackageTier = isAdmin ? packageTier : 'standard_plus';
+      const starterRefs = getStarterReferenceReviewsForCategory(category);
       const normalizedSlug = sanitizeSlug(slug || name);
       const businessId = await createBusiness(ownerId, {
         ownerName: ownerName.trim(),
+        packageTier: effectiveTier,
         clientEmail: isAdmin ? clientEmail : userEmail,
         clientAccessLevel: isAdmin ? clientAccessLevel : 'full',
         enabledFeatures: isAdmin ? enabledFeatures : undefined,
@@ -219,6 +249,8 @@ export function OnboardingModal({
         slug: normalizedSlug,
         category,
         address: address.trim(),
+        locality: locality.trim(),
+        city: city.trim(),
         phone: phone.trim(),
         contactEmail: (contactEmail || userEmail).trim(),
         website: website.trim() ? sanitizeExternalUrl(website, '') : '',
@@ -240,6 +272,8 @@ export function OnboardingModal({
         },
         questions: createCategoryQuestions(category),
         seoKeywords: finalKeywords,
+        seoKeywordsByLanguage: finalKeywordsByLang,
+        referenceReviews: starterRefs,
       });
 
       onCreated(businessId);
@@ -520,15 +554,43 @@ export function OnboardingModal({
                 </div>
 
                 <div className="min-w-0">
+                  <label htmlFor="onboarding-locality" className="block text-xs font-medium text-slate-700 mb-1.5">
+                    Locality / Area
+                  </label>
+                  <input
+                    id="onboarding-locality"
+                    type="text"
+                    value={locality}
+                    onChange={(e) => setLocality(e.target.value)}
+                    placeholder="e.g., Andheri West, Vashi"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label htmlFor="onboarding-city" className="block text-xs font-medium text-slate-700 mb-1.5">
+                    City
+                  </label>
+                  <input
+                    id="onboarding-city"
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g., Mumbai"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
+                  />
+                </div>
+
+                <div className="min-w-0">
                   <label htmlFor="onboarding-address" className="block text-xs font-medium text-slate-700 mb-1.5">
-                    Street Address / City
+                    Street Address
                   </label>
                   <input
                     id="onboarding-address"
                     type="text"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Street address, area, city"
+                    placeholder="Shop no., street, landmark"
                     className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
                   />
                 </div>
@@ -566,7 +628,7 @@ export function OnboardingModal({
                   disabled={isGeneratingKeywords || name.trim().length < 2}
                   onClick={() => {
                     setKeywordsTouched(false);
-                    runAutoKeywordGeneration(name, category, address);
+                    runAutoKeywordGeneration(name, category, address, locality, city, packageTier);
                   }}
                   className="min-h-[36px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
                 >
@@ -636,7 +698,7 @@ export function OnboardingModal({
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="min-w-0">
                     <label htmlFor="onboarding-client-email" className="block text-xs font-medium text-slate-700 mb-1.5">
                       Customer Gmail Address
@@ -665,6 +727,20 @@ export function OnboardingModal({
                       <option value="read_only">Read-Only (View QR &amp; Stats)</option>
                       <option value="qr_and_questions">QR &amp; Questions Editor</option>
                       <option value="full">Full Self-Service</option>
+                    </select>
+                  </div>
+                  <div className="min-w-0">
+                    <label htmlFor="onboarding-package-tier" className="block text-xs font-medium text-slate-700 mb-1.5">
+                      Growth Plan Tier
+                    </label>
+                    <select
+                      id="onboarding-package-tier"
+                      value={packageTier}
+                      onChange={(e) => setPackageTier(e.target.value as PackageTier)}
+                      className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
+                    >
+                      <option value="standard">Standard (₹2,999 — English Only)</option>
+                      <option value="standard_plus">Standard Plus (₹3,999 — EN/HI/MR/Hinglish)</option>
                     </select>
                   </div>
                 </div>

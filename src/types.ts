@@ -15,7 +15,17 @@ export type BusinessCategory = (typeof BUSINESS_CATEGORIES)[number];
 
 export type ReviewStyle = 'short' | 'detailed' | 'professional';
 
+export type PackageTier = 'standard' | 'standard_plus';
+
 export type ReviewLanguage = 'en' | 'hi' | 'mr' | 'hinglish';
+
+export interface ReferenceReviewItem {
+  id: string;
+  language: ReviewLanguage;
+  sentiment: 'positive' | 'neutral' | 'mixed' | 'negative';
+  text: string;
+  source?: string;
+}
 
 export type ReviewDraftStatus = 'Generated' | 'Edited' | 'Copied' | 'Deleted';
 
@@ -142,6 +152,7 @@ export interface Business {
   id: string;
   ownerId: string;
   ownerName?: string;
+  packageTier?: PackageTier;
   clientEmail: string;
   clientUid?: string;
   clientAccessLevel: ClientAccessLevel;
@@ -150,6 +161,11 @@ export interface Business {
   name: string;
   category: BusinessCategory;
   address: string;
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
   phone: string;
   contactEmail: string;
   website?: string;
@@ -160,6 +176,8 @@ export interface Business {
   questions: FeedbackQuestion[];
   formTemplate?: FormTemplateId;
   seoKeywords?: string[];
+  seoKeywordsByLanguage?: Partial<Record<ReviewLanguage, string[]>>;
+  referenceReviews?: ReferenceReviewItem[];
   qrStandLimit?: number;
   gbpSettings?: GbpReplySettings;
   weeklyReportConfig?: WeeklyReportConfig;
@@ -170,10 +188,18 @@ export interface Business {
 export interface PublicProfile {
   businessId: string;
   ownerId: string;
+  ownerName?: string;
+  packageTier?: PackageTier;
   clientUid?: string;
   slug: string;
   name: string;
   category: BusinessCategory;
+  address?: string;
+  locality?: string;
+  city?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  businessHighlights?: string;
   googleReviewUrl: string;
   logoDataUrl: string;
   enabledFeatures: EnabledFeatures;
@@ -182,6 +208,8 @@ export interface PublicProfile {
   questions: FeedbackQuestion[];
   formTemplate?: FormTemplateId;
   seoKeywords?: string[];
+  seoKeywordsByLanguage?: Partial<Record<ReviewLanguage, string[]>>;
+  referenceReviews?: ReferenceReviewItem[];
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -426,6 +454,9 @@ export interface ReviewQualityReport {
   clicheCount: number;
   groundedFactCount: number;
   autoRepaired: boolean;
+  copiedReferenceCount?: number;
+  ownerHallucinationCount?: number;
+  originalityPassed?: boolean;
   issues: QualityIssue[];
 }
 
