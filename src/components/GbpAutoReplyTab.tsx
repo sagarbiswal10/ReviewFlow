@@ -28,20 +28,20 @@ import type {
 import { updateBusiness } from '../services/businessService';
 import {
   approveAndPublishGbpReply,
-  disconnectGbpConnection,
+  disconnectServerGbp,
+  fetchServerGbpAccounts,
+  fetchServerGbpLocations,
   generateAndStoreGbpReviewReply,
-  getGoogleOAuthClientId,
-  getSavedGbpOAuthClientId,
   ignoreGbpReview,
-  isCustomGbpOAuthClientConfigured,
-  listGbpLocationsWithToken,
-  requestGbpOAuthToken,
-  saveGbpConnection,
-  saveGbpOAuthClientId,
+  publishServerGbpReply,
+  selectServerGbpLocations,
+  startServerGbpOAuth,
   subscribeToBusinessGbpReviews,
   subscribeToGbpConnection,
-  syncGbpReviewsWithToken,
+  syncServerGbpReviews,
   updateGbpReviewReplyText,
+  type ServerGbpAccount,
+  type ServerGbpLocation,
 } from '../services/platformFeaturesService';
 
 interface GbpAutoReplyTabProps {
@@ -65,15 +65,25 @@ export function GbpAutoReplyTab({
 }: GbpAutoReplyTabProps) {
   const [connection, setConnection] = useState<GbpConnection | null>(null);
   const [reviews, setReviews] = useState<GbpReview[]>([]);
-  const [gbpToken, setGbpToken] = useState<string>('');
-  const [discoveredLocations, setDiscoveredLocations] = useState<
-    Array<{ accountName: string; locationName: string; title: string; placeId: string }>
-  >([]);
-  const [selectedLocName, setSelectedLocName] = useState('');
+  const [accounts, setAccounts] = useState<ServerGbpAccount[]>([]);
+  const [selectedAccountName, setSelectedAccountName] = useState('');
+  const [discoveredLocations, setDiscoveredLocations] = useState<ServerGbpLocation[]>([]);
+  const [selectedLocationNames, setSelectedLocationNames] = useState<string[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [isSavingSelection, setIsSavingSelection] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
   const [connNotice, setConnNotice] = useState<string | null>(null);
+  const [topicConflict, setTopicConflict] = useState<{
+    existingTopic: string;
+    sharedTopic: string;
+    existingTypes: string[];
+  } | null>(null);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [copiedCallbackUrl, setCopiedCallbackUrl] = useState(false);
 
   const [settings, setSettings] = useState<GbpReplySettings>(
     business.gbpSettings ?? {
@@ -100,24 +110,9 @@ export function GbpAutoReplyTab({
   const [incomingStars, setIncomingStars] = useState<number>(5);
   const [incomingComment, setIncomingComment] = useState('');
   const [isProcessingIncoming, setIsProcessingIncoming] = useState(false);
-  const oauthAttemptRef = useRef(0);
-  const [customClientInput, setCustomClientInput] = useState<string>(() =>
-    getSavedGbpOAuthClientId(),
-  );
-  const [showOAuthConfig, setShowOAuthConfig] = useState(false);
-  const [copiedOrigin, setCopiedOrigin] = useState(false);
-  const [copiedClientId, setCopiedClientId] = useState(false);
-  const [oauthConfigVersion, setOauthConfigVersion] = useState(0);
-  const hasCustomOAuthClient = useMemo(
-    () => isCustomGbpOAuthClientConfigured(),
-    [oauthConfigVersion],
-  );
-  const activeOAuthClientId = useMemo(
-    () => getGoogleOAuthClientId(),
-    [oauthConfigVersion],
-  );
-  const envOAuthClientConfigured = Boolean((import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim());
+  const oauthCallbackHandledRef = useRef(false);
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const callbackUrl = currentOrigin ? `${currentOrigin}/api/gbp-oauth/callback` : '/api/gbp-oauth/callback';
 
   const isSettingsDirtyRef = useRef(false);
   const defaultGbpSettings = (raw?: GbpReplySettings): GbpReplySettings =>
@@ -204,50 +199,124 @@ export function GbpAutoReplyTab({
     };
   }, [reviews]);
 
-  const handleCancelOAuthWait = () => {
-    oauthAttemptRef.current += 1;
-    setIsConnecting(false);
-    setIsSyncing(false);
-    setConnError(
-      'Google authorization was cancelled. You can use "Process Incoming Review" below without OAuth, or configure your OAuth Client ID and try again.',
-    );
-  };
-
-  const handleSaveCustomOAuthClient = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLoadLocationsForAccount = async (accountName: string) => {
+    if (!accountName) {
+      setDiscoveredLocations([]);
+      return;
+    }
+    setIsLoadingLocations(true);
     setConnError(null);
-    setConnNotice(null);
     try {
-      const saved = saveGbpOAuthClientId(customClientInput);
-      setOauthConfigVersion((v) => v + 1);
-      setShowOAuthConfig(false);
-      setConnNotice(
-        saved
-          ? 'Saved your Google Cloud Web OAuth Client ID for this browser. Click "Connect Google Business" to authorize.'
-          : 'Cleared custom OAuth Client ID override.',
+      const res = await fetchServerGbpLocations(business.id, accountName);
+      if (!mountedRef.current) return;
+      setDiscoveredLocations(res.locations);
+      if (res.emptyMessage) {
+        setConnError(res.emptyMessage);
+      }
+      const existingNames = new Set(
+        (connection?.selectedLocations || []).map((l) => l.locationName),
+      );
+      if (connection?.locationName) existingNames.add(connection.locationName);
+      const matched = res.locations
+        .filter((l) => existingNames.has(l.locationName))
+        .map((l) => l.locationName);
+      setSelectedLocationNames(
+        matched.length > 0 ? matched : res.locations.length === 1 ? [res.locations[0].locationName] : [],
       );
     } catch (err) {
-      setConnError(err instanceof Error ? err.message : 'Invalid OAuth Client ID.');
+      if (mountedRef.current) {
+        setConnError(
+          err instanceof Error ? err.message : 'Unable to fetch Google Business Profile locations.',
+        );
+      }
+    } finally {
+      if (mountedRef.current) setIsLoadingLocations(false);
     }
   };
 
-  const handleCopyOrigin = async () => {
-    if (!currentOrigin) return;
+  const handleLoadAccounts = async () => {
+    setIsLoadingAccounts(true);
+    setConnError(null);
+    setTopicConflict(null);
     try {
-      await navigator.clipboard.writeText(currentOrigin);
-      setCopiedOrigin(true);
-      setTimeout(() => setCopiedOrigin(false), 2000);
-    } catch {
-      // ignore clipboard errors
+      const res = await fetchServerGbpAccounts(business.id);
+      if (!mountedRef.current) return;
+      setAccounts(res.accounts);
+      if (res.emptyMessage) {
+        setConnError(res.emptyMessage);
+      }
+      if (res.accounts.length > 0) {
+        const preferred =
+          (connection?.accountName &&
+            res.accounts.some((a) => a.name === connection.accountName) &&
+            connection.accountName) ||
+          res.accounts[0].name;
+        setSelectedAccountName(preferred);
+        await handleLoadLocationsForAccount(preferred);
+      } else {
+        setSelectedAccountName('');
+        setDiscoveredLocations([]);
+      }
+    } catch (err) {
+      if (mountedRef.current) {
+        setConnError(
+          err instanceof Error ? err.message : 'Unable to fetch Google Business Profile accounts.',
+        );
+      }
+    } finally {
+      if (mountedRef.current) setIsLoadingAccounts(false);
     }
   };
 
-  const handleCopyClientId = async () => {
-    if (!activeOAuthClientId) return;
+  // Detect return from Google OAuth callback (?gbp_oauth=connected|pending_api_approval|error)
+  useEffect(() => {
+    if (typeof window === 'undefined' || oauthCallbackHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const oauthState = params.get('gbp_oauth');
+    const bizParam = params.get('businessId');
+    if (!oauthState || (bizParam && bizParam !== business.id)) return;
+
+    oauthCallbackHandledRef.current = true;
+    const oauthErr = params.get('gbp_error');
+
+    // Clean callback params from URL bar while staying on the portal/admin route
+    params.delete('gbp_oauth');
+    params.delete('gbp_error');
+    params.delete('businessId');
+    params.delete('accounts');
+    const nextSearch = params.toString();
+    const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+    window.history.replaceState({}, '', cleanUrl);
+
+    if (oauthState === 'connected') {
+      setConnNotice(
+        'Google account authorized securely. Select your Google Business Profile account and location(s) below to enable review notifications.',
+      );
+      void handleLoadAccounts();
+    } else if (oauthState === 'pending_api_approval') {
+      setConnError(
+        oauthErr ||
+          'Google OAuth completed, but Google Business Profile API access/quota is still pending approval.',
+      );
+    } else if (oauthState === 'error') {
+      setConnError(oauthErr || 'Google Business Profile OAuth did not complete.');
+    }
+  }, [business.id]);
+
+  // Reset transient account/location picker state when switching between businesses
+  useEffect(() => {
+    setAccounts([]);
+    setSelectedAccountName('');
+    setDiscoveredLocations([]);
+    setSelectedLocationNames([]);
+    setTopicConflict(null);
+  }, [business.id]);
+
+  const handleCopyCallbackUrl = async () => {
     try {
-      await navigator.clipboard.writeText(activeOAuthClientId);
-      setCopiedClientId(true);
-      setTimeout(() => setCopiedClientId(false), 2000);
+      await navigator.clipboard.writeText(callbackUrl);
+      setCopiedCallbackUrl(true);
+      setTimeout(() => setCopiedCallbackUrl(false), 2000);
     } catch {
       // ignore clipboard errors
     }
@@ -256,150 +325,134 @@ export function GbpAutoReplyTab({
   const handleConnectGoogleOAuth = async () => {
     setConnError(null);
     setConnNotice(null);
-    if (!hasCustomOAuthClient) {
-      setShowOAuthConfig(true);
-      setConnError(
-        `Please enter your Google Cloud Web OAuth Client ID below first (with ${currentOrigin || 'this site'} in Authorized JavaScript Origins). Using the default Firebase Auth client triggers Google Error 400: origin_mismatch.`,
-      );
-      return;
-    }
-    const attemptId = ++oauthAttemptRef.current;
+    setTopicConflict(null);
     setIsConnecting(true);
     try {
-      const token = await requestGbpOAuthToken();
-      if (oauthAttemptRef.current !== attemptId) return;
-      setGbpToken(token);
-      try {
-        const locations = await listGbpLocationsWithToken(token);
-        if (oauthAttemptRef.current !== attemptId) return;
-        setDiscoveredLocations(locations);
-        if (locations.length > 0) {
-          setSelectedLocName(locations[0].locationName);
-          await saveGbpConnection({
-            business,
-            connectionStatus: 'connected',
-            connectedEmail: '',
-            accountName: locations[0].accountName,
-            locationName: locations[0].locationName,
-            locationTitle: locations[0].title,
-            placeId: locations[0].placeId,
-            existing: connection,
-          });
-          setConnNotice(`Connected Google Business Profile location: ${locations[0].title}`);
-        } else {
-          await saveGbpConnection({
-            business,
-            connectionStatus: 'connected',
-            connectedEmail: '',
-            accountName: 'authorized',
-            locationName: '',
-            locationTitle: 'No GBP locations found on this Google account',
-            placeId: '',
-            existing: connection,
-          });
-          setConnNotice('OAuth authorized, but no Google Business Profile locations were returned for this Google account.');
-        }
-      } catch (apiErr) {
-        if (oauthAttemptRef.current !== attemptId) return;
-        const msg = apiErr instanceof Error ? apiErr.message : String(apiErr);
-        await saveGbpConnection({
-          business,
-          connectionStatus: 'pending_api_approval',
-          connectedEmail: '',
-          accountName: 'oauth_authorized',
-          locationName: '',
-          locationTitle: 'Pending Google GBP API Access Approval',
-          placeId: '',
-          existing: connection,
-        });
-        setConnError(
-          `Google OAuth succeeded, but Google Business Profile API returned an authorization/quota notice: ${msg}`,
-        );
-      }
+      const { authUrl } = await startServerGbpOAuth({
+        businessId: business.id,
+        returnPath: isAdmin ? '/admin' : '/portal',
+      });
+      window.location.assign(authUrl);
     } catch (err) {
-      if (oauthAttemptRef.current !== attemptId) return;
-      setShowOAuthConfig(true);
-      setConnError(err instanceof Error ? err.message : 'Google Business Profile OAuth failed.');
-    } finally {
-      if (oauthAttemptRef.current === attemptId) {
+      if (mountedRef.current) {
         setIsConnecting(false);
+        setShowSetupGuide(true);
+        setConnError(
+          err instanceof Error ? err.message : 'Unable to initiate Google Business Profile OAuth.',
+        );
       }
     }
   };
 
-  const handleSaveSelectedLocation = async (locationName: string) => {
-    const loc = discoveredLocations.find((l) => l.locationName === locationName);
-    if (!loc) return;
+  const handleToggleLocation = (locName: string) => {
+    setSelectedLocationNames((prev) =>
+      prev.includes(locName) ? prev.filter((item) => item !== locName) : [...prev, locName],
+    );
+  };
+
+  const handleSaveSelectedLocations = async (replaceExistingTopic = false) => {
+    if (!selectedAccountName) {
+      setConnError('Select a Google Business Profile account first.');
+      return;
+    }
+    const chosen = discoveredLocations.filter((l) =>
+      selectedLocationNames.includes(l.locationName),
+    );
+    if (chosen.length === 0) {
+      setConnError('Select at least one business location before saving.');
+      return;
+    }
+
+    setIsSavingSelection(true);
     setConnError(null);
     setConnNotice(null);
-    setSelectedLocName(locationName);
     try {
-      await saveGbpConnection({
-        business,
-        connectionStatus: 'connected',
-        connectedEmail: connection?.connectedEmail || '',
-        accountName: loc.accountName,
-        locationName: loc.locationName,
-        locationTitle: loc.title,
-        placeId: loc.placeId,
-        existing: connection,
+      const res = await selectServerGbpLocations({
+        businessId: business.id,
+        accountName: selectedAccountName,
+        locations: chosen,
+        replaceExistingTopic,
       });
-      setConnNotice(`Active location switched to ${loc.title}`);
+      if (!mountedRef.current) return;
+
+      if (res.notification.status === 'conflict') {
+        setTopicConflict({
+          existingTopic: res.notification.existingTopic || '',
+          sharedTopic: res.notification.pubsubTopic,
+          existingTypes: res.notification.existingTypes || [],
+        });
+        setConnNotice(
+          `Saved ${chosen.length} selected location(s). Existing Pub/Sub topic was preserved without overwriting.`,
+        );
+      } else if (res.notification.status === 'error') {
+        setTopicConflict(null);
+        setConnNotice(`Saved ${chosen.length} selected location(s).`);
+        setConnError(
+          res.notification.errorMessage ||
+            'Location saved, but enabling Google Pub/Sub notifications returned a warning.',
+        );
+      } else {
+        setTopicConflict(null);
+        setConnNotice(
+          `Connected ${chosen.length} location(s) and enabled real-time NEW_REVIEW & UPDATED_REVIEW notifications on shared topic (${res.notification.pubsubTopic}).`,
+        );
+      }
     } catch (err) {
-      setConnError(err instanceof Error ? err.message : 'Unable to save selected GBP location.');
+      if (mountedRef.current) {
+        setConnError(
+          err instanceof Error ? err.message : 'Unable to save selected GBP locations.',
+        );
+      }
+    } finally {
+      if (mountedRef.current) setIsSavingSelection(false);
     }
   };
 
   const handleDisconnect = async () => {
     setConnError(null);
     setConnNotice(null);
+    setTopicConflict(null);
+    setIsDisconnecting(true);
     try {
-      await disconnectGbpConnection(business, connection);
-      setGbpToken('');
+      await disconnectServerGbp(business.id);
+      if (!mountedRef.current) return;
+      setAccounts([]);
+      setSelectedAccountName('');
       setDiscoveredLocations([]);
-      setConnNotice('Google Business Profile connection disconnected.');
+      setSelectedLocationNames([]);
+      setConnNotice('Google Business Profile disconnected and OAuth tokens revoked.');
     } catch (err) {
-      setConnError(
-        err instanceof Error ? err.message : 'Unable to disconnect Google Business Profile.',
-      );
+      if (mountedRef.current) {
+        setConnError(
+          err instanceof Error ? err.message : 'Unable to disconnect Google Business Profile.',
+        );
+      }
+    } finally {
+      if (mountedRef.current) setIsDisconnecting(false);
     }
   };
 
   const handleSyncNow = async () => {
     setConnError(null);
     setConnNotice(null);
-    const attemptId = ++oauthAttemptRef.current;
     setIsSyncing(true);
     try {
-      let tokenToUse = gbpToken;
-      if (!tokenToUse) {
-        tokenToUse = await requestGbpOAuthToken();
-        if (oauthAttemptRef.current !== attemptId) return;
-        setGbpToken(tokenToUse);
+      const res = await syncServerGbpReviews(business.id);
+      if (!mountedRef.current) return;
+      if (res.warnings && res.warnings.length > 0) {
+        setConnError(res.warnings[0]);
       }
-      const locName = connection?.locationName || selectedLocName;
-      if (!locName) {
-        throw new Error('Select a verified Google Business Profile location before syncing reviews.');
-      }
-      const imported = await syncGbpReviewsWithToken({
-        business,
-        gbpAccessToken: tokenToUse,
-        locationName: locName,
-        existingReviews: reviews,
-      });
-      if (oauthAttemptRef.current !== attemptId) return;
       setConnNotice(
-        imported > 0
-          ? `Synced ${imported} new Google review(s) and generated AI replies.`
+        res.imported > 0
+          ? `Synced ${res.imported} new Google review(s) and generated AI replies.`
           : 'Sync complete. All latest Google reviews are already in your queue.',
       );
     } catch (err) {
-      if (oauthAttemptRef.current !== attemptId) return;
-      setConnError(err instanceof Error ? err.message : 'Unable to sync Google reviews.');
-    } finally {
-      if (oauthAttemptRef.current === attemptId) {
-        setIsSyncing(false);
+      if (mountedRef.current) {
+        setConnError(err instanceof Error ? err.message : 'Unable to sync Google reviews.');
       }
+    } finally {
+      if (mountedRef.current) setIsSyncing(false);
     }
   };
 
@@ -451,7 +504,6 @@ export function GbpAutoReplyTab({
         starRating: incomingStars,
         comment: incomingComment.trim(),
         source: 'pubsub_webhook',
-        gbpAccessToken: gbpToken || undefined,
         locationName: connection?.locationName || undefined,
       });
       setIncomingReviewer('');
@@ -483,7 +535,6 @@ export function GbpAutoReplyTab({
         externalReviewId: rev.externalReviewId,
         source: rev.source,
         existingReviewId: rev.id,
-        gbpAccessToken: gbpToken || undefined,
         locationName: connection?.locationName || undefined,
       });
       setQueueNotice(`Regenerated AI response for ${rev.reviewerName}.`);
@@ -499,12 +550,21 @@ export function GbpAutoReplyTab({
     setBusyReviewId(rev.id);
     setQueueError(null);
     try {
-      await approveAndPublishGbpReply({
-        review: rev,
-        editedText: customText ?? rev.aiReplyText,
-        gbpAccessToken: gbpToken || undefined,
-        locationName: connection?.locationName || undefined,
-      });
+      const replyText = (customText ?? rev.aiReplyText).trim();
+      if (connection?.connectionStatus === 'connected' && connection.locationName) {
+        await publishServerGbpReply({
+          businessId: business.id,
+          reviewId: rev.id,
+          externalReviewId: rev.externalReviewId,
+          replyText,
+          locationName: connection.locationName,
+        });
+      } else {
+        await approveAndPublishGbpReply({
+          review: rev,
+          editedText: replyText,
+        });
+      }
       setEditingReviewId(null);
       setQueueNotice(`Reply approved & published for ${rev.reviewerName}.`);
       setTimeout(() => setQueueNotice(null), 3000);
@@ -547,8 +607,8 @@ export function GbpAutoReplyTab({
       {/* Section 6.1: Google Business Profile Connection & Sync */}
       <div className="liquid-glass rounded-2xl p-6 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2.5">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-display text-lg font-bold text-slate-900">
                 Google Business Profile Connection
               </h2>
@@ -567,17 +627,25 @@ export function GbpAutoReplyTab({
                     ? 'OAuth Ready · GBP API Access Pending'
                     : 'Not Connected'}
               </span>
+              {connection?.notificationStatus === 'enabled' && (
+                <span className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-teal-50 text-teal-800">
+                  Pub/Sub Review Notifications Active
+                </span>
+              )}
+              {connection?.tokenStatus === 'expired_or_revoked' && (
+                <span className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-red-50 text-red-700">
+                  Authorization Expired · Reconnect Required
+                </span>
+              )}
             </div>
             <p className="text-xs sm:text-sm text-slate-600">
               {connection?.locationTitle
-                ? `Location: ${connection.locationTitle}${
-                    allowOAuthConnection && connection.connectedEmail
-                      ? ` (${connection.connectedEmail})`
-                      : ''
+                ? `${connection.locationTitle}${
+                    connection.connectedEmail ? ` · Google account: ${connection.connectedEmail}` : ''
                   }`
                 : allowOAuthConnection
-                  ? 'Connect Google Business Profile via OAuth 2.0 (business.manage scope) to fetch reviews and publish AI owner replies.'
-                  : 'Google Business Profile connection is managed centrally by your ReviewFlow Administrator in the Business Management Console. Configure your rating rules, test incoming reviews, and approve AI replies below.'}
+                  ? 'Connect your Google Business Profile account securely to select business locations, enable real-time review notifications, and sync/reply to reviews.'
+                  : 'Google Business Profile connection requires Full Self-Service portal access or Business Management admin authorization.'}
             </p>
           </div>
 
@@ -598,40 +666,48 @@ export function GbpAutoReplyTab({
                     )}
                     <span>
                       {isConnecting
-                        ? 'Waiting for Google...'
+                        ? 'Redirecting to Google...'
                         : connection?.connectionStatus === 'connected'
                           ? 'Reconnect Google Account'
-                          : 'Connect Google Business'}
+                          : 'Connect Google Business Profile'}
                     </span>
                   </button>
-
-                  {(isConnecting || isSyncing) && (
-                    <button
-                      type="button"
-                      onClick={handleCancelOAuthWait}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
-                    >
-                      Cancel
-                    </button>
-                  )}
 
                   {connection?.connectionStatus === 'connected' && (
                     <>
                       <button
                         type="button"
-                        disabled={isSyncing}
-                        onClick={handleSyncNow}
+                        disabled={isLoadingAccounts}
+                        onClick={handleLoadAccounts}
                         className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                        <span>Sync Reviews</span>
+                        {isLoadingAccounts && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        <span>{accounts.length > 0 ? 'Refresh Accounts' : 'Select Locations'}</span>
                       </button>
+
+                      {Boolean(connection.locationName || (connection.selectedLocations?.length ?? 0) > 0) && (
+                        <button
+                          type="button"
+                          disabled={isSyncing}
+                          onClick={handleSyncNow}
+                          className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>Sync Reviews</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
+                        disabled={isDisconnecting}
                         onClick={handleDisconnect}
-                        className="px-3.5 py-2.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-xs font-semibold text-red-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        className="px-3.5 py-2.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-xs font-semibold text-red-700 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
                       >
-                        <Unlink className="w-3.5 h-3.5" />
+                        {isDisconnecting ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Unlink className="w-3.5 h-3.5" />
+                        )}
                         <span>Disconnect</span>
                       </button>
                     </>
@@ -651,171 +727,251 @@ export function GbpAutoReplyTab({
           )}
         </div>
 
-        {allowOAuthConnection && discoveredLocations.length > 1 && (
-          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
-            <label className="text-xs font-semibold text-slate-700">
-              Select GBP Location:
-            </label>
-            <select
-              value={selectedLocName || connection?.locationName || ''}
-              onChange={(e) => handleSaveSelectedLocation(e.target.value)}
-              className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800"
-            >
-              {discoveredLocations.map((loc) => (
-                <option key={loc.locationName} value={loc.locationName}>
-                  {loc.title} ({loc.locationName})
-                </option>
-              ))}
-            </select>
+        {/* Saved Locations & Pub/Sub Notification Summary */}
+        {connection?.connectionStatus === 'connected' &&
+          (connection.selectedLocations?.length || connection.locationName) && (
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-slate-800">
+                  Connected Locations ({connection.selectedLocations?.length || 1})
+                </span>
+                <span className="text-slate-600">
+                  Notifications:{' '}
+                  <strong className="text-slate-900">
+                    {connection.notificationStatus === 'enabled'
+                      ? `${(connection.notificationTypes || ['NEW_REVIEW', 'UPDATED_REVIEW']).join(', ')}`
+                      : connection.notificationStatus === 'conflict'
+                        ? 'Existing external Pub/Sub topic kept'
+                        : connection.notificationStatus === 'error'
+                          ? 'Needs attention'
+                          : 'Not configured yet'}
+                  </strong>
+                  {connection.notificationTopic ? ` · ${connection.notificationTopic}` : ''}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {(connection.selectedLocations && connection.selectedLocations.length > 0
+                  ? connection.selectedLocations
+                  : [
+                      {
+                        accountName: connection.accountName,
+                        locationName: connection.locationName,
+                        title: connection.locationTitle,
+                        address: '',
+                        storeCode: '',
+                        placeId: connection.placeId,
+                      },
+                    ]
+                ).map((loc) => (
+                  <div
+                    key={loc.locationName}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs space-y-0.5"
+                  >
+                    <p className="font-semibold text-slate-900">{loc.title}</p>
+                    {loc.address && <p className="text-slate-600">{loc.address}</p>}
+                    <p className="text-[11px] font-mono text-slate-500">
+                      {loc.storeCode ? `Store: ${loc.storeCode} · ` : ''}
+                      {loc.locationName}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        {/* Paginated Google Account & Location Selector */}
+        {allowOAuthConnection && canEdit && accounts.length > 0 && (
+          <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Choose Google Business Account &amp; Locations
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Select one or more business locations and click Save to enable real-time Google review notifications.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                  Account:
+                </label>
+                <select
+                  value={selectedAccountName}
+                  onChange={(e) => {
+                    const nextAcc = e.target.value;
+                    setSelectedAccountName(nextAcc);
+                    void handleLoadLocationsForAccount(nextAcc);
+                  }}
+                  className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-900"
+                >
+                  {accounts.map((acc) => (
+                    <option key={acc.name} value={acc.name}>
+                      {acc.accountName} ({acc.type} · {acc.verificationState})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {isLoadingLocations ? (
+              <div className="flex items-center gap-2 text-xs text-slate-600 py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
+                <span>Loading business locations from Google...</span>
+              </div>
+            ) : discoveredLocations.length === 0 ? (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No locations found under this Google Business account. Select another account above or verify your profile in Google Business Profile Manager.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                  {discoveredLocations.map((loc) => {
+                    const checked = selectedLocationNames.includes(loc.locationName);
+                    return (
+                      <label
+                        key={loc.locationName}
+                        className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs cursor-pointer transition-colors ${
+                          checked
+                            ? 'border-teal-600 bg-white shadow-xs'
+                            : 'border-slate-200 bg-white/80 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleToggleLocation(loc.locationName)}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-teal-700"
+                        />
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-semibold text-slate-900">{loc.title}</span>
+                            {loc.hasVoiceOfMerchant === false && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-semibold">
+                                Verification Pending
+                              </span>
+                            )}
+                          </div>
+                          {loc.address && <p className="text-slate-600">{loc.address}</p>}
+                          <p className="text-[11px] font-mono text-slate-500">
+                            {loc.storeCode ? `Store Code: ${loc.storeCode} · ` : ''}
+                            {loc.locationName}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-slate-600">
+                    {selectedLocationNames.length} of {discoveredLocations.length} location(s) selected
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSavingSelection || selectedLocationNames.length === 0}
+                    onClick={() => handleSaveSelectedLocations(false)}
+                    className="px-4 py-2 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingSelection && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Save Selected Locations &amp; Enable Review Notifications</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Conflict Protection Banner for Shared Google Account Pub/Sub Setting */}
+        {topicConflict && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-950 space-y-2.5">
+            <p className="font-bold">
+              Existing Google Pub/Sub Topic Detected (Preserved Automatically)
+            </p>
+            <p className="leading-relaxed">
+              This Google Business account already publishes notifications to{' '}
+              <span className="font-mono font-semibold">{topicConflict.existingTopic}</span>. ReviewFlow did not overwrite it. Would you like to switch notifications to ReviewFlow&apos;s shared topic ({topicConflict.sharedTopic})?
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={isSavingSelection}
+                onClick={() => handleSaveSelectedLocations(true)}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-950 text-white font-semibold cursor-pointer disabled:opacity-50"
+              >
+                Switch to ReviewFlow Shared Topic
+              </button>
+              <button
+                type="button"
+                onClick={() => setTopicConflict(null)}
+                className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 text-amber-900 font-semibold cursor-pointer"
+              >
+                Keep Existing Topic
+              </button>
+            </div>
           </div>
         )}
 
         {connError && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
-            <span>{connError}</span>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+              <span>{connError}</span>
+            </div>
+            {allowOAuthConnection && (
+              <button
+                type="button"
+                onClick={() => setShowSetupGuide((prev) => !prev)}
+                className="text-[11px] font-semibold text-amber-950 underline shrink-0 cursor-pointer"
+              >
+                {showSetupGuide ? 'Hide Setup' : 'OAuth Setup'}
+              </button>
+            )}
           </div>
         )}
-        {allowOAuthConnection &&
-          (!hasCustomOAuthClient || showOAuthConfig) &&
-          connection?.connectionStatus !== 'connected' && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3.5 text-xs text-slate-700 space-y-3">
+
+        {allowOAuthConnection && showSetupGuide && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3.5 text-xs text-slate-700 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-slate-900 inline-flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-[#0f766e]" />
-                <span>Google Business Profile OAuth Setup &amp; Troubleshooter</span>
+                <span>Server-Side Google Business Profile OAuth Configuration</span>
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {currentOrigin && (
-                  <button
-                    type="button"
-                    onClick={handleCopyOrigin}
-                    className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedOrigin ? (
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                    <span>{copiedOrigin ? 'Origin Copied' : `Copy ${currentOrigin}`}</span>
-                  </button>
-                )}
-                {activeOAuthClientId && (
-                  <button
-                    type="button"
-                    onClick={handleCopyClientId}
-                    className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedClientId ? (
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                    <span>{copiedClientId ? 'Client ID Copied' : 'Copy Client ID'}</span>
-                  </button>
-                )}
-                {showOAuthConfig && hasCustomOAuthClient && (
-                  <button
-                    type="button"
-                    onClick={() => setShowOAuthConfig(false)}
-                    className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-600 cursor-pointer"
-                  >
-                    Hide
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-1.5 leading-relaxed">
-              <p>
-                Active OAuth Client ID:{' '}
-                <span className="font-mono font-semibold text-slate-900 break-all">
-                  {activeOAuthClientId || 'not set'}
-                </span>
-              </p>
-              <p className="font-semibold text-slate-800 pt-1">
-                If Google shows &ldquo;Access blocked: Authorisation error&rdquo;, verify all 4 items in Google Cloud Console:
-              </p>
-              <ol className="list-decimal list-inside space-y-1 text-slate-700">
-                <li>
-                  <span className="font-semibold">Credentials &rarr; OAuth Client Type:</span> Must be{' '}
-                  <span className="font-semibold">Web application</span> matching the Client ID above.
-                </li>
-                <li>
-                  <span className="font-semibold">Authorized JavaScript origins:</span> Add{' '}
-                  <span className="font-mono font-semibold text-slate-900">{currentOrigin || 'this URL'}</span>{' '}
-                  exact URL with <span className="font-semibold">no trailing slash</span> (do{' '}
-                  <span className="italic">not</span> only add it to Redirect URIs).
-                </li>
-                <li>
-                  <span className="font-semibold">Google Auth Platform &rarr; Audience:</span> Keep Publishing Status as{' '}
-                  <span className="font-semibold">Testing</span> (unverified Production blocks sensitive scope{' '}
-                  <span className="font-mono">business.manage</span>) and add the Google Business Gmail under{' '}
-                  <span className="font-semibold">Test users</span>.
-                </li>
-                <li>
-                  <span className="font-semibold">APIs &amp; Services &rarr; Library:</span> Enable{' '}
-                  <span className="font-semibold">My Business Account Management API</span> and{' '}
-                  <span className="font-semibold">My Business Business Information API</span> in the same project.
-                </li>
-              </ol>
-              <p className="text-slate-600 pt-0.5">
-                Or test replies immediately without OAuth using <span className="font-semibold">Process Incoming Review</span>.
-              </p>
-            </div>
-
-            <form
-              onSubmit={handleSaveCustomOAuthClient}
-              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1"
-            >
-              <input
-                type="text"
-                value={customClientInput}
-                onChange={(e) => setCustomClientInput(e.target.value)}
-                placeholder="Override OAuth Client ID for this browser (e.g. 123456-abc.apps.googleusercontent.com)"
-                className="flex-1 h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900"
-              />
               <button
-                type="submit"
-                className="h-9 px-3.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                type="button"
+                onClick={handleCopyCallbackUrl}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
               >
-                Save Client ID
+                {copiedCallbackUrl ? (
+                  <Check className="w-3 h-3 text-emerald-600" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+                <span>{copiedCallbackUrl ? 'Callback URI Copied' : 'Copy Callback URI'}</span>
               </button>
-              {getSavedGbpOAuthClientId() && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomClientInput('');
-                    saveGbpOAuthClientId('');
-                    setOauthConfigVersion((v) => v + 1);
-                    setConnNotice('Cleared browser override; using environment OAuth Client ID.');
-                  }}
-                  className="h-9 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
-                >
-                  Reset Override
-                </button>
-              )}
-            </form>
+            </div>
+            <ol className="list-decimal list-inside space-y-1 text-slate-700 leading-relaxed">
+              <li>
+                In Google Cloud Console → <span className="font-semibold">Credentials → Web OAuth Client</span> →{' '}
+                <span className="font-semibold">Authorized redirect URIs</span>, add:{' '}
+                <span className="font-mono font-semibold text-slate-900 break-all">{callbackUrl}</span>
+              </li>
+              <li>
+                In Vercel → <span className="font-semibold">Environment Variables</span> (Server-only, never{' '}
+                <span className="font-mono">VITE_</span>), set{' '}
+                <span className="font-mono font-semibold">GOOGLE_OAUTH_CLIENT_ID</span>,{' '}
+                <span className="font-mono font-semibold">GOOGLE_OAUTH_CLIENT_SECRET</span>,{' '}
+                <span className="font-mono font-semibold">GBP_TOKEN_ENCRYPTION_KEY</span>, and{' '}
+                <span className="font-mono font-semibold">FIREBASE_SERVICE_ACCOUNT_JSON</span>.
+              </li>
+              <li>
+                Enable <span className="font-semibold">My Business Account Management API</span>,{' '}
+                <span className="font-semibold">My Business Business Information API</span>, and{' '}
+                <span className="font-semibold">My Business Notifications API</span> in Google Cloud Console.
+              </li>
+            </ol>
           </div>
         )}
-        {allowOAuthConnection &&
-          hasCustomOAuthClient &&
-          !showOAuthConfig &&
-          connection?.connectionStatus !== 'connected' && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
-            <span className="break-all">
-              Using {getSavedGbpOAuthClientId() ? 'saved override' : envOAuthClientConfigured ? 'Vercel env' : 'custom'} Google OAuth Client ID:{' '}
-              <span className="font-mono font-semibold">{activeOAuthClientId}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowOAuthConfig(true)}
-              className="text-xs font-semibold text-[#005c55] hover:underline cursor-pointer shrink-0"
-            >
-              OAuth Setup / Change ID
-            </button>
-          </div>
-        )}
+
         {connNotice && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />

@@ -204,7 +204,21 @@ export function ClientPortalView({
       return 'dark';
     }
   });
-  const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
+  const [activeTab, setActiveTab] = useState<PortalTab>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('gbp_oauth')) return 'gbp_reply';
+    }
+    return 'qr_features';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const bizParam = params.get('businessId');
+    if (bizParam && businesses.some((b) => b.id === bizParam) && activeBusiness?.id !== bizParam) {
+      onSelectBusiness(bizParam);
+    }
+  }, [businesses, activeBusiness?.id, onSelectBusiness]);
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredBucketIdx, setHoveredBucketIdx] = useState<number | null>(null);
   const [stats, setStats] = useState<BusinessStats | null>(null);
@@ -2030,7 +2044,7 @@ export function ClientPortalView({
                       userEmail={user.email || ''}
                       isAdmin={isAdmin}
                       canEdit={canEditBranding || isAdmin}
-                      allowOAuthConnection={false}
+                      allowOAuthConnection={canEditBranding || isAdmin}
                     />
                   )}
 

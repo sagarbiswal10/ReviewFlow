@@ -762,6 +762,228 @@ export async function listGbpLocationsWithToken(gbpAccessToken: string): Promise
   }
 }
 
+export interface ServerGbpAccount {
+  name: string;
+  accountName: string;
+  type: string;
+  verificationState: string;
+  vettedState: string;
+  role: string;
+}
+
+export interface ServerGbpLocation {
+  accountName: string;
+  locationName: string;
+  title: string;
+  address: string;
+  storeCode: string;
+  placeId: string;
+  hasVoiceOfMerchant?: boolean;
+  hasPendingEdits?: boolean;
+}
+
+export async function startServerGbpOAuth(input: {
+  businessId: string;
+  returnPath?: string;
+}): Promise<{ authUrl: string; redirectUri: string }> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'start',
+      businessId: input.businessId,
+      returnPath: input.returnPath || '/portal',
+    }),
+  });
+  const parsed = await parseApiJson<{ authUrl?: string; redirectUri?: string; error?: string }>(res);
+  if (!parsed.ok || !parsed.data?.authUrl) {
+    throw new Error(
+      parsed.data?.error || `Unable to start Google Business Profile OAuth (${parsed.status}).`,
+    );
+  }
+  return {
+    authUrl: parsed.data.authUrl,
+    redirectUri: parsed.data.redirectUri || '',
+  };
+}
+
+export async function fetchServerGbpAccounts(businessId: string): Promise<{
+  accounts: ServerGbpAccount[];
+  emptyMessage?: string;
+}> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'accounts',
+      businessId,
+    }),
+  });
+  const parsed = await parseApiJson<{
+    accounts?: ServerGbpAccount[];
+    emptyMessage?: string;
+    error?: string;
+  }>(res);
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.data?.error || `Failed to fetch Google Business Profile accounts (${parsed.status}).`,
+    );
+  }
+  return {
+    accounts: parsed.data?.accounts || [],
+    emptyMessage: parsed.data?.emptyMessage,
+  };
+}
+
+export async function fetchServerGbpLocations(
+  businessId: string,
+  accountName: string,
+): Promise<{
+  locations: ServerGbpLocation[];
+  emptyMessage?: string;
+}> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'locations',
+      businessId,
+      accountName,
+    }),
+  });
+  const parsed = await parseApiJson<{
+    locations?: ServerGbpLocation[];
+    emptyMessage?: string;
+    error?: string;
+  }>(res);
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.data?.error || `Failed to fetch Google Business Profile locations (${parsed.status}).`,
+    );
+  }
+  return {
+    locations: parsed.data?.locations || [],
+    emptyMessage: parsed.data?.emptyMessage,
+  };
+}
+
+export async function selectServerGbpLocations(input: {
+  businessId: string;
+  accountName: string;
+  locations: ServerGbpLocation[];
+  replaceExistingTopic?: boolean;
+}): Promise<{
+  notification: {
+    status: 'enabled' | 'conflict' | 'error';
+    pubsubTopic: string;
+    notificationTypes: string[];
+    existingTopic?: string;
+    existingTypes?: string[];
+    errorMessage?: string;
+  };
+}> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'select',
+      businessId: input.businessId,
+      accountName: input.accountName,
+      locations: input.locations,
+      replaceExistingTopic: Boolean(input.replaceExistingTopic),
+    }),
+  });
+  const parsed = await parseApiJson<{
+    notification?: {
+      status: 'enabled' | 'conflict' | 'error';
+      pubsubTopic: string;
+      notificationTypes: string[];
+      existingTopic?: string;
+      existingTypes?: string[];
+      errorMessage?: string;
+    };
+    error?: string;
+  }>(res);
+  if (!parsed.ok || !parsed.data?.notification) {
+    throw new Error(
+      parsed.data?.error || `Unable to save Google Business Profile locations (${parsed.status}).`,
+    );
+  }
+  return { notification: parsed.data.notification };
+}
+
+export async function syncServerGbpReviews(businessId: string): Promise<{
+  imported: number;
+  warnings?: string[];
+}> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'sync',
+      businessId,
+    }),
+  });
+  const parsed = await parseApiJson<{
+    imported?: number;
+    warnings?: string[];
+    error?: string;
+  }>(res);
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.data?.error || `Unable to sync Google reviews (${parsed.status}).`,
+    );
+  }
+  return {
+    imported: Number(parsed.data?.imported || 0),
+    warnings: parsed.data?.warnings,
+  };
+}
+
+export async function publishServerGbpReply(input: {
+  businessId: string;
+  reviewId: string;
+  externalReviewId: string;
+  replyText: string;
+  locationName?: string;
+}): Promise<void> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'publish_reply',
+      businessId: input.businessId,
+      reviewId: input.reviewId,
+      externalReviewId: input.externalReviewId,
+      replyText: input.replyText,
+      locationName: input.locationName,
+    }),
+  });
+  const parsed = await parseApiJson<{ published?: boolean; error?: string }>(res);
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.data?.error || `Failed to publish reply to Google (${parsed.status}).`,
+    );
+  }
+}
+
+export async function disconnectServerGbp(businessId: string): Promise<void> {
+  const res = await apiFetch('/api/gbp-oauth', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      action: 'disconnect',
+      businessId,
+    }),
+  });
+  const parsed = await parseApiJson<{ disconnected?: boolean; error?: string }>(res);
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.data?.error || `Unable to disconnect Google Business Profile (${parsed.status}).`,
+    );
+  }
+}
+
 interface AiReplyApiResponse {
   replyText?: string;
   recommendedStatus?: 'auto_published' | 'awaiting_approval';

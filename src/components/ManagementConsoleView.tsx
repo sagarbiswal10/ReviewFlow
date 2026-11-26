@@ -185,8 +185,22 @@ export function ManagementConsoleView({
   onSignOut,
 }: ManagementConsoleViewProps) {
   const [section, setSection] = useState<AdminSection>('directory');
-  const [selectedBizId, setSelectedBizId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<BusinessDetailTab>('access');
+  const [selectedBizId, setSelectedBizId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('gbp_oauth') && params.get('businessId')) {
+        return params.get('businessId');
+      }
+    }
+    return null;
+  });
+  const [detailTab, setDetailTab] = useState<BusinessDetailTab>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('gbp_oauth')) return 'gbp_reply';
+    }
+    return 'access';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [directoryView, setDirectoryView] = useState<'board' | 'table'>('table');

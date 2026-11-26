@@ -23,6 +23,17 @@ import {
   type GoogleReviewsWebhookBody,
   type ValidateQrStandSlotBody,
 } from './api/_lib/apiCore.ts';
+import {
+  disconnectGbpAction,
+  handleGbpOAuthCallback,
+  listGbpAccountsAction,
+  listGbpLocationsAction,
+  publishGbpReplyServerAction,
+  selectGbpLocationsAction,
+  startGbpOAuthFlow,
+  syncGbpReviewsAction,
+  type GbpLocationInfo,
+} from './api/_lib/gbpOAuthService.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,6 +269,136 @@ async function startServer() {
       }
     },
   );
+
+  app.post(
+    '/api/gbp-oauth',
+    requireAuthenticatedUser,
+    authenticatedLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const caller = {
+          uid: req.authUser?.uid || '',
+          email: req.authUser?.email || '',
+        };
+        if (!caller.uid) {
+          res.status(401).json({ error: 'Authenticated user required.' });
+          return;
+        }
+        const body = (req.body || {}) as {
+          action?: string;
+          businessId?: string;
+          accountName?: string;
+          locations?: GbpLocationInfo[];
+          replaceExistingTopic?: boolean;
+          returnPath?: string;
+          reviewId?: string;
+          externalReviewId?: string;
+          replyText?: string;
+          locationName?: string;
+        };
+        const businessId = typeof body.businessId === 'string' ? body.businessId : '';
+
+        if (body.action === 'start') {
+          const originHeader =
+            typeof req.headers.origin === 'string' ? req.headers.origin.trim() : '';
+          const reqProto =
+            typeof req.headers['x-forwarded-proto'] === 'string'
+              ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+              : req.protocol || 'http';
+          const reqHost =
+            (typeof req.headers['x-forwarded-host'] === 'string' &&
+              req.headers['x-forwarded-host'].split(',')[0].trim()) ||
+            req.get('host') ||
+            '';
+          const requestOrigin = originHeader || (reqHost ? `${reqProto}://${reqHost}` : '');
+          const result = await startGbpOAuthFlow({
+            businessId,
+            caller,
+            requestOrigin,
+            returnPath: body.returnPath,
+          });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'accounts') {
+          const result = await listGbpAccountsAction({ businessId, caller });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'locations') {
+          const result = await listGbpLocationsAction({
+            businessId,
+            accountName: typeof body.accountName === 'string' ? body.accountName : '',
+            caller,
+          });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'select') {
+          const result = await selectGbpLocationsAction({
+            businessId,
+            accountName: typeof body.accountName === 'string' ? body.accountName : '',
+            locations: Array.isArray(body.locations) ? body.locations : [],
+            replaceExistingTopic: Boolean(body.replaceExistingTopic),
+            caller,
+          });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'sync') {
+          const result = await syncGbpReviewsAction({ businessId, caller });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'publish_reply') {
+          const result = await publishGbpReplyServerAction({
+            businessId,
+            reviewId: typeof body.reviewId === 'string' ? body.reviewId : '',
+            externalReviewId:
+              typeof body.externalReviewId === 'string' ? body.externalReviewId : '',
+            replyText: typeof body.replyText === 'string' ? body.replyText : '',
+            locationName: typeof body.locationName === 'string' ? body.locationName : undefined,
+            caller,
+          });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        if (body.action === 'disconnect') {
+          const result = await disconnectGbpAction({ businessId, caller });
+          res.status(result.status).json(result.data);
+          return;
+        }
+        res.status(400).json({ error: 'Unsupported GBP OAuth action.' });
+      } catch (err) {
+        console.error('gbp-oauth route error:', sanitizeLogError(err));
+        res
+          .status(500)
+          .json({ error: 'Internal server error while processing Google Business Profile request.' });
+      }
+    },
+  );
+
+  app.get('/api/gbp-oauth/callback', async (req: Request, res: Response) => {
+    try {
+      const { redirectUrl } = await handleGbpOAuthCallback({
+        code: typeof req.query.code === 'string' ? req.query.code : undefined,
+        state: typeof req.query.state === 'string' ? req.query.state : undefined,
+        oauthError: typeof req.query.error === 'string' ? req.query.error : undefined,
+        oauthErrorDescription:
+          typeof req.query.error_description === 'string'
+            ? req.query.error_description
+            : undefined,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.redirect(302, redirectUrl);
+    } catch (err) {
+      console.error('gbp-oauth callback route error:', sanitizeLogError(err));
+      res.redirect(
+        302,
+        '/portal?gbp_oauth=error&gbp_error=Unexpected+error+completing+Google+connection',
+      );
+    }
+  });
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
