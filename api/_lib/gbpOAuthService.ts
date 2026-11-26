@@ -458,9 +458,8 @@ export async function startGbpOAuthFlow(input: {
     scope: GBP_OAUTH_SCOPE,
     access_type: 'offline',
     include_granted_scopes: 'true',
-    prompt: 'consent select_account',
+    prompt: 'select_account consent',
     state: rawState,
-    ...(input.caller.email ? { login_hint: input.caller.email } : {}),
   });
 
   return {
