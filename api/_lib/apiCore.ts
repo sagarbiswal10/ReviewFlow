@@ -2418,10 +2418,141 @@ function timingSafeSecretEqual(candidate: string, expected: string): boolean {
   return crypto.timingSafeEqual(digestA, digestB);
 }
 
+let googleOidcJwksCache: { keys: Array<Record<string, unknown>>; expiresAt: number } = {
+  keys: [],
+  expiresAt: 0,
+};
+
+async function getGoogleOidcJwks(forceRefresh = false): Promise<Array<Record<string, unknown>>> {
+  const now = Date.now();
+  if (!forceRefresh && now < googleOidcJwksCache.expiresAt && googleOidcJwksCache.keys.length > 0) {
+    return googleOidcJwksCache.keys;
+  }
+
+  const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/certs', {}, 8000);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google OAuth2 OIDC public keys (${res.status}).`);
+  }
+
+  const cacheControl = res.headers.get('cache-control') || '';
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const ttlSeconds = maxAgeMatch ? Number(maxAgeMatch[1]) : 3600;
+  const parsed = (await res.json()) as { keys?: Array<Record<string, unknown>> };
+  const keys = Array.isArray(parsed.keys) ? parsed.keys : [];
+
+  googleOidcJwksCache = {
+    keys,
+    expiresAt: now + ttlSeconds * 1000,
+  };
+  return keys;
+}
+
+function normalizeAudienceUrl(raw: string): string {
+  return raw.trim().replace(/\/+$/, '');
+}
+
+export async function verifyGooglePubSubOidcToken(
+  oidcJwt: string,
+  options: {
+    expectedAudience?: string;
+    jwksOverride?: Array<Record<string, unknown>>;
+  } = {},
+): Promise<{ sub: string; email: string; aud: string }> {
+  const parts = oidcJwt.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Malformed OIDC bearer token.');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  const header = decodeBase64UrlJson<{ alg?: string; kid?: string }>(headerB64);
+  const payload = decodeBase64UrlJson<{
+    aud?: string;
+    iss?: string;
+    sub?: string;
+    email?: string;
+    email_verified?: boolean;
+    exp?: number;
+    iat?: number;
+  }>(payloadB64);
+
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw new Error('Invalid OIDC token signature algorithm.');
+  }
+
+  if (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com') {
+    throw new Error('Invalid Google OIDC token issuer.');
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp <= nowSec) {
+    throw new Error('Google OIDC token has expired.');
+  }
+  if (typeof payload.iat !== 'number' || payload.iat > nowSec + 120) {
+    throw new Error('Google OIDC token issued-at claim is invalid.');
+  }
+
+  const envAudiences = cleanSecretEnv(process.env.GBP_PUBSUB_AUDIENCE)
+    .split(',')
+    .map((s) => normalizeAudienceUrl(s))
+    .filter(Boolean);
+  const fallbackAudience = options.expectedAudience
+    ? normalizeAudienceUrl(options.expectedAudience)
+    : '';
+  const allowedAudiences = Array.from(
+    new Set([...envAudiences, ...(fallbackAudience ? [fallbackAudience] : [])]),
+  );
+
+  const tokenAud = typeof payload.aud === 'string' ? normalizeAudienceUrl(payload.aud) : '';
+  if (!tokenAud || allowedAudiences.length === 0 || !allowedAudiences.includes(tokenAud)) {
+    throw new Error(
+      `Google OIDC token audience mismatch (got "${payload.aud || ''}", expected "${allowedAudiences[0] || 'configured webhook URL'}").`,
+    );
+  }
+
+  const allowedSaEmail = cleanSecretEnv(process.env.GBP_PUBSUB_SERVICE_ACCOUNT_EMAIL).toLowerCase();
+  if (allowedSaEmail) {
+    const tokenEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    if (!tokenEmail || tokenEmail !== allowedSaEmail || payload.email_verified !== true) {
+      throw new Error('Google OIDC service account email is not authorized.');
+    }
+  }
+
+  let keys = options.jwksOverride ?? (await getGoogleOidcJwks());
+  let matchedJwk = keys.find((k) => k?.kid === header.kid);
+  if (!matchedJwk && !options.jwksOverride) {
+    keys = await getGoogleOidcJwks(true);
+    matchedJwk = keys.find((k) => k?.kid === header.kid);
+  }
+  if (!matchedJwk) {
+    throw new Error('Unknown Google OIDC signing key.');
+  }
+
+  const publicKey = crypto.createPublicKey({
+    key: matchedJwk as crypto.JsonWebKey,
+    format: 'jwk',
+  });
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const sigPadded = signatureB64.replace(/-/g, '+').replace(/_/g, '/');
+  const signatureBuffer = Buffer.from(sigPadded, 'base64');
+
+  const verifier = crypto.createVerify('RSA-SHA256');
+  verifier.update(signingInput);
+  if (!verifier.verify(publicKey, signatureBuffer)) {
+    throw new Error('Invalid Google OIDC token signature.');
+  }
+
+  return {
+    sub: typeof payload.sub === 'string' ? payload.sub : 'pubsub-oidc',
+    email: typeof payload.email === 'string' ? payload.email : '',
+    aud: payload.aud || '',
+  };
+}
+
 export async function verifyGoogleReviewsWebhookAuth(input: {
   headerSecret?: string;
   authHeader?: string;
   queryToken?: string;
+  expectedAudience?: string;
 }): Promise<{ ok: true; actorId: string } | { ok: false; status: number; error: string }> {
   const configuredSecret = cleanSecretEnv(process.env.GBP_WEBHOOK_SECRET);
   const rawAuthHeader = (input.authHeader || '').trim();
@@ -2434,29 +2565,34 @@ export async function verifyGoogleReviewsWebhookAuth(input: {
     bearerValue,
   ].filter(Boolean);
 
-  if (configuredSecret) {
-    const matched = candidates.some((c) => timingSafeSecretEqual(c, configuredSecret));
-    if (matched) {
-      return { ok: true, actorId: 'webhook-secret' };
-    }
-    if (bearerValue && bearerValue.split('.').length === 3) {
-      const firebaseAuth = await authenticateBearerHeader(rawAuthHeader);
-      if (firebaseAuth.ok) {
-        return {
-          ok: true,
-          actorId: firebaseAuth.user?.uid || 'firebase-user',
-        };
-      }
-    }
-    return {
-      ok: false,
-      status: 401,
-      error:
-        'Unauthorized webhook request. Provide matching GBP_WEBHOOK_SECRET via ?token=, X-Webhook-Secret header, or Authorization Bearer token.',
-    };
+  if (configuredSecret && candidates.some((c) => timingSafeSecretEqual(c, configuredSecret))) {
+    return { ok: true, actorId: 'webhook-secret' };
   }
 
-  if (bearerValue) {
+  if (bearerValue && bearerValue.split('.').length === 3) {
+    let tokenIss = '';
+    try {
+      const payload = decodeBase64UrlJson<{ iss?: string }>(bearerValue.split('.')[1]);
+      tokenIss = typeof payload.iss === 'string' ? payload.iss : '';
+    } catch {
+      tokenIss = '';
+    }
+
+    if (tokenIss === 'https://accounts.google.com' || tokenIss === 'accounts.google.com') {
+      try {
+        const oidc = await verifyGooglePubSubOidcToken(bearerValue, {
+          expectedAudience: input.expectedAudience,
+        });
+        return {
+          ok: true,
+          actorId: oidc.email || oidc.sub,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unauthorized Google OIDC token';
+        return { ok: false, status: 401, error: msg };
+      }
+    }
+
     const firebaseAuth = await authenticateBearerHeader(rawAuthHeader);
     if (firebaseAuth.ok) {
       return {
@@ -2467,11 +2603,28 @@ export async function verifyGoogleReviewsWebhookAuth(input: {
     return { ok: false, status: firebaseAuth.status, error: firebaseAuth.error };
   }
 
+  if (configuredSecret) {
+    return {
+      ok: false,
+      status: 401,
+      error:
+        'Unauthorized webhook request. Provide matching GBP_WEBHOOK_SECRET (?token= or X-Webhook-Secret) or a valid Google Pub/Sub OIDC Bearer token.',
+    };
+  }
+
+  if (bearerValue) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Invalid or malformed Bearer token.',
+    };
+  }
+
   return {
     ok: false,
     status: 401,
     error:
-      'Webhook secret not configured: set GBP_WEBHOOK_SECRET in your server environment variables and pass ?token=... or X-Webhook-Secret, or send a valid Firebase Bearer token.',
+      'Webhook authentication missing. Configure Google Cloud Pub/Sub OIDC authentication (Audience = your /api/webhooks/google-reviews URL), OR set GBP_WEBHOOK_SECRET and pass ?token=...',
   };
 }
 

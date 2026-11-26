@@ -341,4 +341,92 @@ test('TC-API-13: processGoogleReviewsWebhook decodes Google Pub/Sub base64 paylo
   }
 });
 
+test('TC-API-14: verifyGooglePubSubOidcToken validates Google RS256 OIDC JWTs and rejects wrong audience', async () => {
+  const cryptoMod = await import('node:crypto');
+  const mod = await import('../api/_lib/apiCore.ts');
+
+  const { publicKey, privateKey } = cryptoMod.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+  });
+  const pubJwk = {
+    ...(publicKey.export({ format: 'jwk' }) as Record<string, unknown>),
+    kid: 'test-pubsub-key',
+    alg: 'RS256',
+    use: 'sig',
+  };
+
+  const b64url = (obj: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(obj), 'utf-8')
+      .toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+  const signJwt = (claims: Record<string, unknown>) => {
+    const unsigned = `${b64url({ alg: 'RS256', typ: 'JWT', kid: 'test-pubsub-key' })}.${b64url(claims)}`;
+    const signer = cryptoMod.createSign('RSA-SHA256');
+    signer.update(unsigned);
+    const sig = signer
+      .sign(privateKey, 'base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    return `${unsigned}.${sig}`;
+  };
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const devEndpoint =
+    'https://reviewflow-git-dev-sagarbiswal10s-projects.vercel.app/api/webhooks/google-reviews';
+
+  const validJwt = signJwt({
+    iss: 'https://accounts.google.com',
+    aud: devEndpoint,
+    sub: '1122334455',
+    email: 'pubsub-invoker@review-generator-1a999.iam.gserviceaccount.com',
+    email_verified: true,
+    iat: nowSec - 10,
+    exp: nowSec + 3600,
+  });
+
+  const verified = await mod.verifyGooglePubSubOidcToken(validJwt, {
+    expectedAudience: devEndpoint,
+    jwksOverride: [pubJwk],
+  });
+  assert.equal(verified.aud, devEndpoint);
+  assert.equal(verified.email, 'pubsub-invoker@review-generator-1a999.iam.gserviceaccount.com');
+
+  const wrongAudJwt = signJwt({
+    iss: 'https://accounts.google.com',
+    aud: 'https://other-site.example.com/webhook',
+    sub: '1122334455',
+    iat: nowSec - 10,
+    exp: nowSec + 3600,
+  });
+  await assert.rejects(
+    () =>
+      mod.verifyGooglePubSubOidcToken(wrongAudJwt, {
+        expectedAudience: devEndpoint,
+        jwksOverride: [pubJwk],
+      }),
+    /audience mismatch/i,
+  );
+
+  const wrongIssJwt = signJwt({
+    iss: 'https://evil.example.com',
+    aud: devEndpoint,
+    sub: '1122334455',
+    iat: nowSec - 10,
+    exp: nowSec + 3600,
+  });
+  await assert.rejects(
+    () =>
+      mod.verifyGooglePubSubOidcToken(wrongIssJwt, {
+        expectedAudience: devEndpoint,
+        jwksOverride: [pubJwk],
+      }),
+    /issuer/i,
+  );
+});
+
+
 

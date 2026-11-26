@@ -226,10 +226,21 @@ async function startServer() {
             : typeof req.query.secret === 'string'
               ? req.query.secret
               : '';
+        const reqProto =
+          typeof req.headers['x-forwarded-proto'] === 'string'
+            ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+            : req.protocol || 'https';
+        const reqHost =
+          (typeof req.headers['x-forwarded-host'] === 'string' &&
+            req.headers['x-forwarded-host'].split(',')[0].trim()) ||
+          req.get('host') ||
+          '';
+        const expectedAudience = reqHost ? `${reqProto}://${reqHost}${req.path}` : '';
         const authResult = await verifyGoogleReviewsWebhookAuth({
           headerSecret,
           authHeader,
           queryToken,
+          expectedAudience,
         });
         if (!authResult.ok) {
           res.status(authResult.status).json({ error: authResult.error });

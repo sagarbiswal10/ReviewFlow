@@ -33,6 +33,27 @@ function extractQueryToken(rawUrl?: string): string {
   }
 }
 
+function resolveWebhookAudienceUrl(req: NodeReq): string {
+  const rawProto =
+    typeof req.headers['x-forwarded-proto'] === 'string'
+      ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+      : 'https';
+  const rawHost =
+    (typeof req.headers['x-forwarded-host'] === 'string' &&
+      req.headers['x-forwarded-host'].split(',')[0].trim()) ||
+    (typeof req.headers.host === 'string' ? req.headers.host.split(',')[0].trim() : '');
+  if (!rawHost) return '';
+  let pathname = '/api/webhooks/google-reviews';
+  if (req.url) {
+    try {
+      pathname = new URL(req.url, `${rawProto}://${rawHost}`).pathname;
+    } catch {
+      pathname = '/api/webhooks/google-reviews';
+    }
+  }
+  return `${rawProto}://${rawHost}${pathname}`;
+}
+
 export default async function handler(req: NodeReq, res: ServerResponse) {
   try {
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -59,11 +80,13 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
     const authHeader =
       typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
     const queryToken = extractQueryToken(req.url);
+    const expectedAudience = resolveWebhookAudienceUrl(req);
 
     const authResult = await verifyGoogleReviewsWebhookAuth({
       headerSecret,
       authHeader,
       queryToken,
+      expectedAudience,
     });
     if (!authResult.ok) {
       sendJson(res, authResult.status, { error: authResult.error });
