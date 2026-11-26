@@ -152,17 +152,39 @@ export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !
 const DEFAULT_FIREBASE_PROJECT_ID = 'gen-lang-client-0894437771';
 const DEFAULT_FIREBASE_DATABASE_ID = 'ai-studio-c58774bf-bd18-4afa-b645-7a968ff8b63b';
 
-function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
-  const envProjectId = (
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
+export function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
+  const envProjectId = cleanSecretEnv(
+    process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
+  );
+  const envDbId = cleanSecretEnv(
+    process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID,
+  );
+
+  let serviceAccountProjectId = '';
+  const rawSa = (
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
     ''
   ).trim();
-  const envDbId = (
-    process.env.FIREBASE_DATABASE_ID ||
-    process.env.VITE_FIREBASE_DATABASE_ID ||
-    ''
-  ).trim();
+  if (rawSa) {
+    try {
+      const parsedSa = JSON.parse(rawSa) as { project_id?: string };
+      serviceAccountProjectId = (parsedSa.project_id || '').trim();
+    } catch {
+      // Ignore malformed JSON here; handled when minting service-account token
+    }
+  }
+
+  // When a custom Firebase project is configured (matching src/firebase.ts),
+  // default Firestore databaseId to "(default)" instead of falling back to
+  // AI Studio's bundled applet named database ID.
+  const customProjectId = envProjectId || serviceAccountProjectId;
+  if (customProjectId) {
+    return {
+      projectId: customProjectId,
+      databaseId: envDbId || '(default)',
+    };
+  }
 
   try {
     const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -171,19 +193,21 @@ function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
         projectId?: string;
         firestoreDatabaseId?: string;
       };
-      return {
-        projectId: envProjectId || (parsed.projectId || '').trim() || DEFAULT_FIREBASE_PROJECT_ID,
-        databaseId:
-          envDbId ||
-          (parsed.firestoreDatabaseId || '').trim() ||
-          DEFAULT_FIREBASE_DATABASE_ID,
-      };
+      const fileProject = (parsed.projectId || '').trim();
+      const fileDb = (parsed.firestoreDatabaseId || '').trim();
+      if (fileProject) {
+        return {
+          projectId: fileProject,
+          databaseId: envDbId || fileDb || '(default)',
+        };
+      }
     }
   } catch {
     // Ignore missing/invalid local config file
   }
+
   return {
-    projectId: envProjectId || DEFAULT_FIREBASE_PROJECT_ID,
+    projectId: DEFAULT_FIREBASE_PROJECT_ID,
     databaseId: envDbId || DEFAULT_FIREBASE_DATABASE_ID,
   };
 }

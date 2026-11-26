@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 
+import { resolveFirebaseConfig } from '../api/_lib/apiCore.js';
 import {
   assertAuthorizedForBusiness,
   classifyGbpApiError,
@@ -330,6 +331,47 @@ test('assertAuthorizedForBusiness enforces business-level Firestore isolation', 
     }
   } finally {
     globalThis.fetch = originalFetch;
+    if (prevSa === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevSa;
+  }
+});
+
+test('resolveFirebaseConfig defaults custom Firebase projects to (default) databaseId', () => {
+  const prevProj = process.env.FIREBASE_PROJECT_ID;
+  const prevViteProj = process.env.VITE_FIREBASE_PROJECT_ID;
+  const prevDb = process.env.FIREBASE_DATABASE_ID;
+  const prevViteDb = process.env.VITE_FIREBASE_DATABASE_ID;
+  const prevSa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+  try {
+    delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_DATABASE_ID;
+    delete process.env.VITE_FIREBASE_DATABASE_ID;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    process.env.VITE_FIREBASE_PROJECT_ID = 'review-generator-1a999';
+
+    const conf = resolveFirebaseConfig();
+    assert.equal(conf.projectId, 'review-generator-1a999');
+    assert.equal(conf.databaseId, '(default)');
+
+    delete process.env.VITE_FIREBASE_PROJECT_ID;
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      project_id: 'review-from-sa',
+      client_email: 'sa@review-from-sa.iam.gserviceaccount.com',
+      private_key: 'fake',
+    });
+    const saConf = resolveFirebaseConfig();
+    assert.equal(saConf.projectId, 'review-from-sa');
+    assert.equal(saConf.databaseId, '(default)');
+  } finally {
+    if (prevProj === undefined) delete process.env.FIREBASE_PROJECT_ID;
+    else process.env.FIREBASE_PROJECT_ID = prevProj;
+    if (prevViteProj === undefined) delete process.env.VITE_FIREBASE_PROJECT_ID;
+    else process.env.VITE_FIREBASE_PROJECT_ID = prevViteProj;
+    if (prevDb === undefined) delete process.env.FIREBASE_DATABASE_ID;
+    else process.env.FIREBASE_DATABASE_ID = prevDb;
+    if (prevViteDb === undefined) delete process.env.VITE_FIREBASE_DATABASE_ID;
+    else process.env.VITE_FIREBASE_DATABASE_ID = prevViteDb;
     if (prevSa === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevSa;
   }
