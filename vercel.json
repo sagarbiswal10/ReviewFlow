@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/*.ts": {
+    "api/**/*.ts": {
       "includeFiles": "firebase-applet-config.json"
     }
   },

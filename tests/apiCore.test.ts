@@ -276,3 +276,69 @@ test('TC-API-11: processGenerateReview succeeds via grounded fallback across lan
   }
 });
 
+test('TC-API-12: verifyGoogleReviewsWebhookAuth enforces GBP_WEBHOOK_SECRET across token, header, and bearer', async () => {
+  const prevSecret = process.env.GBP_WEBHOOK_SECRET;
+  try {
+    process.env.GBP_WEBHOOK_SECRET = 'super-secret-token-123';
+    const mod = await import('../api/_lib/apiCore.ts');
+
+    const bad = await mod.verifyGoogleReviewsWebhookAuth({ queryToken: 'wrong' });
+    assert.equal(bad.ok, false);
+
+    const byQuery = await mod.verifyGoogleReviewsWebhookAuth({ queryToken: 'super-secret-token-123' });
+    assert.equal(byQuery.ok, true);
+
+    const byHeader = await mod.verifyGoogleReviewsWebhookAuth({ headerSecret: 'super-secret-token-123' });
+    assert.equal(byHeader.ok, true);
+
+    const byBearer = await mod.verifyGoogleReviewsWebhookAuth({
+      authHeader: 'Bearer super-secret-token-123',
+    });
+    assert.equal(byBearer.ok, true);
+  } finally {
+    if (prevSecret === undefined) delete process.env.GBP_WEBHOOK_SECRET;
+    else process.env.GBP_WEBHOOK_SECRET = prevSecret;
+  }
+});
+
+test('TC-API-13: processGoogleReviewsWebhook decodes Google Pub/Sub base64 payloads cleanly', async () => {
+  const prevGeminiKey = process.env.GEMINI_API_KEY;
+  try {
+    process.env.GEMINI_API_KEY = '';
+    const mod = await import('../api/_lib/apiCore.ts');
+
+    const pubsubPayload = {
+      businessId: 'biz_123',
+      businessName: 'Kamothe Glow Salon',
+      category: 'Hair Salons',
+      review: {
+        name: 'accounts/acc1/locations/loc2/reviews/rev999',
+        reviewer: { displayName: 'Aarav Patel' },
+        starRating: 'TWO',
+        comment: 'Had to wait 25 minutes.',
+      },
+    };
+
+    const res = await mod.processGoogleReviewsWebhook({
+      message: {
+        data: Buffer.from(JSON.stringify(pubsubPayload), 'utf-8').toString('base64'),
+        messageId: 'msg-1',
+      },
+    });
+    // Without GEMINI_API_KEY, processGenerateReply cleanly returns 400 (after decoding Pub/Sub + resolving businessName)
+    assert.equal(res.status, 400);
+    assert.match(String(res.data.error), /GEMINI_API_KEY/i);
+
+    const missingBiz = await mod.processGoogleReviewsWebhook({
+      reviewerName: 'Guest',
+      starRating: 5,
+    });
+    assert.equal(missingBiz.status, 400);
+    assert.match(String(missingBiz.data.error), /Business could not be resolved/i);
+  } finally {
+    if (prevGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = prevGeminiKey;
+  }
+});
+
+

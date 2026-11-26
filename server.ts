@@ -12,12 +12,15 @@ import {
   processGenerateReply,
   processGenerateReview,
   processGenerateSeoKeywords,
+  processGoogleReviewsWebhook,
   processValidateQrStandSlot,
   sanitizeLogError,
+  verifyGoogleReviewsWebhookAuth,
   type GbpProxyBody,
   type GenerateReplyBody,
   type GenerateReviewBody,
   type GenerateSeoKeywordsBody,
+  type GoogleReviewsWebhookBody,
   type ValidateQrStandSlotBody,
 } from './api/_lib/apiCore.ts';
 
@@ -202,6 +205,45 @@ async function startServer() {
       } catch (err) {
         console.error('gbp-sync route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while syncing Google Business Profile.' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/webhooks/google-reviews',
+    authenticatedLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const headerSecret =
+          typeof req.headers['x-webhook-secret'] === 'string'
+            ? req.headers['x-webhook-secret']
+            : '';
+        const authHeader =
+          typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
+        const queryToken =
+          typeof req.query.token === 'string'
+            ? req.query.token
+            : typeof req.query.secret === 'string'
+              ? req.query.secret
+              : '';
+        const authResult = await verifyGoogleReviewsWebhookAuth({
+          headerSecret,
+          authHeader,
+          queryToken,
+        });
+        if (!authResult.ok) {
+          res.status(authResult.status).json({ error: authResult.error });
+          return;
+        }
+        const result = await processGoogleReviewsWebhook(
+          req.body as Partial<GoogleReviewsWebhookBody>,
+        );
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('google-reviews webhook route error:', sanitizeLogError(err));
+        res
+          .status(500)
+          .json({ error: 'Internal server error while processing Google review webhook.' });
       }
     },
   );
