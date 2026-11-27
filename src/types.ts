@@ -93,6 +93,12 @@ export interface EnabledFeatures {
   brandingSettings?: boolean;
 }
 
+export interface LocalizedQuestionContent {
+  prompt: string;
+  options: string[];
+  placeholder?: string;
+}
+
 export interface FeedbackQuestion {
   id: string;
   prompt: string;
@@ -100,6 +106,7 @@ export interface FeedbackQuestion {
   options: string[];
   required: boolean;
   placeholder?: string;
+  translations?: Partial<Record<ReviewLanguage, LocalizedQuestionContent>>;
 }
 
 export interface BusinessBranding {

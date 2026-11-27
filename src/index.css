@@ -478,3 +478,13 @@
     transform: none !important;
   }
 }
+
+/* Hide scrollbars cleanly inside dedicated scrollable panels */
+.rf-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rf-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+

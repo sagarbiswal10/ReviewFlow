@@ -51,6 +51,10 @@ import {
   classifyQuestionsForTemplate,
   mapOptionsToFiveFaces,
 } from '../data/formTemplates';
+import {
+  getLocalizedFormUiStrings,
+  localizeQuestion,
+} from '../data/localizedQuestions';
 import { BusinessLogo } from './BusinessLogo';
 import { SpatialTilt } from './ui/spatial-tilt';
 
@@ -390,6 +394,11 @@ export function CustomerReviewFlow({
   const questionTextColor = profile.branding?.questionColor || undefined;
   const formBackgroundColor = profile.branding?.backgroundColor || undefined;
   const questionTextStyle = questionTextColor ? { color: questionTextColor } : undefined;
+  const formUi = useMemo(
+    () => getLocalizedFormUiStrings(selectedLanguage),
+    [selectedLanguage],
+  );
+  const getLocQ = (question: FeedbackQuestion) => localizeQuestion(question, selectedLanguage);
   const templateAccentColor = isEmojiChecklist
     ? primaryColor === '#0F766E' && isPreview === false
       ? primaryColor
@@ -999,6 +1008,7 @@ export function CustomerReviewFlow({
 
   const handleGenerateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isPreview) return;
     if (isGenerating) return;
     if (hasReachedGenerationLimit && quotaResetAt > Date.now()) {
       setGenerateError(
@@ -1011,13 +1021,14 @@ export function CustomerReviewFlow({
 
     for (const q of profile.questions) {
       if (!q.required) continue;
+      const localizedPrompt = getLocQ(q).prompt;
       if (q.type === 'text') {
         if (!(textInputs[q.id] ?? '').trim()) {
-          setValidationError(`Please fill in "${q.prompt}" before continuing.`);
+          setValidationError(`Please fill in "${localizedPrompt}" before continuing.`);
           return;
         }
       } else if (!(answers[q.id] && answers[q.id].length > 0)) {
-        setValidationError(`Please answer "${q.prompt}" before continuing.`);
+        setValidationError(`Please answer "${localizedPrompt}" before continuing.`);
         return;
       }
     }
@@ -1072,6 +1083,7 @@ export function CustomerReviewFlow({
   };
 
   const handleLanguageChangeOnPreview = async (nextLang: ReviewLanguage) => {
+    if (isPreview) return;
     if (isGenerating || hasReachedGenerationLimit) return;
     if (nextLang === selectedLanguage && !draftDeleted && draftText) return;
     setSelectedLanguage(nextLang);
@@ -1081,6 +1093,7 @@ export function CustomerReviewFlow({
   };
 
   const handleRegenerate = async () => {
+    if (isPreview) return;
     if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
@@ -1253,6 +1266,7 @@ export function CustomerReviewFlow({
   };
 
   const handleCopyReview = async () => {
+    if (isPreview) return;
     if (!draftText.trim()) return;
     if (editPersistTimeoutRef.current) {
       clearTimeout(editPersistTimeoutRef.current);
@@ -1288,13 +1302,14 @@ export function CustomerReviewFlow({
   };
 
   const handleOpenGoogleReview = () => {
+    if (isPreview) return;
     setOpenedGoogle(true);
     if (!isPreview) {
       recordReviewEvent(profile, 'copy_redirect', {
         reviewStyle: selectedStyle,
         sentiment: sentimentValue,
         language: selectedLanguage,
-        selectedHighlights,
+        selectedHighlights: [...selectedHighlights, 'Mode: Guided Questions'],
         standId: standContext.standId,
         standCode: standContext.standCode,
         standName: standContext.standName,
@@ -1334,6 +1349,7 @@ export function CustomerReviewFlow({
   };
 
   const handleGenerateAfterDelete = async () => {
+    if (isPreview) return;
     if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
     setVariationSeed(nextSeed);
@@ -1343,6 +1359,7 @@ export function CustomerReviewFlow({
   const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
 
   const handleRefreshInstantAiDrafts = async () => {
+    if (isPreview) return;
     const nextSeed = (instantSeed % 55) + 1;
     setInstantSeed(nextSeed);
     setEditingInstantIdx(null);
@@ -1414,6 +1431,7 @@ export function CustomerReviewFlow({
   };
 
   const handleCopyAndOpenInstantReview = async (idx: number, textToCopy: string) => {
+    if (isPreview) return;
     const cleanText = textToCopy.trim();
     if (!cleanText) return;
     setEditingInstantIdx(null);
@@ -1436,11 +1454,17 @@ export function CustomerReviewFlow({
     setCopiedInstantIdx(idx);
 
     if (!isPreview) {
+      const instantHighlights = [
+        'instant-ai-draft',
+        'Mode: Ready AI Drafts',
+        `Draft Option #${idx + 1}`,
+        ...(standContext.standName ? [`Stand: ${standContext.standName}`] : []),
+      ];
       recordReviewEvent(profile, 'generate', {
         reviewStyle: selectedStyle,
         sentiment: 'positive',
         language: effectiveInstantLanguage,
-        selectedHighlights: ['instant-ai-draft'],
+        selectedHighlights: instantHighlights,
         standId: standContext.standId,
         standCode: standContext.standCode,
         standName: standContext.standName,
@@ -1450,7 +1474,7 @@ export function CustomerReviewFlow({
         reviewStyle: selectedStyle,
         sentiment: 'positive',
         language: effectiveInstantLanguage,
-        selectedHighlights: ['instant-ai-draft'],
+        selectedHighlights: instantHighlights,
         standId: standContext.standId,
         standCode: standContext.standCode,
         standName: standContext.standName,
@@ -1487,9 +1511,10 @@ export function CustomerReviewFlow({
           </div>
           <button
             type="button"
-            disabled={isRefreshingInstantAi}
+            disabled={isPreview || isRefreshingInstantAi}
+            title={isPreview ? 'Refresh is disabled in Preview Mode' : 'Refresh AI drafts'}
             onClick={handleRefreshInstantAiDrafts}
-            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60 ${
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60 disabled:cursor-not-allowed ${
               isDarkTemplate
                 ? 'border-slate-700 bg-[#0F172A] text-slate-200 hover:bg-slate-800'
                 : 'border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100'
@@ -1628,10 +1653,15 @@ export function CustomerReviewFlow({
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   type="button"
-                  disabled={!draft.trim()}
+                  disabled={isPreview || !draft.trim()}
+                  title={
+                    isPreview
+                      ? 'Copy & Post on Google is disabled in Preview Mode'
+                      : 'Copy review and open Google Review'
+                  }
                   onClick={() => handleCopyAndOpenInstantReview(idx, draft)}
                   style={{ backgroundColor: isCopiedThis ? '#0F766E' : templateAccentColor }}
-                  className="flex-1 min-w-[200px] min-h-[44px] px-4 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-95 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="flex-1 min-w-[200px] min-h-[44px] px-4 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-95 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed"
                 >
                   {isCopiedThis ? (
                     <>
@@ -1647,7 +1677,7 @@ export function CustomerReviewFlow({
                   )}
                 </button>
 
-                {isCopiedThis && (
+                {isCopiedThis && !isPreview && (
                   <a
                     href={googleUrl}
                     target="_blank"
@@ -1715,12 +1745,12 @@ export function CustomerReviewFlow({
           }
         >
           <div className="mb-3">
-            <h2 className="text-sm sm:text-base font-semibold text-white">
-              Choose Review Language
+            <h2 className="text-sm sm:text-base font-semibold text-white review-text-multilingual">
+              {formUi.languageSelectorLabel}
             </h2>
             {!compact && (
-              <p className="text-xs text-slate-400 mt-0.5">
-                Your review will be written naturally in the language you pick.
+              <p className="text-xs text-slate-400 mt-0.5 review-text-multilingual">
+                {formUi.languageSelectorHint}
               </p>
             )}
           </div>
@@ -1789,12 +1819,12 @@ export function CustomerReviewFlow({
         }
       >
         <div className="mb-3">
-          <h2 className="text-sm sm:text-base font-semibold text-slate-900">
-            Choose Review Language
+          <h2 className="text-sm sm:text-base font-semibold text-slate-900 review-text-multilingual">
+            {formUi.languageSelectorLabel}
           </h2>
           {!compact && (
-            <p className="text-xs text-slate-500 mt-0.5">
-              Your review will be written naturally in the language you pick.
+            <p className="text-xs text-slate-500 mt-0.5 review-text-multilingual">
+              {formUi.languageSelectorHint}
             </p>
           )}
         </div>
@@ -1845,6 +1875,7 @@ export function CustomerReviewFlow({
   };
 
   const renderEmojiRatingSection = (question: FeedbackQuestion) => {
+    const loc = getLocQ(question);
     const faces = mapOptionsToFiveFaces(question.options);
     const currentSelection = answers[question.id]?.[0] || '';
     const activeFace = faces.find((f) => f.optionValue === currentSelection) ?? null;
@@ -1854,11 +1885,12 @@ export function CustomerReviewFlow({
         <div className="flex items-baseline justify-between gap-2">
           <h2
             style={questionTextStyle}
-            className={`text-base sm:text-lg font-semibold ${
+            lang={selectedLanguage}
+            className={`text-base sm:text-lg font-semibold review-text-multilingual ${
               isDarkTemplate ? 'text-white' : 'text-slate-900'
             }`}
           >
-            {question.prompt}
+            {loc.prompt}
           </h2>
           {question.required && (
             <span
@@ -1866,20 +1898,24 @@ export function CustomerReviewFlow({
                 isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
               }`}
             >
-              Required
+              {formUi.requiredLabel}
             </span>
           )}
         </div>
 
         <div className="grid grid-cols-5 gap-2 sm:gap-3 pt-1">
-          {faces.map((face) => {
+          {faces.map((face, faceIdx) => {
             const isSelected = currentSelection === face.optionValue;
+            const localizedOptLabel =
+              loc.options.find((opt) => opt.canonicalValue === face.optionValue)?.displayLabel ||
+              formUi.ratingLabels[faceIdx] ||
+              face.shortLabel;
             return (
               <div key={`${face.sentimentRank}-${face.optionValue}`} className="flex flex-col items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => toggleOption(question.id, face.optionValue, 'single')}
-                  aria-label={`${face.optionValue}`}
+                  aria-label={`${localizedOptLabel}`}
                   aria-pressed={isSelected}
                   style={
                     isSelected
@@ -1913,20 +1949,21 @@ export function CustomerReviewFlow({
                   )}
                 </button>
                 <span
-                  className={`text-[11px] sm:text-xs font-semibold text-center leading-tight min-h-[16px] transition-opacity ${
+                  lang={selectedLanguage}
+                  className={`text-[11px] sm:text-xs font-semibold text-center leading-tight min-h-[16px] transition-opacity review-text-multilingual ${
                     isSelected ? 'opacity-100' : 'opacity-0'
                   }`}
                   style={isSelected ? { color: isDarkTemplate ? '#60A5FA' : templateAccentColor } : undefined}
                 >
-                  {face.shortLabel}
+                  {localizedOptLabel}
                 </span>
               </div>
             );
           })}
         </div>
         {!activeFace && (
-          <p className={`text-xs ${isDarkTemplate ? 'text-slate-400' : 'text-slate-500'}`}>
-            Tap an expression to rate
+          <p className={`text-xs review-text-multilingual ${isDarkTemplate ? 'text-slate-400' : 'text-slate-500'}`}>
+            {formUi.tapExpressionLabel}
           </p>
         )}
       </div>
@@ -1934,6 +1971,7 @@ export function CustomerReviewFlow({
   };
 
   const renderChecklistQuestionSection = (question: FeedbackQuestion) => {
+    const loc = getLocQ(question);
     const selectedValues = answers[question.id] ?? [];
     const mode = question.type === 'single' ? 'single' : 'multiple';
 
@@ -1942,19 +1980,20 @@ export function CustomerReviewFlow({
         <div className="flex items-baseline justify-between gap-2">
           <h2
             style={questionTextStyle}
-            className={`text-base font-semibold ${
+            lang={selectedLanguage}
+            className={`text-base font-semibold review-text-multilingual ${
               isDarkTemplate ? 'text-white' : 'text-slate-900'
             }`}
           >
-            {question.prompt}
+            {loc.prompt}
           </h2>
           <span
             className={`text-[11px] whitespace-nowrap shrink-0 ${
               isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
             }`}
           >
-            {question.required ? 'Required' : 'Optional'}
-            {question.type === 'multiple' ? ' · Select multiple' : ''}
+            {question.required ? formUi.requiredLabel : formUi.optionalLabel}
+            {question.type === 'multiple' ? ` · ${formUi.selectMultipleLabel}` : ''}
           </span>
         </div>
 
@@ -1963,13 +2002,13 @@ export function CustomerReviewFlow({
             isDarkTemplate ? 'divide-slate-800/90 border-t border-b border-slate-800/90' : 'divide-slate-200/80 border-t border-b border-slate-200/80'
           }`}
         >
-          {question.options.map((option) => {
-            const isSelected = selectedValues.includes(option);
+          {loc.options.map((optItem) => {
+            const isSelected = selectedValues.includes(optItem.canonicalValue);
             return (
               <button
-                key={option}
+                key={optItem.canonicalValue}
                 type="button"
-                onClick={() => toggleOption(question.id, option, mode)}
+                onClick={() => toggleOption(question.id, optItem.canonicalValue, mode)}
                 aria-pressed={isSelected}
                 className={`w-full min-h-[48px] py-3 px-1 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer ${
                   isDarkTemplate
@@ -1978,7 +2017,8 @@ export function CustomerReviewFlow({
                 }`}
               >
                 <span
-                  className={`text-sm sm:text-[15px] leading-snug ${
+                  lang={selectedLanguage}
+                  className={`text-sm sm:text-[15px] leading-snug review-text-multilingual ${
                     isSelected
                       ? isDarkTemplate
                         ? 'text-white font-medium'
@@ -1988,7 +2028,7 @@ export function CustomerReviewFlow({
                         : 'text-slate-600'
                   }`}
                 >
-                  {option}
+                  {optItem.displayLabel}
                 </span>
 
                 <span
@@ -2054,6 +2094,9 @@ export function CustomerReviewFlow({
               )}
             </div>
 
+            {/* Compact Language Selector */}
+            {renderLanguageSelectorBlock(true)}
+
             {/* Rating question rendered as 5 circular face emojis */}
             {ratingQuestion && renderEmojiRatingSection(ratingQuestion)}
 
@@ -2061,49 +2104,51 @@ export function CustomerReviewFlow({
             {checklistQuestions.map((question) => renderChecklistQuestionSection(question))}
 
             {/* All text questions rendered as bordered optional comment box */}
-            {textQuestions.map((question) => (
-              <div key={question.id} className="space-y-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <label
-                    htmlFor={`comment-${question.id}`}
-                    style={questionTextStyle}
-                    className={`text-base font-semibold ${
-                      isDarkTemplate ? 'text-white' : 'text-slate-900'
-                    }`}
-                  >
-                    {question.prompt}
-                  </label>
-                  {question.required && (
-                    <span
-                      className={`text-[11px] ${
-                        isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
+            {textQuestions.map((question) => {
+              const loc = getLocQ(question);
+              return (
+                <div key={question.id} className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <label
+                      htmlFor={`comment-${question.id}`}
+                      style={questionTextStyle}
+                      lang={selectedLanguage}
+                      className={`text-base font-semibold review-text-multilingual ${
+                        isDarkTemplate ? 'text-white' : 'text-slate-900'
                       }`}
                     >
-                      Required
-                    </span>
-                  )}
+                      {loc.prompt}
+                    </label>
+                    {question.required && (
+                      <span
+                        className={`text-[11px] ${
+                          isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
+                        }`}
+                      >
+                        {formUi.requiredLabel}
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    id={`comment-${question.id}`}
+                    rows={3}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className={`w-full rounded-xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:ring-2 review-text-multilingual ${
+                      isDarkTemplate
+                        ? 'bg-[#0F172A] border border-slate-700/80 text-white placeholder:text-slate-500 focus:ring-blue-500/40'
+                        : 'bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:ring-blue-500/20'
+                    }`}
+                  />
                 </div>
-                <textarea
-                  id={`comment-${question.id}`}
-                  rows={3}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Describe your experience here'}
-                  className={`w-full rounded-xl px-4 py-3 text-sm sm:text-base focus:outline-none focus:ring-2 review-text-multilingual ${
-                    isDarkTemplate
-                      ? 'bg-[#0F172A] border border-slate-700/80 text-white placeholder:text-slate-500 focus:ring-blue-500/40'
-                      : 'bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:ring-blue-500/20'
-                  }`}
-                />
-              </div>
-            ))}
-
-            {/* Compact Language Selector */}
-            {renderLanguageSelectorBlock(true)}
+              );
+            })}
 
             {(validationError || generateError) && (
               <div
@@ -2138,21 +2183,22 @@ export function CustomerReviewFlow({
 
               <button
                 type="submit"
-                disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+                disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+                title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
                 style={{ backgroundColor: templateAccentColor }}
                 className="w-full min-h-[52px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base shadow-sm hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed"
               >
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                    <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
                   </>
                 ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
                   <span>Limit Reached · Refreshes in {countdownText}</span>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Generate Review</span>
+                    <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
                   </>
                 )}
               </button>
@@ -2187,76 +2233,80 @@ export function CustomerReviewFlow({
             </p>
           </div>
 
-          {profile.questions.map((question, qIndex) => (
-            <section
-              key={question.id}
-              className="bg-[#FFFDF9] rounded-2xl border border-stone-200/90 shadow-xs p-5 sm:p-7"
-            >
-              <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 style={questionTextStyle} className="text-base sm:text-lg font-semibold text-stone-900 flex items-baseline gap-2.5">
-                  <span className="font-mono text-xs text-amber-700 font-bold">
-                    {String(qIndex + 1).padStart(2, '0')}
-                  </span>
-                  <span>{question.prompt}</span>
-                </h2>
-                <span className="text-xs text-stone-500 whitespace-nowrap shrink-0">
-                  {question.required ? 'Required' : 'Optional'}
-                </span>
-              </div>
-
-              {question.type === 'text' ? (
-                <textarea
-                  rows={3}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Share any warm highlights or notes...'}
-                  className="w-full rounded-xl border border-stone-200 bg-stone-50/60 px-4 py-3 text-sm sm:text-base text-stone-900 placeholder:text-stone-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-700/20 review-text-multilingual"
-                />
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {question.options.map((option) => {
-                    const isSelected = (answers[question.id] ?? []).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          toggleOption(
-                            question.id,
-                            option,
-                            question.type === 'single' ? 'single' : 'multiple',
-                          )
-                        }
-                        style={
-                          isSelected
-                            ? {
-                                backgroundColor: primaryColor,
-                                borderColor: primaryColor,
-                                color: '#FFFFFF',
-                              }
-                            : undefined
-                        }
-                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                          isSelected
-                            ? 'shadow-xs'
-                            : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300 hover:bg-stone-50'
-                        }`}
-                      >
-                        <span>{option}</span>
-                        {isSelected && <Check className="w-4 h-4 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ))}
-
           {renderLanguageSelectorBlock(false)}
+
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <section
+                key={question.id}
+                className="bg-[#FFFDF9] rounded-2xl border border-stone-200/90 shadow-xs p-5 sm:p-7"
+              >
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <h2 style={questionTextStyle} lang={selectedLanguage} className="text-base sm:text-lg font-semibold text-stone-900 flex items-baseline gap-2.5 review-text-multilingual">
+                    <span className="font-mono text-xs text-amber-700 font-bold">
+                      {String(qIndex + 1).padStart(2, '0')}
+                    </span>
+                    <span>{loc.prompt}</span>
+                  </h2>
+                  <span className="text-xs text-stone-500 whitespace-nowrap shrink-0">
+                    {question.required ? formUi.requiredLabel : formUi.optionalLabel}
+                  </span>
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50/60 px-4 py-3 text-sm sm:text-base text-stone-900 placeholder:text-stone-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-700/20 review-text-multilingual"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {loc.options.map((optItem) => {
+                      const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                      return (
+                        <button
+                          key={optItem.canonicalValue}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              optItem.canonicalValue,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: primaryColor,
+                                  borderColor: primaryColor,
+                                  color: '#FFFFFF',
+                                }
+                              : undefined
+                          }
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium border text-left transition-all cursor-pointer flex items-center justify-between gap-2 review-text-multilingual ${
+                            isSelected
+                              ? 'shadow-xs'
+                              : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+                          }`}
+                        >
+                          <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                          {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -2267,21 +2317,22 @@ export function CustomerReviewFlow({
           <div>
             <button
               type="submit"
-              disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+              disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+              title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
               style={{ backgroundColor: primaryColor }}
-              className="w-full min-h-[52px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              className="w-full min-h-[52px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isGenerating ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                  <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
                 </>
               ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
                 <span>Limit Reached · Refreshes in {countdownText}</span>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Generate Review</span>
+                  <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
                 </>
               )}
             </button>
@@ -2315,79 +2366,83 @@ export function CustomerReviewFlow({
             />
           </div>
 
-          {profile.questions.map((question, qIndex) => (
-            <section
-              key={question.id}
-              className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6"
-            >
-              <div className="flex items-baseline justify-between gap-2 mb-3.5 pb-2.5 border-b border-slate-100">
-                <h2 style={questionTextStyle} className="text-sm sm:text-base font-bold text-slate-900">
-                  {qIndex + 1}. {question.prompt}
-                </h2>
-                <span className="text-[11px] font-medium text-slate-500 shrink-0">
-                  {question.required ? 'Required' : 'Optional'}
-                </span>
-              </div>
+          {renderLanguageSelectorBlock(false)}
 
-              {question.type === 'text' ? (
-                <textarea
-                  rows={3}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Add additional notes (optional)'}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/15 review-text-multilingual"
-                />
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {question.options.map((option) => {
-                    const isSelected = (answers[question.id] ?? []).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          toggleOption(
-                            question.id,
-                            option,
-                            question.type === 'single' ? 'single' : 'multiple',
-                          )
-                        }
-                        style={
-                          isSelected
-                            ? {
-                                backgroundColor: '#0F172A',
-                                borderColor: '#0F172A',
-                                color: '#FFFFFF',
-                              }
-                            : undefined
-                        }
-                        className={`min-h-[44px] px-3.5 py-2 rounded-lg text-sm font-medium border text-left transition-colors cursor-pointer flex items-center gap-2.5 ${
-                          isSelected
-                            ? ''
-                            : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <span
-                          className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
-                            isSelected ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 bg-white'
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <section
+                key={question.id}
+                className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6"
+              >
+                <div className="flex items-baseline justify-between gap-2 mb-3.5 pb-2.5 border-b border-slate-100">
+                  <h2 style={questionTextStyle} lang={selectedLanguage} className="text-sm sm:text-base font-bold text-slate-900 review-text-multilingual">
+                    {qIndex + 1}. {loc.prompt}
+                  </h2>
+                  <span className="text-[11px] font-medium text-slate-500 shrink-0">
+                    {question.required ? formUi.requiredLabel : formUi.optionalLabel}
+                  </span>
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/15 review-text-multilingual"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {loc.options.map((optItem) => {
+                      const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                      return (
+                        <button
+                          key={optItem.canonicalValue}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              optItem.canonicalValue,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: '#0F172A',
+                                  borderColor: '#0F172A',
+                                  color: '#FFFFFF',
+                                }
+                              : undefined
+                          }
+                          className={`min-h-[44px] px-3.5 py-2 rounded-lg text-sm font-medium border text-left transition-colors cursor-pointer flex items-center gap-2.5 review-text-multilingual ${
+                            isSelected
+                              ? ''
+                              : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-white hover:border-slate-300'
                           }`}
                         >
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                        </span>
-                        <span className="truncate">{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ))}
-
-          {renderLanguageSelectorBlock(false)}
+                          <span
+                            className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
+                              isSelected ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </span>
+                          <span lang={selectedLanguage} className="truncate">{optItem.displayLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -2397,21 +2452,22 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
             style={{ backgroundColor: primaryColor }}
-            className="w-full min-h-[50px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[50px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -2440,70 +2496,74 @@ export function CustomerReviewFlow({
             </div>
           </div>
 
-          {profile.questions.map((question) => (
-            <div key={question.id} className="space-y-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <h2 style={questionTextStyle} className="text-sm sm:text-base font-semibold text-slate-900">
-                  {question.prompt}
-                </h2>
-                {question.required && (
-                  <span className="text-[11px] font-medium text-teal-700 shrink-0">Required</span>
+          {renderLanguageSelectorBlock(true)}
+
+          {profile.questions.map((question) => {
+            const loc = getLocQ(question);
+            return (
+              <div key={question.id} className="space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 style={questionTextStyle} lang={selectedLanguage} className="text-sm sm:text-base font-semibold text-slate-900 review-text-multilingual">
+                    {loc.prompt}
+                  </h2>
+                  {question.required && (
+                    <span className="text-[11px] font-medium text-teal-700 shrink-0">{formUi.requiredLabel}</span>
+                  )}
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={2}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-700/15 review-text-multilingual"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {loc.options.map((optItem) => {
+                      const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                      return (
+                        <button
+                          key={optItem.canonicalValue}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              optItem.canonicalValue,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: primaryColor,
+                                  borderColor: primaryColor,
+                                  color: '#FFFFFF',
+                                }
+                              : undefined
+                          }
+                          className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-medium border transition-colors cursor-pointer flex items-center gap-1.5 review-text-multilingual ${
+                            isSelected
+                              ? 'shadow-xs'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                          <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-
-              {question.type === 'text' ? (
-                <textarea
-                  rows={2}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Optional quick note...'}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-700/15 review-text-multilingual"
-                />
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {question.options.map((option) => {
-                    const isSelected = (answers[question.id] ?? []).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          toggleOption(
-                            question.id,
-                            option,
-                            question.type === 'single' ? 'single' : 'multiple',
-                          )
-                        }
-                        style={
-                          isSelected
-                            ? {
-                                backgroundColor: primaryColor,
-                                borderColor: primaryColor,
-                                color: '#FFFFFF',
-                              }
-                            : undefined
-                        }
-                        className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-medium border transition-colors cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'shadow-xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
-                        <span>{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {renderLanguageSelectorBlock(true)}
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -2513,21 +2573,22 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
             style={{ backgroundColor: primaryColor }}
-            className="w-full min-h-[50px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[50px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -2574,73 +2635,77 @@ export function CustomerReviewFlow({
             </div>
           </SpatialTilt>
 
-          {profile.questions.map((question, qIndex) => (
-            <SpatialTilt key={question.id} maxTilt={3.5} scale={1.006} glare>
-              <section className="rounded-3xl bg-white/75 backdrop-blur-xl border border-white/90 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-6">
-                <div className="flex items-baseline justify-between gap-3 mb-4">
-                  <h2 style={questionTextStyle} className="text-base font-semibold text-slate-900">
-                    <span className="text-indigo-500 mr-2 font-mono text-xs">{String(qIndex + 1).padStart(2, '0')}</span>
-                    {question.prompt}
-                  </h2>
-                  {question.required && (
-                    <span className="text-xs font-medium text-indigo-600 shrink-0">Required</span>
-                  )}
-                </div>
-
-                {question.type === 'text' ? (
-                  <textarea
-                    rows={3}
-                    value={textInputs[question.id] ?? ''}
-                    onChange={(e) => {
-                      markFormStarted();
-                      setValidationError(null);
-                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                    }}
-                    placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
-                    className="w-full rounded-2xl border border-indigo-100 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 review-text-multilingual"
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {question.options.map((option) => {
-                      const isSelected = (answers[question.id] ?? []).includes(option);
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() =>
-                            toggleOption(
-                              question.id,
-                              option,
-                              question.type === 'single' ? 'single' : 'multiple',
-                            )
-                          }
-                          style={
-                            isSelected
-                              ? {
-                                  background: `linear-gradient(135deg, ${primaryColor}, #6366F1)`,
-                                  borderColor: 'transparent',
-                                  boxShadow: '0 10px 20px -8px rgba(79, 70, 229, 0.45)',
-                                }
-                              : undefined
-                          }
-                          className={`min-h-[46px] px-4 py-2.5 rounded-2xl text-left text-sm font-medium border transition-all duration-200 flex items-center justify-between gap-2 cursor-pointer ${
-                            isSelected
-                              ? 'text-white -translate-y-0.5'
-                              : 'bg-white/85 border-indigo-100/90 text-slate-700 hover:bg-white hover:-translate-y-0.5 shadow-xs'
-                          }`}
-                        >
-                          <span>{option}</span>
-                          {isSelected && <Check className="w-4 h-4 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            </SpatialTilt>
-          ))}
-
           {renderLanguageSelectorBlock(false)}
+
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <SpatialTilt key={question.id} maxTilt={3.5} scale={1.006} glare>
+                <section className="rounded-3xl bg-white/75 backdrop-blur-xl border border-white/90 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-6">
+                  <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 style={questionTextStyle} lang={selectedLanguage} className="text-base font-semibold text-slate-900 review-text-multilingual">
+                      <span className="text-indigo-500 mr-2 font-mono text-xs">{String(qIndex + 1).padStart(2, '0')}</span>
+                      {loc.prompt}
+                    </h2>
+                    {question.required && (
+                      <span className="text-xs font-medium text-indigo-600 shrink-0">{formUi.requiredLabel}</span>
+                    )}
+                  </div>
+
+                  {question.type === 'text' ? (
+                    <textarea
+                      rows={3}
+                      lang={selectedLanguage}
+                      value={textInputs[question.id] ?? ''}
+                      onChange={(e) => {
+                        markFormStarted();
+                        setValidationError(null);
+                        setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                      }}
+                      placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                      className="w-full rounded-2xl border border-indigo-100 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 review-text-multilingual"
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {loc.options.map((optItem) => {
+                        const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                        return (
+                          <button
+                            key={optItem.canonicalValue}
+                            type="button"
+                            onClick={() =>
+                              toggleOption(
+                                question.id,
+                                optItem.canonicalValue,
+                                question.type === 'single' ? 'single' : 'multiple',
+                              )
+                            }
+                            style={
+                              isSelected
+                                ? {
+                                    background: `linear-gradient(135deg, ${primaryColor}, #6366F1)`,
+                                    borderColor: 'transparent',
+                                    boxShadow: '0 10px 20px -8px rgba(79, 70, 229, 0.45)',
+                                  }
+                                : undefined
+                            }
+                            className={`min-h-[46px] px-4 py-2.5 rounded-2xl text-left text-sm font-medium border transition-all duration-200 flex items-center justify-between gap-2 cursor-pointer review-text-multilingual ${
+                              isSelected
+                                ? 'text-white -translate-y-0.5'
+                                : 'bg-white/85 border-indigo-100/90 text-slate-700 hover:bg-white hover:-translate-y-0.5 shadow-xs'
+                            }`}
+                          >
+                            <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                            {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </SpatialTilt>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700">
@@ -2650,24 +2715,25 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
             style={{
               background: `linear-gradient(135deg, ${primaryColor}, #4F46E5)`,
               boxShadow: '0 18px 34px -10px rgba(79, 70, 229, 0.45), inset 0 1px 0 rgba(255,255,255,0.35)',
             }}
-            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl text-white font-semibold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -2702,69 +2768,73 @@ export function CustomerReviewFlow({
             </div>
           </div>
 
-          {profile.questions.map((question, qIndex) => (
-            <section
-              key={question.id}
-              className="bg-white rounded-2xl border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] p-5 sm:p-6"
-            >
-              <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 style={questionTextStyle} className="text-base font-extrabold text-slate-950">
-                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#FB923C] border-2 border-slate-900 text-xs font-black mr-2">
-                    {qIndex + 1}
-                  </span>
-                  {question.prompt}
-                </h2>
-                {question.required && (
-                  <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-rose-100 border border-slate-900 text-slate-900 shrink-0">
-                    Required
-                  </span>
-                )}
-              </div>
-
-              {question.type === 'text' ? (
-                <textarea
-                  rows={3}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
-                  className="w-full rounded-xl border-2 border-slate-900 bg-[#FFFDF7] px-4 py-3 text-sm font-medium text-slate-950 placeholder:text-slate-400 focus:outline-none focus:bg-white shadow-[3px_3px_0px_#0F172A] review-text-multilingual"
-                />
-              ) : (
-                <div className="flex flex-wrap gap-2.5">
-                  {question.options.map((option) => {
-                    const isSelected = (answers[question.id] ?? []).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          toggleOption(
-                            question.id,
-                            option,
-                            question.type === 'single' ? 'single' : 'multiple',
-                          )
-                        }
-                        className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold border-2 border-slate-900 transition-all flex items-center gap-2 cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#FB923C] text-slate-950 translate-x-[2px] translate-y-[2px] shadow-[1px_1px_0px_#0F172A]'
-                            : 'bg-white text-slate-900 shadow-[4px_4px_0px_#0F172A] hover:-translate-x-[1px] hover:-translate-y-[1px] hover:shadow-[5px_5px_0px_#0F172A]'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-4 h-4 stroke-[3] shrink-0" />}
-                        <span>{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ))}
-
           {renderLanguageSelectorBlock(false)}
+
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <section
+                key={question.id}
+                className="bg-white rounded-2xl border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] p-5 sm:p-6"
+              >
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <h2 style={questionTextStyle} lang={selectedLanguage} className="text-base font-extrabold text-slate-950 review-text-multilingual">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#FB923C] border-2 border-slate-900 text-xs font-black mr-2">
+                      {qIndex + 1}
+                    </span>
+                    {loc.prompt}
+                  </h2>
+                  {question.required && (
+                    <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-rose-100 border border-slate-900 text-slate-900 shrink-0">
+                      {formUi.requiredLabel}
+                    </span>
+                  )}
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className="w-full rounded-xl border-2 border-slate-900 bg-[#FFFDF7] px-4 py-3 text-sm font-medium text-slate-950 placeholder:text-slate-400 focus:outline-none focus:bg-white shadow-[3px_3px_0px_#0F172A] review-text-multilingual"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-2.5">
+                    {loc.options.map((optItem) => {
+                      const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                      return (
+                        <button
+                          key={optItem.canonicalValue}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              optItem.canonicalValue,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold border-2 border-slate-900 transition-all flex items-center gap-2 cursor-pointer review-text-multilingual ${
+                            isSelected
+                              ? 'bg-[#FB923C] text-slate-950 translate-x-[2px] translate-y-[2px] shadow-[1px_1px_0px_#0F172A]'
+                              : 'bg-white text-slate-900 shadow-[4px_4px_0px_#0F172A] hover:-translate-x-[1px] hover:-translate-y-[1px] hover:shadow-[5px_5px_0px_#0F172A]'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-4 h-4 stroke-[3] shrink-0" />}
+                          <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-xl border-2 border-slate-900 bg-rose-200 px-4 py-3 text-sm font-bold text-slate-950 shadow-[4px_4px_0px_#0F172A]">
@@ -2774,20 +2844,21 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
-            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-[#FACC15] hover:bg-[#FDE047] text-slate-950 font-black text-base border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] active:translate-x-[3px] active:translate-y-[3px] active:shadow-[2px_2px_0px_#0F172A] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-[#FACC15] hover:bg-[#FDE047] text-slate-950 font-black text-base border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] active:translate-x-[3px] active:translate-y-[3px] active:shadow-[2px_2px_0px_#0F172A] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -2828,66 +2899,70 @@ export function CustomerReviewFlow({
             </div>
           </SpatialTilt>
 
-          {profile.questions.map((question, qIndex) => (
-            <SpatialTilt key={question.id} maxTilt={3} scale={1.005} glare>
-              <section className="rounded-3xl bg-[#0B1120]/90 border border-cyan-500/25 shadow-[0_18px_36px_-18px_rgba(34,211,238,0.2)] p-5 sm:p-6">
-                <div className="flex items-baseline justify-between gap-3 mb-4">
-                  <h2 style={questionTextStyle} className="text-base font-semibold text-white">
-                    <span className="font-mono text-xs text-cyan-400 mr-2">
-                      [{String(qIndex + 1).padStart(2, '0')}]
-                    </span>
-                    {question.prompt}
-                  </h2>
-                  {question.required && (
-                    <span className="text-[11px] font-mono text-cyan-300 shrink-0">REQ</span>
-                  )}
-                </div>
-
-                {question.type === 'text' ? (
-                  <textarea
-                    rows={3}
-                    value={textInputs[question.id] ?? ''}
-                    onChange={(e) => {
-                      markFormStarted();
-                      setValidationError(null);
-                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                    }}
-                    placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
-                    className="w-full rounded-2xl border border-cyan-500/30 bg-[#060913] px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 review-text-multilingual"
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {question.options.map((option) => {
-                      const isSelected = (answers[question.id] ?? []).includes(option);
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() =>
-                            toggleOption(
-                              question.id,
-                              option,
-                              question.type === 'single' ? 'single' : 'multiple',
-                            )
-                          }
-                          className={`min-h-[46px] px-4 py-2.5 rounded-xl text-left text-sm font-medium border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                            isSelected
-                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.28)]'
-                              : 'bg-[#0F172A]/80 border-slate-700/80 text-slate-300 hover:border-cyan-500/50 hover:text-white'
-                          }`}
-                        >
-                          <span>{option}</span>
-                          {isSelected && <Check className="w-4 h-4 text-cyan-300 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            </SpatialTilt>
-          ))}
-
           {renderLanguageSelectorBlock(false)}
+
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <SpatialTilt key={question.id} maxTilt={3} scale={1.005} glare>
+                <section className="rounded-3xl bg-[#0B1120]/90 border border-cyan-500/25 shadow-[0_18px_36px_-18px_rgba(34,211,238,0.2)] p-5 sm:p-6">
+                  <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 style={questionTextStyle} lang={selectedLanguage} className="text-base font-semibold text-white review-text-multilingual">
+                      <span className="font-mono text-xs text-cyan-400 mr-2">
+                        [{String(qIndex + 1).padStart(2, '0')}]
+                      </span>
+                      {loc.prompt}
+                    </h2>
+                    {question.required && (
+                      <span className="text-[11px] font-mono text-cyan-300 shrink-0">{formUi.requiredLabel}</span>
+                    )}
+                  </div>
+
+                  {question.type === 'text' ? (
+                    <textarea
+                      rows={3}
+                      lang={selectedLanguage}
+                      value={textInputs[question.id] ?? ''}
+                      onChange={(e) => {
+                        markFormStarted();
+                        setValidationError(null);
+                        setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                      }}
+                      placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                      className="w-full rounded-2xl border border-cyan-500/30 bg-[#060913] px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 review-text-multilingual"
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {loc.options.map((optItem) => {
+                        const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                        return (
+                          <button
+                            key={optItem.canonicalValue}
+                            type="button"
+                            onClick={() =>
+                              toggleOption(
+                                question.id,
+                                optItem.canonicalValue,
+                                question.type === 'single' ? 'single' : 'multiple',
+                              )
+                            }
+                            className={`min-h-[46px] px-4 py-2.5 rounded-xl text-left text-sm font-medium border transition-all flex items-center justify-between gap-2 cursor-pointer review-text-multilingual ${
+                              isSelected
+                                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.28)]'
+                                : 'bg-[#0F172A]/80 border-slate-700/80 text-slate-300 hover:border-cyan-500/50 hover:text-white'
+                            }`}
+                          >
+                            <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                            {isSelected && <Check className="w-4 h-4 text-cyan-300 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </SpatialTilt>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-3 text-sm text-rose-200">
@@ -2897,20 +2972,21 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
-            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-base shadow-[0_14px_32px_-8px_rgba(34,211,238,0.5)] hover:brightness-110 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-base shadow-[0_14px_32px_-8px_rgba(34,211,238,0.5)] hover:brightness-110 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -2951,84 +3027,88 @@ export function CustomerReviewFlow({
             </div>
           </div>
 
-          {profile.questions.map((question, qIndex) => (
-            <section
-              key={question.id}
-              className="rounded-[28px] bg-white border border-rose-100 p-5 sm:p-6"
-              style={{
-                boxShadow:
-                  '14px 14px 28px rgba(244, 63, 94, 0.10), -8px -8px 18px rgba(255, 255, 255, 0.95), inset 0 -4px 8px rgba(244, 63, 94, 0.06)',
-              }}
-            >
-              <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 style={questionTextStyle} className="text-base font-bold text-slate-900">
-                  <span className="text-rose-500 mr-1.5">{qIndex + 1}.</span>
-                  {question.prompt}
-                </h2>
-                {question.required && (
-                  <span className="text-xs font-semibold text-rose-500 shrink-0">Required</span>
-                )}
-              </div>
-
-              {question.type === 'text' ? (
-                <textarea
-                  rows={3}
-                  value={textInputs[question.id] ?? ''}
-                  onChange={(e) => {
-                    markFormStarted();
-                    setValidationError(null);
-                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                  }}
-                  placeholder={question.placeholder || 'Write anything specific you would like mentioned...'}
-                  className="w-full rounded-2xl border border-rose-100 bg-[#FFF8F6] px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300 review-text-multilingual"
-                  style={{
-                    boxShadow: 'inset 4px 4px 10px rgba(244, 63, 94, 0.07), inset -4px -4px 10px rgba(255,255,255,0.9)',
-                  }}
-                />
-              ) : (
-                <div className="flex flex-wrap gap-2.5">
-                  {question.options.map((option) => {
-                    const isSelected = (answers[question.id] ?? []).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          toggleOption(
-                            question.id,
-                            option,
-                            question.type === 'single' ? 'single' : 'multiple',
-                          )
-                        }
-                        style={
-                          isSelected
-                            ? {
-                                backgroundColor: '#F43F5E',
-                                boxShadow:
-                                  '0 10px 18px -4px rgba(244, 63, 94, 0.42), inset 0 -3px 6px rgba(0, 0, 0, 0.16)',
-                              }
-                            : {
-                                boxShadow:
-                                  '6px 6px 12px rgba(15, 23, 42, 0.06), -4px -4px 10px rgba(255, 255, 255, 0.95), inset 0 -2px 5px rgba(244, 63, 94, 0.06)',
-                              }
-                        }
-                        className={`min-h-[44px] px-4 py-2 rounded-2xl text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                          isSelected
-                            ? 'text-white scale-[1.02]'
-                            : 'bg-[#FFF8F6] text-slate-700 hover:bg-white'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-4 h-4 shrink-0" />}
-                        <span>{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ))}
-
           {renderLanguageSelectorBlock(false)}
+
+          {profile.questions.map((question, qIndex) => {
+            const loc = getLocQ(question);
+            return (
+              <section
+                key={question.id}
+                className="rounded-[28px] bg-white border border-rose-100 p-5 sm:p-6"
+                style={{
+                  boxShadow:
+                    '14px 14px 28px rgba(244, 63, 94, 0.10), -8px -8px 18px rgba(255, 255, 255, 0.95), inset 0 -4px 8px rgba(244, 63, 94, 0.06)',
+                }}
+              >
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                  <h2 style={questionTextStyle} lang={selectedLanguage} className="text-base font-bold text-slate-900 review-text-multilingual">
+                    <span className="text-rose-500 mr-1.5">{qIndex + 1}.</span>
+                    {loc.prompt}
+                  </h2>
+                  {question.required && (
+                    <span className="text-xs font-semibold text-rose-500 shrink-0">{formUi.requiredLabel}</span>
+                  )}
+                </div>
+
+                {question.type === 'text' ? (
+                  <textarea
+                    rows={3}
+                    lang={selectedLanguage}
+                    value={textInputs[question.id] ?? ''}
+                    onChange={(e) => {
+                      markFormStarted();
+                      setValidationError(null);
+                      setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                    }}
+                    placeholder={loc.placeholder || formUi.textAreaPlaceholderDefault}
+                    className="w-full rounded-2xl border border-rose-100 bg-[#FFF8F6] px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300 review-text-multilingual"
+                    style={{
+                      boxShadow: 'inset 4px 4px 10px rgba(244, 63, 94, 0.07), inset -4px -4px 10px rgba(255,255,255,0.9)',
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-2.5">
+                    {loc.options.map((optItem) => {
+                      const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                      return (
+                        <button
+                          key={optItem.canonicalValue}
+                          type="button"
+                          onClick={() =>
+                            toggleOption(
+                              question.id,
+                              optItem.canonicalValue,
+                              question.type === 'single' ? 'single' : 'multiple',
+                            )
+                          }
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: '#F43F5E',
+                                  boxShadow:
+                                    '0 10px 18px -4px rgba(244, 63, 94, 0.42), inset 0 -3px 6px rgba(0, 0, 0, 0.16)',
+                                }
+                              : {
+                                  boxShadow:
+                                    '6px 6px 12px rgba(15, 23, 42, 0.06), -4px -4px 10px rgba(255, 255, 255, 0.95), inset 0 -2px 5px rgba(244, 63, 94, 0.06)',
+                                }
+                          }
+                          className={`min-h-[44px] px-4 py-2 rounded-2xl text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer review-text-multilingual ${
+                            isSelected
+                              ? 'text-white scale-[1.02]'
+                              : 'bg-[#FFF8F6] text-slate-700 hover:bg-white'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                          <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
 
           {(validationError || generateError) && (
             <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -3038,25 +3118,26 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
             style={{
               backgroundColor: '#F43F5E',
               boxShadow:
                 '0 16px 28px -8px rgba(244, 63, 94, 0.45), inset 0 -4px 8px rgba(0, 0, 0, 0.18), inset 0 2px 4px rgba(255, 255, 255, 0.35)',
             }}
-            className="w-full min-h-[54px] px-6 py-3.5 rounded-[22px] text-white font-bold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[54px] px-6 py-3.5 rounded-[22px] text-white font-bold text-base hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -3090,77 +3171,81 @@ export function CustomerReviewFlow({
           </div>
         </div>
 
-        {profile.questions.map((question, qIndex) => (
-          <section
-            key={question.id}
-            className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6"
-          >
-            <div className="flex items-baseline justify-between gap-3 mb-4">
-              <h2 className="text-base font-semibold text-slate-900" style={questionTextStyle}>
-                {qIndex + 1}. {question.prompt}
-              </h2>
-              <span className="text-xs text-slate-500 whitespace-nowrap shrink-0">
-                {question.required ? 'Required' : 'Optional'}
-                {question.type === 'multiple' ? ' · Select multiple' : ''}
-              </span>
-            </div>
-
-            {question.type === 'text' ? (
-              <textarea
-                rows={3}
-                value={textInputs[question.id] ?? ''}
-                onChange={(e) => {
-                  markFormStarted();
-                  setValidationError(null);
-                  setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
-                }}
-                placeholder={
-                  question.placeholder ||
-                  'Share any specific details from your visit...'
-                }
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/15 review-text-multilingual"
-              />
-            ) : (
-              <div className="flex flex-wrap gap-2.5">
-                {question.options.map((option) => {
-                  const isSelected = (answers[question.id] ?? []).includes(option);
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() =>
-                        toggleOption(
-                          question.id,
-                          option,
-                          question.type === 'single' ? 'single' : 'multiple',
-                        )
-                      }
-                      style={
-                        isSelected
-                          ? {
-                              backgroundColor: primaryColor,
-                              borderColor: primaryColor,
-                              color: '#FFFFFF',
-                            }
-                          : undefined
-                      }
-                      className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-medium border transition-colors cursor-pointer flex items-center gap-2 ${
-                        isSelected
-                          ? 'shadow-xs'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-4 h-4 shrink-0" />}
-                      <span>{option}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        ))}
-
         {renderLanguageSelectorBlock(false)}
+
+        {profile.questions.map((question, qIndex) => {
+          const loc = getLocQ(question);
+          return (
+            <section
+              key={question.id}
+              className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6"
+            >
+              <div className="flex items-baseline justify-between gap-3 mb-4">
+                <h2 lang={selectedLanguage} className="text-base font-semibold text-slate-900 review-text-multilingual" style={questionTextStyle}>
+                  {qIndex + 1}. {loc.prompt}
+                </h2>
+                <span className="text-xs text-slate-500 whitespace-nowrap shrink-0">
+                  {question.required ? formUi.requiredLabel : formUi.optionalLabel}
+                  {question.type === 'multiple' ? ` · ${formUi.selectMultipleLabel}` : ''}
+                </span>
+              </div>
+
+              {question.type === 'text' ? (
+                <textarea
+                  rows={3}
+                  lang={selectedLanguage}
+                  value={textInputs[question.id] ?? ''}
+                  onChange={(e) => {
+                    markFormStarted();
+                    setValidationError(null);
+                    setTextInputs((prev) => ({ ...prev, [question.id]: e.target.value }));
+                  }}
+                  placeholder={
+                    loc.placeholder ||
+                    formUi.textAreaPlaceholderDefault
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/15 review-text-multilingual"
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2.5">
+                  {loc.options.map((optItem) => {
+                    const isSelected = (answers[question.id] ?? []).includes(optItem.canonicalValue);
+                    return (
+                      <button
+                        key={optItem.canonicalValue}
+                        type="button"
+                        onClick={() =>
+                          toggleOption(
+                            question.id,
+                            optItem.canonicalValue,
+                            question.type === 'single' ? 'single' : 'multiple',
+                          )
+                        }
+                        style={
+                          isSelected
+                            ? {
+                                backgroundColor: primaryColor,
+                                borderColor: primaryColor,
+                                color: '#FFFFFF',
+                              }
+                            : undefined
+                        }
+                        className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-medium border transition-colors cursor-pointer flex items-center gap-2 review-text-multilingual ${
+                          isSelected
+                            ? 'shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                        <span lang={selectedLanguage}>{optItem.displayLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
 
         {(validationError || generateError) && (
           <div
@@ -3184,21 +3269,22 @@ export function CustomerReviewFlow({
 
           <button
             type="submit"
-            disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
+            title={isPreview ? 'Review generation is disabled in Preview Mode' : undefined}
             style={{ backgroundColor: primaryColor }}
-            className="w-full min-h-[50px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[50px] px-6 py-3.5 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating review in {getLanguageDisplayName(selectedLanguage)}...</span>
+                <span className="review-text-multilingual">{formUi.generatingReviewButton}</span>
               </>
             ) : hasReachedGenerationLimit && quotaResetAt > nowMs ? (
               <span>Limit Reached · Refreshes in {countdownText}</span>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Generate Review</span>
+                <span className="review-text-multilingual">{formUi.generateReviewButton}</span>
               </>
             )}
           </button>
@@ -3293,6 +3379,13 @@ export function CustomerReviewFlow({
       </header>
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-20">
+        {isPreview && (
+          <div className="mb-4 rounded-xl border border-amber-300/70 bg-amber-50/95 px-4 py-2.5 text-xs font-medium text-amber-900 flex items-center justify-between gap-2 shadow-xs">
+            <span>
+              <strong>Preview Mode:</strong> Review generation, refresh, and Google redirect buttons stay visible for layout testing and are disabled here.
+            </span>
+          </div>
+        )}
         {tokenMismatch && (
           <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             Notice: This printed QR code revision has been updated, though you can still share your feedback below.
@@ -3667,36 +3760,50 @@ export function CustomerReviewFlow({
                         ? `Paste your copied text into ${profile.name}'s Google review box, review it, and submit when you are ready.`
                         : `Open ${profile.name}'s Google page below, then paste, review, and submit it manually.`}
                     </p>
-                    <a
-                      href={googleUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={handleOpenGoogleReview}
-                      style={{ backgroundColor: primaryColor }}
-                      className="w-full min-h-[46px] px-5 py-2.5 rounded-xl text-white font-semibold text-sm sm:text-base hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
-                    >
-                      <span>Post on Google</span>
-                      <ExternalLink className="w-4 h-4 shrink-0" />
-                    </a>
+                    {isPreview ? (
+                      <button
+                        type="button"
+                        disabled
+                        title="Google redirect is disabled in Preview Mode"
+                        style={{ backgroundColor: primaryColor }}
+                        className="w-full min-h-[46px] px-5 py-2.5 rounded-xl text-white font-semibold text-sm sm:text-base opacity-55 cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        <span className="review-text-multilingual">{formUi.postOnGoogleButton}</span>
+                        <ExternalLink className="w-4 h-4 shrink-0" />
+                      </button>
+                    ) : (
+                      <a
+                        href={googleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={handleOpenGoogleReview}
+                        style={{ backgroundColor: primaryColor }}
+                        className="w-full min-h-[46px] px-5 py-2.5 rounded-xl text-white font-semibold text-sm sm:text-base hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
+                      >
+                        <span className="review-text-multilingual">{formUi.postOnGoogleButton}</span>
+                        <ExternalLink className="w-4 h-4 shrink-0" />
+                      </a>
+                    )}
                   </div>
                 )}
 
                 <button
                   type="button"
-                  disabled={isGenerating || !draftText.trim()}
+                  disabled={isPreview || isGenerating || !draftText.trim()}
+                  title={isPreview ? 'Copy Review is disabled in Preview Mode' : undefined}
                   onClick={handleCopyReview}
                   style={{ backgroundColor: copied ? '#0F172A' : templateAccentColor }}
-                  className="w-full min-h-[50px] px-6 py-3 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full min-h-[50px] px-6 py-3 rounded-xl text-white font-semibold text-base shadow-sm hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {copied ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>Copied to Clipboard</span>
+                      <span className="review-text-multilingual">{formUi.copiedButton}</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>Copy Review</span>
+                      <span className="review-text-multilingual">{formUi.copyReviewButton}</span>
                     </>
                   )}
                 </button>
@@ -3719,25 +3826,27 @@ export function CustomerReviewFlow({
                     {isEditing ? (
                       <>
                         <Check className="w-3.5 h-3.5 shrink-0" />
-                        <span>Done</span>
+                        <span className="review-text-multilingual">{formUi.doneEditingButton}</span>
                       </>
                     ) : (
                       <>
                         <Pencil className="w-3.5 h-3.5 shrink-0" />
-                        <span>Edit Review</span>
+                        <span className="review-text-multilingual">{formUi.editReviewButton}</span>
                       </>
                     )}
                   </button>
 
                   <button
                     type="button"
-                    disabled={isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
-                    onClick={handleRegenerate}
+                    disabled={isPreview || isGenerating || (hasReachedGenerationLimit && quotaResetAt > nowMs)}
                     title={
-                      hasReachedGenerationLimit && quotaResetAt > nowMs
-                        ? `Refreshes in ${countdownText}`
-                        : `${remainingGenerations} generation(s) remaining`
+                      isPreview
+                        ? 'Regenerate is disabled in Preview Mode'
+                        : hasReachedGenerationLimit && quotaResetAt > nowMs
+                          ? `Refreshes in ${countdownText}`
+                          : `${remainingGenerations} generation(s) remaining`
                     }
+                    onClick={handleRegenerate}
                     className={`min-h-[42px] px-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                       isDarkTemplate
                         ? 'border-slate-700 bg-[#0F172A] text-slate-200 hover:bg-slate-800'
@@ -3745,10 +3854,10 @@ export function CustomerReviewFlow({
                     }`}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isGenerating ? 'animate-spin' : ''}`} />
-                    <span className="tabular-nums">
+                    <span className="tabular-nums review-text-multilingual">
                       {hasReachedGenerationLimit && quotaResetAt > nowMs
                         ? countdownText
-                        : 'Regenerate'}
+                        : formUi.regenerateButton}
                     </span>
                   </button>
 

@@ -38,6 +38,7 @@ import type {
   FeedbackSubmissionResponse,
   FormTemplateId,
   GbpReplySettings,
+  LocalizedQuestionContent,
   PackageTier,
   PublicProfile,
   QrConfig,
@@ -129,20 +130,53 @@ function sanitizeQrConfig(qrConfig?: Partial<QrConfig>, fallbackToken = 'v1token
   };
 }
 
+function sanitizeQuestionTranslations(
+  rawTranslations: FeedbackQuestion['translations'],
+  fallbackOptionCount: number,
+): FeedbackQuestion['translations'] | undefined {
+  if (!rawTranslations || typeof rawTranslations !== 'object') return undefined;
+  const clean: Partial<Record<ReviewLanguage, LocalizedQuestionContent>> = {};
+  const langs: ReviewLanguage[] = ['en', 'hi', 'mr', 'hinglish'];
+  for (const lang of langs) {
+    const entry = rawTranslations[lang];
+    if (!entry || typeof entry !== 'object') continue;
+    const prompt = clampString(entry.prompt, 220);
+    const placeholder = clampString(entry.placeholder, 200);
+    const options = Array.isArray(entry.options)
+      ? entry.options
+          .slice(0, Math.max(20, fallbackOptionCount))
+          .map((opt) => clampString(opt, 100))
+      : [];
+    if (prompt || placeholder || options.some(Boolean)) {
+      clean[lang] = {
+        prompt,
+        options,
+        ...(placeholder ? { placeholder } : {}),
+      };
+    }
+  }
+  return Object.keys(clean).length > 0 ? clean : undefined;
+}
+
 function sanitizeQuestions(questions: FeedbackQuestion[]): FeedbackQuestion[] {
-  return questions.slice(0, 25).map((q, idx) => ({
-    id: clampString(q.id, 64) || `q-${idx + 1}`,
-    prompt: clampString(q.prompt, 180) || 'Untitled Question',
-    type: q.type === 'single' || q.type === 'multiple' || q.type === 'text' ? q.type : 'single',
-    options: Array.isArray(q.options)
+  return questions.slice(0, 25).map((q, idx) => {
+    const options = Array.isArray(q.options)
       ? q.options
           .map((opt) => clampString(opt, 80))
           .filter(Boolean)
           .slice(0, 20)
-      : [],
-    required: Boolean(q.required),
-    ...(q.placeholder ? { placeholder: clampString(q.placeholder, 160) } : {}),
-  }));
+      : [];
+    const translations = sanitizeQuestionTranslations(q.translations, options.length);
+    return {
+      id: clampString(q.id, 64) || `q-${idx + 1}`,
+      prompt: clampString(q.prompt, 180) || 'Untitled Question',
+      type: q.type === 'single' || q.type === 'multiple' || q.type === 'text' ? q.type : 'single',
+      options,
+      required: Boolean(q.required),
+      ...(q.placeholder ? { placeholder: clampString(q.placeholder, 160) } : {}),
+      ...(translations ? { translations } : {}),
+    };
+  });
 }
 
 function sanitizeSeoKeywords(keywords?: unknown): string[] {

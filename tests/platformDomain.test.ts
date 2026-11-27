@@ -49,6 +49,12 @@ import {
   DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
   createCategoryQuestions,
 } from '../src/data/categoryPresets.ts';
+import {
+  buildAutoTranslatedQuestionContent,
+  getLocalizedFormUiStrings,
+  localizeQuestion,
+  transliterateRomanToDevanagari,
+} from '../src/data/localizedQuestions.ts';
 import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
@@ -454,4 +460,71 @@ test('TC-UI-BOUNDARY-01: Client Portal hides delete/SEO/writing-library/slug/dow
   assert.ok(qrStudioSrc.includes('requiredKeyword="REGENERATE"'));
   assert.ok(qrStudioSrc.includes("requiredKeyword={isActive ? 'PAUSE' : 'ACTIVATE'}"));
 });
+
+test('TC-LOC-01: localizeQuestion translates prompts, options, and UI strings to Marathi/Hindi/Hinglish and preserves custom owner translations', () => {
+  const salonQuestions = createCategoryQuestions('Hair Salons');
+  const serviceQ = salonQuestions[0];
+  const mrLocalized = localizeQuestion(serviceQ, 'mr');
+  assert.match(mrLocalized.prompt, /[\u0900-\u097F]/, 'Expected Devanagari prompt in Marathi');
+  assert.equal(mrLocalized.options[0].canonicalValue, 'Haircut');
+  assert.equal(mrLocalized.options[0].displayLabel, 'हेअरकट');
+
+  const hiUi = getLocalizedFormUiStrings('hi');
+  assert.equal(hiUi.generateReviewButton, 'रिव्यू तैयार करें');
+
+  const customQ = {
+    ...serviceQ,
+    translations: {
+      mr: {
+        prompt: 'आमची विशेष हेअर ट्रीटमेंट कशी वाटली?',
+        options: ['खूप उत्तम हेअरकट'],
+      },
+    },
+  };
+  const customMr = localizeQuestion(customQ, 'mr');
+  assert.equal(customMr.prompt, 'आमची विशेष हेअर ट्रीटमेंट कशी वाटली?');
+  assert.equal(customMr.options[0].canonicalValue, 'Haircut');
+  assert.equal(customMr.options[0].displayLabel, 'खूप उत्तम हेअरकट');
+
+  const autoFilled = buildAutoTranslatedQuestionContent(serviceQ, 'hinglish');
+  assert.ok(autoFilled.prompt.length > 5);
+});
+
+test('TC-LOC-02: transliterateRomanToDevanagari converts phonetic Roman input to Devanagari cleanly', () => {
+  const out = transliterateRomanToDevanagari('tumhala aajchi seva kashi vatli?');
+  assert.equal(out, 'तुम्हाला आजची सेवा कशी वाटली?');
+  assert.equal(transliterateRomanToDevanagari('khup chhan'), 'खूप छान');
+});
+
+test('TC-PREV-01: CustomerReviewFlow keeps preview buttons visible while blocking generation, refresh, copy, and Google redirects', () => {
+  const flowSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf8',
+  );
+  assert.ok(flowSrc.includes('const handleGenerateSubmit = async (e: React.FormEvent) => {\n    e.preventDefault();\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleRefreshInstantAiDrafts = async () => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleCopyAndOpenInstantReview = async (idx: number, textToCopy: string) => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleOpenGoogleReview = () => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('disabled={isPreview || isGenerating'));
+  assert.ok(flowSrc.includes('disabled={isPreview || !draft.trim()}'));
+});
+
+test('TC-PORTAL-01: ClientPortalView hides Question Builder on Standard plan and renders analytics in single hidden-scrollbar container with destination breakdown', () => {
+  const portalSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
+    'utf8',
+  );
+  const cssSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/index.css'),
+    'utf8',
+  );
+
+  assert.ok(portalSrc.includes('isStandardPlan'));
+  assert.ok(portalSrc.includes('isGuidedQuestionsAllowed'));
+  assert.ok(portalSrc.includes('destinationStats'));
+  assert.ok(portalSrc.includes('Ready AI Drafts'));
+  assert.ok(portalSrc.includes('rf-scrollbar-hidden'));
+  assert.ok(cssSrc.includes('.rf-scrollbar-hidden'));
+});
+
 
