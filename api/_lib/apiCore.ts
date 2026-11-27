@@ -93,7 +93,49 @@ export interface GbpProxyBody {
   replyText?: string;
 }
 
-function cleanSecretEnv(value: string | undefined): string {
+export interface GoogleReviewsWebhookBody {
+  businessId?: string;
+  location?: string;
+  locationName?: string;
+  type?: string;
+  notificationType?: string;
+  externalReviewId?: string;
+  reviewId?: string;
+  reviewName?: string;
+  businessName?: string;
+  category?: string;
+  reviewerName?: string;
+  reviewer?: { displayName?: string };
+  starRating?: number | string;
+  comment?: string;
+  reviewComment?: string;
+  reviewDate?: string;
+  createTime?: string;
+  brandVoice?: string;
+  fiveStarMode?: 'auto_publish' | 'approval_required';
+  midStarMode?: 'auto_publish' | 'approval_required';
+  gbpAccessToken?: string;
+  source?: 'google_gbp_api' | 'pubsub_webhook' | 'manual_sync';
+  review?:
+    | string
+    | {
+        reviewId?: string;
+        name?: string;
+        reviewer?: { displayName?: string };
+        starRating?: number | string;
+        comment?: string;
+        createTime?: string;
+      };
+  message?: {
+    data?: string;
+    messageId?: string;
+    publishTime?: string;
+    attributes?: Record<string, string>;
+  };
+  subscription?: string;
+}
+
+export function cleanSecretEnv(value: string | undefined): string {
   if (!value) return '';
   return value.trim().replace(/^["']|["']$/g, '').trim();
 }
@@ -110,17 +152,39 @@ export const API_AUTH_REQUIRED = cleanSecretEnv(process.env.API_AUTH_REQUIRED) !
 const DEFAULT_FIREBASE_PROJECT_ID = 'gen-lang-client-0894437771';
 const DEFAULT_FIREBASE_DATABASE_ID = 'ai-studio-c58774bf-bd18-4afa-b645-7a968ff8b63b';
 
-function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
-  const envProjectId = (
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
+export function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
+  const envProjectId = cleanSecretEnv(
+    process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
+  );
+  const envDbId = cleanSecretEnv(
+    process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID,
+  );
+
+  let serviceAccountProjectId = '';
+  const rawSa = (
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
     ''
   ).trim();
-  const envDbId = (
-    process.env.FIREBASE_DATABASE_ID ||
-    process.env.VITE_FIREBASE_DATABASE_ID ||
-    ''
-  ).trim();
+  if (rawSa) {
+    try {
+      const parsedSa = JSON.parse(rawSa) as { project_id?: string };
+      serviceAccountProjectId = (parsedSa.project_id || '').trim();
+    } catch {
+      // Ignore malformed JSON here; handled when minting service-account token
+    }
+  }
+
+  // When a custom Firebase project is configured (matching src/firebase.ts),
+  // default Firestore databaseId to "(default)" instead of falling back to
+  // AI Studio's bundled applet named database ID.
+  const customProjectId = envProjectId || serviceAccountProjectId;
+  if (customProjectId) {
+    return {
+      projectId: customProjectId,
+      databaseId: envDbId || '(default)',
+    };
+  }
 
   try {
     const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -129,19 +193,21 @@ function resolveFirebaseConfig(): { projectId: string; databaseId: string } {
         projectId?: string;
         firestoreDatabaseId?: string;
       };
-      return {
-        projectId: envProjectId || (parsed.projectId || '').trim() || DEFAULT_FIREBASE_PROJECT_ID,
-        databaseId:
-          envDbId ||
-          (parsed.firestoreDatabaseId || '').trim() ||
-          DEFAULT_FIREBASE_DATABASE_ID,
-      };
+      const fileProject = (parsed.projectId || '').trim();
+      const fileDb = (parsed.firestoreDatabaseId || '').trim();
+      if (fileProject) {
+        return {
+          projectId: fileProject,
+          databaseId: envDbId || fileDb || '(default)',
+        };
+      }
     }
   } catch {
     // Ignore missing/invalid local config file
   }
+
   return {
-    projectId: envProjectId || DEFAULT_FIREBASE_PROJECT_ID,
+    projectId: DEFAULT_FIREBASE_PROJECT_ID,
     databaseId: envDbId || DEFAULT_FIREBASE_DATABASE_ID,
   };
 }
@@ -150,7 +216,7 @@ const FIREBASE_CONF = resolveFirebaseConfig();
 export const FIREBASE_PROJECT_ID = FIREBASE_CONF.projectId;
 export const FIREBASE_DATABASE_ID = FIREBASE_CONF.databaseId;
 
-async function fetchWithTimeout(
+export async function fetchWithTimeout(
   url: string,
   init: RequestInit = {},
   timeoutMs = 8000,
@@ -419,7 +485,7 @@ function getGeminiApiKey(): string {
   return cleanSecretEnv(process.env.GEMINI_API_KEY) || cleanSecretEnv(process.env.API_KEY);
 }
 
-function sanitizeApiErrorDetail(message: string): string {
+export function sanitizeApiErrorDetail(message: string): string {
   let clean = message;
   try {
     const parsed = JSON.parse(message) as { error?: { message?: string } };
@@ -432,6 +498,9 @@ function sanitizeApiErrorDetail(message: string): string {
   return clean
     .replace(/AIza[0-9A-Za-z_-]{10,}/g, '[redacted-key]')
     .replace(/AQ\.[0-9A-Za-z_.-]{10,}/g, '[redacted-key]')
+    .replace(/ya29\.[0-9A-Za-z_.-]{10,}/g, '[redacted-oauth-token]')
+    .replace(/1\/\/[0-9A-Za-z_.-]{10,}/g, '[redacted-refresh-token]')
+    .replace(/GOCSPX-[0-9A-Za-z_-]{8,}/g, '[redacted-client-secret]')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 450);
@@ -2373,4 +2442,817 @@ export async function processGbpProxy(
     const msg = err instanceof Error ? err.message : String(err);
     return { status: 500, data: { error: sanitizeApiErrorDetail(msg) } };
   }
+}
+
+function timingSafeSecretEqual(candidate: string, expected: string): boolean {
+  const digestA = crypto.createHash('sha256').update(candidate).digest();
+  const digestB = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(digestA, digestB);
+}
+
+let googleOidcJwksCache: { keys: Array<Record<string, unknown>>; expiresAt: number } = {
+  keys: [],
+  expiresAt: 0,
+};
+
+async function getGoogleOidcJwks(forceRefresh = false): Promise<Array<Record<string, unknown>>> {
+  const now = Date.now();
+  if (!forceRefresh && now < googleOidcJwksCache.expiresAt && googleOidcJwksCache.keys.length > 0) {
+    return googleOidcJwksCache.keys;
+  }
+
+  const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/certs', {}, 8000);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google OAuth2 OIDC public keys (${res.status}).`);
+  }
+
+  const cacheControl = res.headers.get('cache-control') || '';
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const ttlSeconds = maxAgeMatch ? Number(maxAgeMatch[1]) : 3600;
+  const parsed = (await res.json()) as { keys?: Array<Record<string, unknown>> };
+  const keys = Array.isArray(parsed.keys) ? parsed.keys : [];
+
+  googleOidcJwksCache = {
+    keys,
+    expiresAt: now + ttlSeconds * 1000,
+  };
+  return keys;
+}
+
+function normalizeAudienceUrl(raw: string): string {
+  return raw.trim().replace(/\/+$/, '');
+}
+
+export async function verifyGooglePubSubOidcToken(
+  oidcJwt: string,
+  options: {
+    expectedAudience?: string;
+    jwksOverride?: Array<Record<string, unknown>>;
+  } = {},
+): Promise<{ sub: string; email: string; aud: string }> {
+  const parts = oidcJwt.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Malformed OIDC bearer token.');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  const header = decodeBase64UrlJson<{ alg?: string; kid?: string }>(headerB64);
+  const payload = decodeBase64UrlJson<{
+    aud?: string;
+    iss?: string;
+    sub?: string;
+    email?: string;
+    email_verified?: boolean;
+    exp?: number;
+    iat?: number;
+  }>(payloadB64);
+
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw new Error('Invalid OIDC token signature algorithm.');
+  }
+
+  if (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com') {
+    throw new Error('Invalid Google OIDC token issuer.');
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp <= nowSec) {
+    throw new Error('Google OIDC token has expired.');
+  }
+  if (typeof payload.iat !== 'number' || payload.iat > nowSec + 120) {
+    throw new Error('Google OIDC token issued-at claim is invalid.');
+  }
+
+  const envAudiences = cleanSecretEnv(process.env.GBP_PUBSUB_AUDIENCE)
+    .split(',')
+    .map((s) => normalizeAudienceUrl(s))
+    .filter(Boolean);
+  const fallbackAudience = options.expectedAudience
+    ? normalizeAudienceUrl(options.expectedAudience)
+    : '';
+  const allowedAudiences = Array.from(
+    new Set([...envAudiences, ...(fallbackAudience ? [fallbackAudience] : [])]),
+  );
+
+  const tokenAud = typeof payload.aud === 'string' ? normalizeAudienceUrl(payload.aud) : '';
+  if (!tokenAud || allowedAudiences.length === 0 || !allowedAudiences.includes(tokenAud)) {
+    throw new Error(
+      `Google OIDC token audience mismatch (got "${payload.aud || ''}", expected "${allowedAudiences[0] || 'configured webhook URL'}").`,
+    );
+  }
+
+  const allowedSaEmail = cleanSecretEnv(process.env.GBP_PUBSUB_SERVICE_ACCOUNT_EMAIL).toLowerCase();
+  if (allowedSaEmail) {
+    const tokenEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    if (!tokenEmail || tokenEmail !== allowedSaEmail || payload.email_verified !== true) {
+      throw new Error('Google OIDC service account email is not authorized.');
+    }
+  }
+
+  let keys = options.jwksOverride ?? (await getGoogleOidcJwks());
+  let matchedJwk = keys.find((k) => k?.kid === header.kid);
+  if (!matchedJwk && !options.jwksOverride) {
+    keys = await getGoogleOidcJwks(true);
+    matchedJwk = keys.find((k) => k?.kid === header.kid);
+  }
+  if (!matchedJwk) {
+    throw new Error('Unknown Google OIDC signing key.');
+  }
+
+  const publicKey = crypto.createPublicKey({
+    key: matchedJwk as crypto.JsonWebKey,
+    format: 'jwk',
+  });
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const sigPadded = signatureB64.replace(/-/g, '+').replace(/_/g, '/');
+  const signatureBuffer = Buffer.from(sigPadded, 'base64');
+
+  const verifier = crypto.createVerify('RSA-SHA256');
+  verifier.update(signingInput);
+  if (!verifier.verify(publicKey, signatureBuffer)) {
+    throw new Error('Invalid Google OIDC token signature.');
+  }
+
+  return {
+    sub: typeof payload.sub === 'string' ? payload.sub : 'pubsub-oidc',
+    email: typeof payload.email === 'string' ? payload.email : '',
+    aud: payload.aud || '',
+  };
+}
+
+export async function verifyGoogleReviewsWebhookAuth(input: {
+  headerSecret?: string;
+  authHeader?: string;
+  queryToken?: string;
+  expectedAudience?: string;
+}): Promise<{ ok: true; actorId: string } | { ok: false; status: number; error: string }> {
+  const configuredSecret = cleanSecretEnv(process.env.GBP_WEBHOOK_SECRET);
+  const rawAuthHeader = (input.authHeader || '').trim();
+  const bearerValue = /^Bearer\s+(.+)$/i.test(rawAuthHeader)
+    ? rawAuthHeader.replace(/^Bearer\s+/i, '').trim()
+    : '';
+  const candidates = [
+    (input.headerSecret || '').trim(),
+    (input.queryToken || '').trim(),
+    bearerValue,
+  ].filter(Boolean);
+
+  if (configuredSecret && candidates.some((c) => timingSafeSecretEqual(c, configuredSecret))) {
+    return { ok: true, actorId: 'webhook-secret' };
+  }
+
+  if (bearerValue && bearerValue.split('.').length === 3) {
+    let tokenIss = '';
+    try {
+      const payload = decodeBase64UrlJson<{ iss?: string }>(bearerValue.split('.')[1]);
+      tokenIss = typeof payload.iss === 'string' ? payload.iss : '';
+    } catch {
+      tokenIss = '';
+    }
+
+    if (tokenIss === 'https://accounts.google.com' || tokenIss === 'accounts.google.com') {
+      try {
+        const oidc = await verifyGooglePubSubOidcToken(bearerValue, {
+          expectedAudience: input.expectedAudience,
+        });
+        return {
+          ok: true,
+          actorId: oidc.email || oidc.sub,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unauthorized Google OIDC token';
+        return { ok: false, status: 401, error: msg };
+      }
+    }
+
+    const firebaseAuth = await authenticateBearerHeader(rawAuthHeader);
+    if (firebaseAuth.ok) {
+      return {
+        ok: true,
+        actorId: firebaseAuth.user?.uid || 'firebase-user',
+      };
+    }
+    return { ok: false, status: firebaseAuth.status, error: firebaseAuth.error };
+  }
+
+  if (configuredSecret) {
+    return {
+      ok: false,
+      status: 401,
+      error:
+        'Unauthorized webhook request. Provide matching GBP_WEBHOOK_SECRET (?token= or X-Webhook-Secret) or a valid Google Pub/Sub OIDC Bearer token.',
+    };
+  }
+
+  if (bearerValue) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Invalid or malformed Bearer token.',
+    };
+  }
+
+  return {
+    ok: false,
+    status: 401,
+    error:
+      'Webhook authentication missing. Configure Google Cloud Pub/Sub OIDC authentication (Audience = your /api/webhooks/google-reviews URL), OR set GBP_WEBHOOK_SECRET and pass ?token=...',
+  };
+}
+
+let serviceAccountTokenCache: { token: string; expiresAtMs: number } | null = null;
+
+export async function getServiceAccountFirestoreToken(): Promise<string | null> {
+  const rawJson = (
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+    ''
+  ).trim();
+  if (!rawJson) return null;
+
+  const nowMs = Date.now();
+  if (serviceAccountTokenCache && nowMs < serviceAccountTokenCache.expiresAtMs - 120_000) {
+    return serviceAccountTokenCache.token;
+  }
+
+  try {
+    const sa = JSON.parse(rawJson) as {
+      client_email?: string;
+      private_key?: string;
+      token_uri?: string;
+    };
+    const clientEmail = (sa.client_email || '').trim();
+    const privateKey = (sa.private_key || '').replace(/\\n/g, '\n').trim();
+    if (!clientEmail || !privateKey) return null;
+
+    const iat = Math.floor(nowMs / 1000);
+    const exp = iat + 3600;
+    const toBase64Url = (obj: Record<string, unknown>) =>
+      Buffer.from(JSON.stringify(obj), 'utf-8')
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+
+    const unsigned = `${toBase64Url({ alg: 'RS256', typ: 'JWT' })}.${toBase64Url({
+      iss: clientEmail,
+      scope: 'https://www.googleapis.com/auth/datastore',
+      aud: sa.token_uri || 'https://oauth2.googleapis.com/token',
+      iat,
+      exp,
+    })}`;
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(unsigned);
+    const signature = signer
+      .sign(privateKey, 'base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    const assertion = `${unsigned}.${signature}`;
+
+    const tokenRes = await fetchWithTimeout(
+      sa.token_uri || 'https://oauth2.googleapis.com/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion,
+        }).toString(),
+      },
+      8000,
+    );
+    if (!tokenRes.ok) return null;
+    const tokenJson = (await tokenRes.json()) as { access_token?: string; expires_in?: number };
+    if (!tokenJson.access_token) return null;
+    serviceAccountTokenCache = {
+      token: tokenJson.access_token,
+      expiresAtMs: nowMs + (Number(tokenJson.expires_in) || 3600) * 1000,
+    };
+    return tokenJson.access_token;
+  } catch {
+    return null;
+  }
+}
+
+interface FirestoreFieldValue {
+  stringValue?: string;
+  integerValue?: string;
+  doubleValue?: number;
+  booleanValue?: boolean;
+  timestampValue?: string;
+  mapValue?: { fields?: Record<string, FirestoreFieldValue> };
+}
+
+function readFsString(fields: Record<string, FirestoreFieldValue> | undefined, key: string): string {
+  const val = fields?.[key]?.stringValue;
+  return typeof val === 'string' ? val.trim() : '';
+}
+
+function readFsBool(
+  fields: Record<string, FirestoreFieldValue> | undefined,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const val = fields?.[key]?.booleanValue;
+  return typeof val === 'boolean' ? val : fallback;
+}
+
+function parseWebhookStarRating(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const rounded = Math.round(raw);
+    if (rounded >= 1 && rounded <= 5) return rounded;
+  }
+  if (typeof raw === 'string') {
+    const upper = raw.trim().toUpperCase();
+    const map: Record<string, number> = {
+      ONE: 1,
+      TWO: 2,
+      THREE: 3,
+      FOUR: 4,
+      FIVE: 5,
+    };
+    if (map[upper]) return map[upper];
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 5) return parsed;
+  }
+  return 0;
+}
+
+function extractLocationAndReviewId(rawName: string): {
+  locationName: string;
+  externalReviewId: string;
+} {
+  const trimmed = rawName.trim();
+  const fullMatch = trimmed.match(
+    /^(accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+)\/reviews\/([a-zA-Z0-9_-]+)$/,
+  );
+  if (fullMatch) {
+    return {
+      locationName: fullMatch[1],
+      externalReviewId: fullMatch[2],
+    };
+  }
+  const locMatch = trimmed.match(/^(accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+)$/);
+  if (locMatch) {
+    return {
+      locationName: locMatch[1],
+      externalReviewId: '',
+    };
+  }
+  return { locationName: '', externalReviewId: '' };
+}
+
+function unwrapWebhookPayload(rawBody: Partial<GoogleReviewsWebhookBody>): {
+  businessId: string;
+  locationName: string;
+  externalReviewId: string;
+  businessName: string;
+  category: string;
+  reviewerName: string;
+  starRating: number;
+  reviewComment: string;
+  reviewDate: string;
+  brandVoice: string;
+  fiveStarMode: 'auto_publish' | 'approval_required';
+  midStarMode: 'auto_publish' | 'approval_required';
+  gbpAccessToken: string;
+  source: 'google_gbp_api' | 'pubsub_webhook' | 'manual_sync';
+} {
+  let decoded: Partial<GoogleReviewsWebhookBody> = {};
+  if (rawBody.message?.data && typeof rawBody.message.data === 'string') {
+    try {
+      const jsonStr = Buffer.from(rawBody.message.data, 'base64').toString('utf-8');
+      decoded = JSON.parse(jsonStr) as Partial<GoogleReviewsWebhookBody>;
+    } catch {
+      decoded = {};
+    }
+  }
+
+  const merged: Partial<GoogleReviewsWebhookBody> = {
+    ...decoded,
+    ...rawBody,
+  };
+  const nestedReviewObj =
+    typeof merged.review === 'object' && merged.review !== null
+      ? merged.review
+      : typeof decoded.review === 'object' && decoded.review !== null
+        ? decoded.review
+        : undefined;
+  const reviewResourceString =
+    typeof merged.review === 'string'
+      ? merged.review
+      : typeof decoded.review === 'string'
+        ? decoded.review
+        : '';
+
+  const resourceParsed = extractLocationAndReviewId(
+    merged.reviewName ||
+      reviewResourceString ||
+      nestedReviewObj?.name ||
+      merged.locationName ||
+      merged.location ||
+      '',
+  );
+
+  const rawLocCandidate =
+    (typeof merged.locationName === 'string' && merged.locationName.trim()) ||
+    (typeof merged.location === 'string' && merged.location.trim()) ||
+    '';
+  const locationName =
+    (/^accounts\/[a-zA-Z0-9_-]+\/locations\/[a-zA-Z0-9_-]+$/.test(rawLocCandidate)
+      ? rawLocCandidate
+      : '') || resourceParsed.locationName;
+
+  const externalReviewId = (
+    merged.externalReviewId ||
+    merged.reviewId ||
+    nestedReviewObj?.reviewId ||
+    resourceParsed.externalReviewId ||
+    rawBody.message?.messageId ||
+    `wh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  )
+    .toString()
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 160);
+
+  const starRating =
+    parseWebhookStarRating(merged.starRating ?? nestedReviewObj?.starRating) || 5;
+
+  const reviewerName = (
+    merged.reviewerName ||
+    merged.reviewer?.displayName ||
+    nestedReviewObj?.reviewer?.displayName ||
+    'Google Reviewer'
+  )
+    .toString()
+    .trim()
+    .slice(0, 120);
+
+  const reviewComment = (
+    merged.comment ??
+    merged.reviewComment ??
+    nestedReviewObj?.comment ??
+    ''
+  )
+    .toString()
+    .trim()
+    .slice(0, 4000);
+
+  const reviewDate = (
+    merged.reviewDate ||
+    merged.createTime ||
+    nestedReviewObj?.createTime ||
+    rawBody.message?.publishTime ||
+    new Date().toISOString()
+  )
+    .toString()
+    .trim()
+    .slice(0, 64);
+
+  const source: 'google_gbp_api' | 'pubsub_webhook' | 'manual_sync' =
+    merged.source === 'google_gbp_api' || merged.source === 'manual_sync'
+      ? merged.source
+      : 'pubsub_webhook';
+
+  return {
+    businessId: typeof merged.businessId === 'string' ? merged.businessId.trim().slice(0, 128) : '',
+    locationName,
+    externalReviewId,
+    businessName: typeof merged.businessName === 'string' ? merged.businessName.trim().slice(0, 120) : '',
+    category: typeof merged.category === 'string' ? merged.category.trim().slice(0, 80) : '',
+    reviewerName: reviewerName || 'Google Reviewer',
+    starRating,
+    reviewComment,
+    reviewDate,
+    brandVoice: typeof merged.brandVoice === 'string' ? merged.brandVoice.trim().slice(0, 400) : '',
+    fiveStarMode: merged.fiveStarMode === 'approval_required' ? 'approval_required' : 'auto_publish',
+    midStarMode: merged.midStarMode === 'auto_publish' ? 'auto_publish' : 'approval_required',
+    gbpAccessToken:
+      typeof merged.gbpAccessToken === 'string' ? merged.gbpAccessToken.trim() : '',
+    source,
+  };
+}
+
+export async function processGoogleReviewsWebhook(
+  rawBody: Partial<GoogleReviewsWebhookBody>,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const payload = unwrapWebhookPayload(rawBody);
+  const serviceToken = await getServiceAccountFirestoreToken();
+  const fsBase = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_PROJECT_ID)}/databases/${encodeURIComponent(FIREBASE_DATABASE_ID)}/documents`;
+
+  let businessId = payload.businessId;
+  let ownerId = '';
+  let clientEmail = '';
+  let businessName = payload.businessName;
+  let category = payload.category;
+  let brandVoice = payload.brandVoice;
+  let fiveStarMode = payload.fiveStarMode;
+  let midStarMode = payload.midStarMode;
+
+  if (serviceToken && FIREBASE_PROJECT_ID && payload.locationName && (!businessId || !payload.reviewComment || !payload.gbpAccessToken)) {
+    try {
+      const oauthSvc = await import('./gbpOAuthService.js');
+      const ctx = await oauthSvc.resolveWebhookContextAndFetchReview({
+        locationName: payload.locationName,
+        externalReviewId: payload.externalReviewId,
+      });
+      if (ctx.businessId && !businessId) {
+        businessId = ctx.businessId;
+      }
+      if (ctx.accessToken && !payload.gbpAccessToken) {
+        payload.gbpAccessToken = ctx.accessToken;
+      }
+      if (ctx.review) {
+        payload.reviewerName = ctx.review.reviewerName || payload.reviewerName;
+        payload.starRating = ctx.review.starRating || payload.starRating;
+        payload.reviewComment = ctx.review.comment || payload.reviewComment;
+        payload.reviewDate = ctx.review.reviewDate || payload.reviewDate;
+      }
+    } catch {
+      // Non-fatal: proceed with regular Firestore/payload resolution below
+    }
+  }
+
+  if (serviceToken && FIREBASE_PROJECT_ID) {
+    try {
+      if (!businessId && payload.locationName) {
+        const queryRes = await fetchWithTimeout(
+          `${fsBase}:runQuery`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${serviceToken}`,
+            },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'gbpConnections' }],
+                where: {
+                  fieldFilter: {
+                    field: { fieldPath: 'locationName' },
+                    op: 'EQUAL',
+                    value: { stringValue: payload.locationName },
+                  },
+                },
+                limit: 1,
+              },
+            }),
+          },
+          6000,
+        );
+        if (queryRes.ok) {
+          const rows = (await queryRes.json()) as Array<{
+            document?: { fields?: Record<string, FirestoreFieldValue> };
+          }>;
+          const docFields = rows[0]?.document?.fields;
+          if (docFields) {
+            businessId = readFsString(docFields, 'businessId') || businessId;
+            ownerId = readFsString(docFields, 'ownerId') || ownerId;
+            clientEmail = readFsString(docFields, 'clientEmail') || clientEmail;
+          }
+        }
+      }
+
+      if (businessId && /^[a-zA-Z0-9_-]{1,128}$/.test(businessId)) {
+        const bizRes = await fetchWithTimeout(
+          `${fsBase}/businesses/${encodeURIComponent(businessId)}`,
+          { headers: { Authorization: `Bearer ${serviceToken}` } },
+          6000,
+        );
+        if (bizRes.ok) {
+          const bizJson = (await bizRes.json()) as {
+            fields?: Record<string, FirestoreFieldValue>;
+          };
+          const bf = bizJson.fields;
+          if (bf) {
+            ownerId = readFsString(bf, 'ownerId') || ownerId;
+            clientEmail = readFsString(bf, 'clientEmail') || clientEmail;
+            businessName = readFsString(bf, 'name') || businessName;
+            category = readFsString(bf, 'category') || category;
+            const gbpFields = bf.gbpSettings?.mapValue?.fields;
+            if (gbpFields) {
+              const autoSync = readFsBool(gbpFields, 'autoSyncEnabled', true);
+              if (!autoSync) {
+                return {
+                  status: 200,
+                  data: {
+                    ok: true,
+                    skipped: true,
+                    reason: 'autoSyncEnabled is disabled for this business.',
+                    businessId,
+                    externalReviewId: payload.externalReviewId,
+                  },
+                };
+              }
+              brandVoice = brandVoice || readFsString(gbpFields, 'brandVoice');
+              if (readFsString(gbpFields, 'fiveStarMode') === 'approval_required') {
+                fiveStarMode = 'approval_required';
+              } else if (readFsString(gbpFields, 'fiveStarMode') === 'auto_publish') {
+                fiveStarMode = 'auto_publish';
+              }
+              if (readFsString(gbpFields, 'midStarMode') === 'auto_publish') {
+                midStarMode = 'auto_publish';
+              } else if (readFsString(gbpFields, 'midStarMode') === 'approval_required') {
+                midStarMode = 'approval_required';
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal lookup failure: proceed with payload-provided fields
+    }
+  }
+
+  if (!businessName) {
+    return {
+      status: 400,
+      data: {
+        error:
+          'Business could not be resolved. Include businessName + businessId in the webhook JSON, or configure FIREBASE_SERVICE_ACCOUNT_JSON so locationName/businessId resolves automatically.',
+      },
+    };
+  }
+
+  const replyResult = await processGenerateReply({
+    businessName,
+    category,
+    reviewerName: payload.reviewerName,
+    starRating: payload.starRating,
+    reviewComment: payload.reviewComment,
+    brandVoice,
+    fiveStarMode,
+    midStarMode,
+  });
+
+  if (replyResult.status !== 200) {
+    return replyResult;
+  }
+
+  const replyText = String(replyResult.data.replyText || '').trim();
+  const recommendedStatus =
+    payload.starRating <= 2
+      ? 'awaiting_approval'
+      : replyResult.data.recommendedStatus === 'auto_published'
+        ? 'auto_published'
+        : 'awaiting_approval';
+
+  const aiTelemetry = (replyResult.data.aiTelemetry || {
+    provider: AI_PROVIDER,
+    modelId: GEMINI_MODEL,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    estimatedCostUsd: 0,
+    status: 'success',
+  }) as {
+    provider: string;
+    modelId: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+    status: string;
+  };
+
+  let finalStatus: 'auto_published' | 'awaiting_approval' = recommendedStatus;
+  let publishedToGoogle = false;
+  let publishError = '';
+  let publishedAt = '';
+
+  if (
+    finalStatus === 'auto_published' &&
+    payload.gbpAccessToken &&
+    payload.locationName &&
+    payload.externalReviewId
+  ) {
+    const pubRes = await processGbpProxy({
+      action: 'publish_reply',
+      gbpAccessToken: payload.gbpAccessToken,
+      locationName: payload.locationName,
+      externalReviewId: payload.externalReviewId,
+      replyText,
+    });
+    if (pubRes.status === 200) {
+      publishedToGoogle = true;
+      publishedAt = new Date().toISOString();
+    } else {
+      finalStatus = 'awaiting_approval';
+      publishError = String(pubRes.data.error || 'Failed to publish reply to Google API.').slice(
+        0,
+        400,
+      );
+    }
+  } else if (finalStatus === 'auto_published') {
+    publishedAt = new Date().toISOString();
+  }
+
+  let firestorePersisted = false;
+  let reviewDocId = '';
+
+  if (serviceToken && FIREBASE_PROJECT_ID && businessId && ownerId) {
+    const nowIso = new Date().toISOString();
+    reviewDocId = `${businessId}_${payload.externalReviewId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+    const reviewFields: Record<string, FirestoreFieldValue> = {
+      businessId: { stringValue: businessId },
+      ownerId: { stringValue: ownerId },
+      clientEmail: { stringValue: clientEmail.toLowerCase().slice(0, 120) },
+      externalReviewId: { stringValue: payload.externalReviewId },
+      reviewerName: { stringValue: payload.reviewerName },
+      starRating: { integerValue: String(payload.starRating) },
+      comment: { stringValue: payload.reviewComment },
+      reviewDate: { stringValue: payload.reviewDate },
+      source: { stringValue: payload.source },
+      aiReplyText: { stringValue: replyText.slice(0, 4000) },
+      replyStatus: { stringValue: finalStatus },
+      aiProvider: { stringValue: String(aiTelemetry.provider || AI_PROVIDER).slice(0, 40) },
+      aiModelId: { stringValue: String(aiTelemetry.modelId || GEMINI_MODEL).slice(0, 80) },
+      inputTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.inputTokens || 0))) },
+      outputTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.outputTokens || 0))) },
+      totalTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.totalTokens || 0))) },
+      estimatedCostUsd: { doubleValue: Math.max(0, Number(aiTelemetry.estimatedCostUsd || 0)) },
+      ...(publishError ? { errorMessage: { stringValue: publishError } } : {}),
+      ...(publishedAt ? { publishedAt: { stringValue: publishedAt } } : {}),
+      createdAt: { timestampValue: nowIso },
+      updatedAt: { timestampValue: nowIso },
+    };
+
+    try {
+      const writeReviewRes = await fetchWithTimeout(
+        `${fsBase}/gbpReviews/${encodeURIComponent(reviewDocId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serviceToken}`,
+          },
+          body: JSON.stringify({ fields: reviewFields }),
+        },
+        6000,
+      );
+      if (writeReviewRes.ok) {
+        firestorePersisted = true;
+      }
+
+      const usageId = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await fetchWithTimeout(
+        `${fsBase}/aiUsageLogs/${encodeURIComponent(usageId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serviceToken}`,
+          },
+          body: JSON.stringify({
+            fields: {
+              requestId: { stringValue: usageId },
+              businessId: { stringValue: businessId },
+              ownerId: { stringValue: ownerId },
+              clientEmail: { stringValue: clientEmail.toLowerCase().slice(0, 120) },
+              provider: { stringValue: String(aiTelemetry.provider || AI_PROVIDER).slice(0, 40) },
+              operationType: { stringValue: 'gbp_auto_reply' },
+              modelName: { stringValue: String(aiTelemetry.modelId || GEMINI_MODEL).slice(0, 80) },
+              inputTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.inputTokens || 0))) },
+              outputTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.outputTokens || 0))) },
+              totalTokens: { integerValue: String(Math.max(0, Math.round(aiTelemetry.totalTokens || 0))) },
+              estimatedCostUsd: { doubleValue: Math.max(0, Number(aiTelemetry.estimatedCostUsd || 0)) },
+              status: { stringValue: 'success' },
+              errorCode: { stringValue: '' },
+              createdAt: { timestampValue: nowIso },
+            },
+          }),
+        },
+        6000,
+      ).catch(() => null);
+    } catch {
+      firestorePersisted = false;
+    }
+  }
+
+  return {
+    status: 200,
+    data: {
+      ok: true,
+      businessId: businessId || undefined,
+      locationName: payload.locationName || undefined,
+      externalReviewId: payload.externalReviewId,
+      reviewerName: payload.reviewerName,
+      starRating: payload.starRating,
+      replyText,
+      replyStatus: finalStatus,
+      publishedToGoogle,
+      ...(publishError ? { publishError } : {}),
+      firestorePersisted,
+      ...(reviewDocId ? { reviewDocId } : {}),
+      aiTelemetry,
+      ...(!firestorePersisted
+        ? {
+            persistenceHint:
+              'Reply generated cleanly. To auto-save incoming webhook reviews directly into Firestore without the browser open, add FIREBASE_SERVICE_ACCOUNT_JSON to your server environment variables.',
+          }
+        : {}),
+    },
+  };
 }

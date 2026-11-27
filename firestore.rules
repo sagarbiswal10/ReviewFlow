@@ -578,6 +578,8 @@ service cloud.firestore {
         data.keys().hasOnly([
           'businessId', 'ownerId', 'clientEmail', 'connectionStatus',
           'connectedEmail', 'accountName', 'locationName', 'locationTitle', 'placeId',
+          'selectedLocations', 'notificationStatus', 'notificationTopic', 'notificationTypes',
+          'notificationError', 'tokenStatus',
           'lastSyncedAt', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.businessId) &&
@@ -589,6 +591,12 @@ service cloud.firestore {
         data.locationName is string && data.locationName.size() <= 200 &&
         data.locationTitle is string && data.locationTitle.size() <= 160 &&
         data.placeId is string && data.placeId.size() <= 120 &&
+        (!('selectedLocations' in data) || (data.selectedLocations is list && data.selectedLocations.size() <= 50)) &&
+        (!('notificationStatus' in data) || data.notificationStatus in ['enabled', 'not_configured', 'conflict', 'error']) &&
+        (!('notificationTopic' in data) || (data.notificationTopic is string && data.notificationTopic.size() <= 300)) &&
+        (!('notificationTypes' in data) || (data.notificationTypes is list && data.notificationTypes.size() <= 20)) &&
+        (!('notificationError' in data) || (data.notificationError is string && data.notificationError.size() <= 400)) &&
+        (!('tokenStatus' in data) || data.tokenStatus in ['valid', 'expired_or_revoked', 'none']) &&
         (!('lastSyncedAt' in data) || data.lastSyncedAt is timestamp) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -1210,11 +1218,22 @@ service cloud.firestore {
             incoming().clientEmail == existing().clientEmail &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'connectionStatus', 'connectedEmail', 'accountName', 'locationName',
-              'locationTitle', 'placeId', 'lastSyncedAt', 'updatedAt'
+              'locationTitle', 'placeId', 'selectedLocations', 'notificationStatus',
+              'notificationTopic', 'notificationTypes', 'notificationError',
+              'tokenStatus', 'lastSyncedAt', 'updatedAt'
             ])
           )
         );
       allow delete: if isAdmin() && isValidId(businessId);
+    }
+
+    // 8b. Server-Only Encrypted Google OAuth Credentials & One-Time CSRF States (Zero Client Access)
+    match /gbpTokenVault/{businessId} {
+      allow read, write: if false;
+    }
+
+    match /gbpOAuthStates/{stateId} {
+      allow read, write: if false;
     }
 
     // 9. Google Business Profile Reviews & AI Auto-Reply Workflow

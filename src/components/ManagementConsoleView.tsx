@@ -185,8 +185,22 @@ export function ManagementConsoleView({
   onSignOut,
 }: ManagementConsoleViewProps) {
   const [section, setSection] = useState<AdminSection>('directory');
-  const [selectedBizId, setSelectedBizId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<BusinessDetailTab>('access');
+  const [selectedBizId, setSelectedBizId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('gbp_oauth') && params.get('businessId')) {
+        return params.get('businessId');
+      }
+    }
+    return null;
+  });
+  const [detailTab, setDetailTab] = useState<BusinessDetailTab>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('gbp_oauth')) return 'gbp_reply';
+    }
+    return 'access';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [directoryView, setDirectoryView] = useState<'board' | 'table'>('table');
@@ -2309,11 +2323,11 @@ export function ManagementConsoleView({
                                 : 'border-slate-100 bg-slate-50/80 text-slate-500'
                             }`}
                           >
-                            <th className="py-3 px-5">Business</th>
-                            <th className="py-3 px-4">Client Access</th>
-                            <th className="py-3 px-4">QR Status</th>
-                            <th className="py-3 px-4 text-right">Scans / Posts</th>
-                            <th className="py-3 px-5 text-right">Actions</th>
+                            <th className="py-3 pl-4 pr-2.5 whitespace-nowrap">Business</th>
+                            <th className="py-3 px-2.5 whitespace-nowrap">Client Access</th>
+                            <th className="py-3 px-2.5 whitespace-nowrap">QR Status</th>
+                            <th className="py-3 px-2.5 text-right whitespace-nowrap">Scans / Posts</th>
+                            <th className="py-3 pl-2.5 pr-4 text-right whitespace-nowrap">Actions</th>
                           </tr>
                         </thead>
                         <tbody className={`divide-y text-xs ${isDark ? 'divide-[#262B3D]' : 'divide-slate-100'}`}>
@@ -2324,13 +2338,13 @@ export function ManagementConsoleView({
                                 key={biz.id}
                                 className={isDark ? 'hover:bg-[#1C2030]/70' : 'hover:bg-slate-50/80'}
                               >
-                                <td className="py-3.5 px-5">
-                                  <div className="flex items-center gap-3">
+                                <td className="py-3.5 pl-4 pr-2.5 max-w-[175px] xl:max-w-[200px]">
+                                  <div className="flex items-center gap-2.5 min-w-0">
                                     <BusinessLogo
                                       src={biz.logoDataUrl}
                                       name={biz.name}
                                       primaryColor={biz.branding.primaryColor}
-                                      sizeClass="w-8 h-8"
+                                      sizeClass="w-8 h-8 shrink-0"
                                     />
                                     <div className="min-w-0">
                                       <p className={`font-semibold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -2342,11 +2356,14 @@ export function ManagementConsoleView({
                                     </div>
                                   </div>
                                 </td>
-                                <td className="py-3.5 px-4">
-                                  <p className={`font-mono text-[11px] truncate max-w-[180px] ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                                <td className="py-3.5 px-2.5 max-w-[145px] xl:max-w-[170px]">
+                                  <p
+                                    title={biz.clientEmail || 'Unassigned'}
+                                    className={`font-mono text-[11px] truncate ${isDark ? 'text-slate-300' : 'text-slate-700'}`}
+                                  >
                                     {biz.clientEmail || 'Unassigned'}
                                   </p>
-                                  <p className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                  <p className={`text-[10px] truncate ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
                                     {biz.clientAccessLevel === 'read_only'
                                       ? 'Read-Only'
                                       : biz.clientAccessLevel === 'qr_and_questions'
@@ -2354,9 +2371,9 @@ export function ManagementConsoleView({
                                         : 'Full Self-Service'}
                                   </p>
                                 </td>
-                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                <td className="py-3.5 px-2.5 whitespace-nowrap">
                                   <span
-                                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                                       biz.qrConfig.isActive
                                         ? isDark
                                           ? 'bg-emerald-500/15 text-emerald-300'
@@ -2379,10 +2396,10 @@ export function ManagementConsoleView({
                                     )}
                                   </span>
                                 </td>
-                                <td className={`py-3.5 px-4 text-right font-mono tabular-nums ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+                                <td className={`py-3.5 px-2.5 text-right font-mono tabular-nums whitespace-nowrap ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
                                   {st?.scans ?? 0} <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>/</span> {st?.redirects ?? 0}
                                 </td>
-                                <td className="py-3.5 px-5 text-right">
+                                <td className="py-3.5 pl-2.5 pr-4 text-right whitespace-nowrap">
                                   <button
                                     type="button"
                                     onClick={() => {

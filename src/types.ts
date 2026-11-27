@@ -296,6 +296,15 @@ export interface QrStandRequest {
 
 export type GbpConnectionStatus = 'disconnected' | 'connected' | 'pending_api_approval';
 
+export interface GbpSelectedLocation {
+  accountName: string;
+  locationName: string;
+  title: string;
+  address?: string;
+  storeCode?: string;
+  placeId?: string;
+}
+
 export interface GbpConnection {
   businessId: string;
   ownerId: string;
@@ -306,6 +315,12 @@ export interface GbpConnection {
   locationName: string;
   locationTitle: string;
   placeId: string;
+  selectedLocations?: GbpSelectedLocation[];
+  notificationStatus?: 'enabled' | 'not_configured' | 'conflict' | 'error';
+  notificationTopic?: string;
+  notificationTypes?: string[];
+  notificationError?: string;
+  tokenStatus?: 'valid' | 'expired_or_revoked' | 'none';
   lastSyncedAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;

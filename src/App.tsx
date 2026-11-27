@@ -474,7 +474,10 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       setRedirectAfterLogin(false);
-      const classified = classifyAuthError(err, { mode: 'signin' });
+      const classified = classifyAuthError(err, {
+        mode: 'signin',
+        projectId: auth.app.options.projectId,
+      });
       setAuthActionError(classified);
       setAuthError(classified.message);
     } finally {

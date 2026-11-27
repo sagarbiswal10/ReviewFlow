@@ -123,7 +123,7 @@ test('TC-DOM-07: normalizeEmail, sanitizeAccessLevel, and sanitizeEnabledFeature
   assert.equal(feats.weeklyReports, true);
 });
 
-test('TC-ARCH-01: GBP OAuth connection is strictly restricted to ManagementConsoleView (not ClientPortalView)', () => {
+test('TC-ARCH-01: GBP OAuth uses server-side flow and honors business-level permissions in ClientPortalView and ManagementConsoleView', () => {
   const clientPortalSrc = fs.readFileSync(
     path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
     'utf-8',
@@ -137,12 +137,14 @@ test('TC-ARCH-01: GBP OAuth connection is strictly restricted to ManagementConso
     'utf-8',
   );
 
-  // ClientPortalView passes allowOAuthConnection={false}
-  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{false\}/);
+  // ClientPortalView gates OAuth connection behind full/admin access
+  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{canEditBranding \|\| isAdmin\}/);
   // ManagementConsoleView explicitly enables allowOAuthConnection
   assert.match(adminConsoleSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection/);
-  // GbpAutoReplyTab defaults allowOAuthConnection to false
+  // GbpAutoReplyTab defaults allowOAuthConnection to false and uses server-side OAuth (no browser GIS token client)
   assert.match(gbpTabSrc, /allowOAuthConnection\s*=\s*false/);
+  assert.match(gbpTabSrc, /startServerGbpOAuth/);
+  assert.doesNotMatch(gbpTabSrc, /initTokenClient/);
 });
 
 test('TC-ARCH-02: ClientPortalView guards failed clientUid claims from infinite retry loops', () => {
