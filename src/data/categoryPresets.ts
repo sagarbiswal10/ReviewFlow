@@ -475,6 +475,164 @@ export function createCategoryQuestions(category: BusinessCategory): FeedbackQue
         },
       ];
 
+    case 'Clothing & Apparel':
+      return [
+        {
+          id: 'q-shopping',
+          prompt: 'What did you shop for today?',
+          type: 'multiple',
+          options: [
+            'Ethnic & Festive Wear',
+            'Casual Wear',
+            'Formal Outfits',
+            'Fabric & Stitching Quality',
+            'Kids & Family Wear',
+            'Custom Alterations',
+          ],
+          required: true,
+        },
+        {
+          id: 'q-experience',
+          prompt: 'How was the fitting, collection, and fabric quality?',
+          type: 'single',
+          options: ['Excellent', 'Very Good', 'Good', 'Average', 'Okay'],
+          required: true,
+        },
+        {
+          id: 'q-staff',
+          prompt: 'How were the staff assistance, trial room, and billing?',
+          type: 'multiple',
+          options: [
+            'Helpful Staff',
+            'Latest Collection',
+            'Great Fitting & Quality',
+            'Fair Pricing',
+            'Quick Billing',
+          ],
+          required: false,
+        },
+        {
+          id: 'q-return',
+          prompt: 'Would you shop with us again?',
+          type: 'single',
+          options: ['Yes', 'Maybe', 'No'],
+          required: false,
+        },
+        {
+          id: 'q-comments',
+          prompt: 'Any outfit or fitting note? (Optional)',
+          type: 'text',
+          options: [],
+          required: false,
+          placeholder: 'Optional: share what you liked about the collection or service...',
+        },
+      ];
+
+    case 'Jewelry & Gold Shops':
+      return [
+        {
+          id: 'q-jewelry',
+          prompt: 'What were you looking for today?',
+          type: 'multiple',
+          options: [
+            'Gold Jewellery',
+            'Bridal & Festive Designs',
+            'Silver & Gift Articles',
+            'Diamond Collection',
+            'Custom Order / Exchange',
+            'Hallmark Purity Check',
+          ],
+          required: true,
+        },
+        {
+          id: 'q-experience',
+          prompt: 'How was the design finish and purity explanation?',
+          type: 'single',
+          options: ['Excellent', 'Very Good', 'Good', 'Average', 'Okay'],
+          required: true,
+        },
+        {
+          id: 'q-trust',
+          prompt: 'What stood out about the showroom experience?',
+          type: 'multiple',
+          options: [
+            'Transparent Weight & Making Charges',
+            'Hallmarked Purity Assurance',
+            'Polite & Patient Staff',
+            'Wide Variety of Designs',
+            'Safe & Welcoming Ambience',
+          ],
+          required: false,
+        },
+        {
+          id: 'q-return',
+          prompt: 'Would you recommend us to family and friends?',
+          type: 'single',
+          options: ['Yes', 'Maybe', 'No'],
+          required: false,
+        },
+        {
+          id: 'q-comments',
+          prompt: 'Any specific detail about your visit? (Optional)',
+          type: 'text',
+          options: [],
+          required: false,
+          placeholder: 'Optional: mention the design, transparency, or staff assistance...',
+        },
+      ];
+
+    case 'Local Shops & Stores':
+      return [
+        {
+          id: 'q-visit',
+          prompt: 'What did you visit our shop for today?',
+          type: 'multiple',
+          options: [
+            'Daily Essentials',
+            'Fresh Stock & Variety',
+            'Home & Utility Items',
+            'Quick Pickup Order',
+            'Bulk / Family Shopping',
+          ],
+          required: true,
+        },
+        {
+          id: 'q-experience',
+          prompt: 'How was your shopping experience?',
+          type: 'single',
+          options: ['Excellent', 'Very Good', 'Good', 'Average', 'Okay'],
+          required: true,
+        },
+        {
+          id: 'q-highlights',
+          prompt: 'What did you appreciate most at the shop?',
+          type: 'multiple',
+          options: [
+            'Reasonable Prices',
+            'Quality Products',
+            'Helpful & Friendly Behaviour',
+            'Quick Billing',
+            'Clean & Organized Shop',
+          ],
+          required: false,
+        },
+        {
+          id: 'q-return',
+          prompt: 'Would you visit us again?',
+          type: 'single',
+          options: ['Yes', 'Maybe', 'No'],
+          required: false,
+        },
+        {
+          id: 'q-comments',
+          prompt: 'Any feedback for our shop? (Optional)',
+          type: 'text',
+          options: [],
+          required: false,
+          placeholder: 'Optional: share what you liked or any item you searched for...',
+        },
+      ];
+
     case 'Other Businesses':
     default:
       return [
@@ -526,6 +684,9 @@ export const DEFAULT_SEO_KEYWORDS_BY_CATEGORY: Record<BusinessCategory, string[]
   Gyms: ['gym', 'fitness center', 'strength training', 'personal training', 'workout', 'cardio'],
   Healthcare: ['clinic', 'healthcare', 'doctor consultation', 'medical care', 'routine check-up'],
   'Retail Stores': ['retail store', 'shopping experience', 'quality products', 'customer service'],
+  'Clothing & Apparel': ['clothing store', 'fashion boutique', 'ethnic wear', 'quality fabric', 'garment shop', 'tailoring and fitting'],
+  'Jewelry & Gold Shops': ['gold jewellery', 'hallmark gold shop', 'jewellery showroom', 'silver and diamond jewellery', 'bridal jewellery'],
+  'Local Shops & Stores': ['local shop', 'daily essentials store', 'neighbourhood store', 'quality products', 'fair pricing'],
   'Automobile Services': ['auto service', 'car repair', 'vehicle maintenance', 'oil change', 'car detailing'],
   'Other Businesses': ['local business', 'quality service', 'customer experience', 'reliable service'],
 };

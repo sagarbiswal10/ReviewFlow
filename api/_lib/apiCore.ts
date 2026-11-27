@@ -1164,6 +1164,28 @@ const CATEGORY_SEO_KEYWORDS: Record<string, string[]> = {
     'store',
     'customer service',
   ],
+  'Clothing & Apparel': [
+    'clothing store',
+    'fashion boutique',
+    'ethnic wear',
+    'quality fabric',
+    'garment shop',
+    'tailoring and fitting',
+  ],
+  'Jewelry & Gold Shops': [
+    'gold jewellery',
+    'hallmark gold shop',
+    'jewellery showroom',
+    'silver and diamond jewellery',
+    'bridal jewellery',
+  ],
+  'Local Shops & Stores': [
+    'local shop',
+    'daily essentials store',
+    'neighbourhood store',
+    'quality products',
+    'fair pricing',
+  ],
   'Automobile Services': [
     'auto service',
     'car repair',
@@ -1307,7 +1329,7 @@ export async function processGenerateSeoKeywords(
       '2. NEVER include unrelated categories or unsupported superlative claims ("best", "top-rated", "number one", "#1", "most popular").',
       '3. Combine service + locality/city accurately where location info is provided.',
       '4. Keep each keyword concise (1 to 4 words, max 50 chars), natural search style, zero hashtags.',
-      '5. In hi/mr use natural Devanagari search terms; in hinglish use natural Roman Hindi terms.',
+      '5. In hi/mr use natural Devanagari search terms. In hinglish, write authentic Roman-script Hindi phrases using conversational Hindi words (e.g., "accha", "badhiya", "sahi daam", "bharosemand", "dukaan", "sewa", "mein", "ke liye", "kharidari", "kapde", "sone ke gehne", "khana", "saaf jagah") — NEVER return pure English phrases in hinglish.',
     ].join('\n');
 
     let genResult: GeminiGenerationResult;
@@ -1359,6 +1381,73 @@ export async function processGenerateSeoKeywords(
       };
     }
 
+    const ROMAN_HINDI_SEO_MARKER =
+      /\b(mein|me|ki|ka|ke|ko|se|aur|accha|achha|acche|badhiya|badiya|sahi|sasta|daam|kimat|dukaan|dukan|sewa|seva|kaam|jagah|bharosemand|ghar|parivar|kharidari|samaan|kapde|kapda|sona|sone|chandi|gehne|khana|swadisht|taza|taaza|saaf|aaram|aaramdayak|bilkul|gaon|shahar|bazaar|bazar|ke liye)\b/i;
+
+    const buildHinglishFallbackKeywords = (): string[] => {
+      const lower = category.toLowerCase();
+      const area = locality || city;
+      let catHinglish = 'bharosemand dukaan';
+      let basePhrases = [
+        'bharosemand sewa aur staff',
+        'sahi daam mein accha kaam',
+        'saaf jagah aur badhiya bartaav',
+        'samay par kaam aur madad',
+      ];
+      if (lower.includes('salon') || lower.includes('beauty') || lower.includes('spa')) {
+        catHinglish = 'hair aur grooming dukaan';
+        basePhrases = [
+          'baal katwane ki acchi jagah',
+          'saaf-suthra salon aur staff',
+          'sahi daam mein haircut',
+          'aaramdayak grooming sewa',
+        ];
+      } else if (lower.includes('clothing') || lower.includes('apparel')) {
+        catHinglish = 'kapde ki dukaan';
+        basePhrases = [
+          'kapde ki bharosemand dukaan',
+          'shaadi aur tyohaar ke kapde',
+          'accha kapda aur sahi fitting',
+          'sahi daam mein naye kapde',
+        ];
+      } else if (lower.includes('jewelry') || lower.includes('gold')) {
+        catHinglish = 'sone chandi ki dukaan';
+        basePhrases = [
+          'sone chandi ke shuddh gehne',
+          'hallmark gehno ki dukaan',
+          'naye sone ke design',
+          'bharosemand jeweller aur saaf hisab',
+        ];
+      } else if (lower.includes('local shop') || lower.includes('retail') || lower.includes('store')) {
+        catHinglish = 'local dukaan';
+        basePhrases = [
+          'rozana zarurat ki acchi dukaan',
+          'bharosemand local dukaan',
+          'sahi daam aur taaza samaan',
+          'parivar ke liye acchi dukaan',
+        ];
+      } else if (lower.includes('restaurant')) {
+        catHinglish = 'khane ki jagah';
+        basePhrases = [
+          'taza aur swadisht khana',
+          'parivar ke sath khane ki jagah',
+          'saaf-suthra khana aur mahaul',
+          'tezi aur achhi sewa',
+        ];
+      }
+
+      const pool: string[] = [];
+      if (area) {
+        pool.push(`${area} mein ${catHinglish}`);
+        pool.push(`${area} ki bharosemand dukaan`);
+      }
+      pool.push(...basePhrases);
+      for (const svc of servicesOffered.slice(0, 2)) {
+        pool.push(area ? `${area} mein ${svc} sewa` : `accha ${svc} kaam`);
+      }
+      return sanitizeSeoPhraseArray(pool, 10);
+    };
+
     const keywordsByLanguage: Partial<Record<ReviewLanguage, string[]>> = {};
     try {
       const parsed = JSON.parse(genResult.text) as {
@@ -1373,10 +1462,20 @@ export async function processGenerateSeoKeywords(
       if (isStandardPlus) {
         keywordsByLanguage.hi = sanitizeSeoPhraseArray(parsed.hi, 10);
         keywordsByLanguage.mr = sanitizeSeoPhraseArray(parsed.mr, 10);
-        keywordsByLanguage.hinglish = sanitizeSeoPhraseArray(parsed.hinglish, 10);
+        const rawHinglish = sanitizeSeoPhraseArray(parsed.hinglish, 10).filter((phrase) =>
+          ROMAN_HINDI_SEO_MARKER.test(phrase),
+        );
+        const mergedHinglish = sanitizeSeoPhraseArray(
+          [...rawHinglish, ...buildHinglishFallbackKeywords()],
+          10,
+        );
+        keywordsByLanguage.hinglish = mergedHinglish;
       }
     } catch {
       keywordsByLanguage.en = sanitizeSeoPhraseArray(baseTerms, 10);
+      if (isStandardPlus) {
+        keywordsByLanguage.hinglish = buildHinglishFallbackKeywords();
+      }
     }
 
     const primaryKeywords = keywordsByLanguage.en || sanitizeSeoPhraseArray(baseTerms, 10);
@@ -1420,6 +1519,13 @@ export async function processGenerateReview(
     const businessId = typeof body.businessId === 'string' ? body.businessId.trim().slice(0, 128) : '';
     const standId = typeof body.standId === 'string' ? body.standId.trim().slice(0, 128) : '';
     const visitorId = typeof body.visitorId === 'string' ? body.visitorId.trim().slice(0, 128) : '';
+
+    if (businessId === 'demo-stylish-hair-studio') {
+      return {
+        status: 403,
+        data: { error: 'Public website demo is preview-only to protect AI tokens.' },
+      };
+    }
 
     const policy = businessId ? await resolveAuthoritativeBusinessPolicy(businessId, standId || undefined) : null;
     if (policy?.found) {

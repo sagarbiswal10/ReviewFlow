@@ -21,8 +21,11 @@ import {
   sanitizeGbpSettings,
   sanitizePackageTier,
   sanitizeReviewFlowMode,
+  sanitizeReviewFlowModeForTier,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
+  resolvePersistedInstantSeed,
+  advancePersistedInstantSeed,
 } from '../src/utils/domainHelpers.ts';
 import {
   buildContextualSeoSuggestions,
@@ -42,7 +45,11 @@ import {
   isExperienceRatingQuestion,
   mapOptionsToFiveFaces,
 } from '../src/data/formTemplates.ts';
-import { createCategoryQuestions } from '../src/data/categoryPresets.ts';
+import {
+  DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
+  createCategoryQuestions,
+} from '../src/data/categoryPresets.ts';
+import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
   assert.equal(sanitizeSlug('  Bella Bistro & Cafe! '), 'bella-bistro-cafe');
@@ -359,3 +366,92 @@ test('TC-LIB-02: Backend training bank has 50-60+ reviews per language and gener
     );
   }
 });
+
+test('TC-DOM-13: Standard tier locks review flow to ai_drafted_instant while Standard Plus allows guided_questions', () => {
+  assert.equal(sanitizeReviewFlowModeForTier('guided_questions', 'standard'), 'ai_drafted_instant');
+  assert.equal(sanitizeReviewFlowModeForTier('ai_drafted_instant', 'standard'), 'ai_drafted_instant');
+  assert.equal(sanitizeReviewFlowModeForTier('guided_questions', 'standard_plus'), 'guided_questions');
+  assert.equal(sanitizeReviewFlowModeForTier('ai_drafted_instant', 'standard_plus'), 'ai_drafted_instant');
+});
+
+test('TC-DOM-14: Instant AI draft seed stays identical across reloads and advances only on explicit Refresh', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  // First load initializes to 1
+  const load1 = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(load1, 1);
+
+  // Page reload returns the exact same seed without rotating drafts
+  const reloadSame = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(reloadSame, 1);
+
+  // Explicit Refresh button advances seed cleanly
+  const afterRefresh = advancePersistedInstantSeed(mockStorage, 'rohan-salon', reloadSame);
+  assert.equal(afterRefresh, 2);
+
+  // Subsequent reload after Refresh stays on 2
+  const reloadAfterRefresh = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(reloadAfterRefresh, 2);
+});
+
+test('TC-CAT-01: Clothing & Apparel, Jewelry & Gold Shops, and Local Shops & Stores are supported across presets & SEO defaults', () => {
+  for (const cat of [
+    'Clothing & Apparel',
+    'Jewelry & Gold Shops',
+    'Local Shops & Stores',
+  ] as const) {
+    assert.ok(BUSINESS_CATEGORIES.includes(cat), `Missing ${cat} in BUSINESS_CATEGORIES`);
+    const questions = createCategoryQuestions(cat);
+    assert.ok(questions.length >= 4, `Expected >=4 starter questions for ${cat}`);
+    assert.ok(
+      DEFAULT_SEO_KEYWORDS_BY_CATEGORY[cat].length >= 5,
+      `Expected >=5 default SEO keywords for ${cat}`,
+    );
+  }
+});
+
+test('TC-SEO-02: Hinglish SEO keyword generator outputs Roman Hindi search phrases rather than plain English filler', () => {
+  const result = buildContextualSeoSuggestions({
+    businessName: 'Shree Suvarna Jewellers',
+    category: 'Jewelry & Gold Shops',
+    locality: 'Thane West',
+    city: 'Thane',
+    servicesOffered: ['Hallmark Gold', 'Bridal Designs'],
+    packageTier: 'standard_plus',
+  });
+
+  const hinglishTerms = result.hinglish || [];
+  assert.ok(hinglishTerms.length >= 5, 'Expected >= 5 Hinglish SEO keywords');
+  const romanHindiPattern = /\b(mein|ki|ka|se|accha|bharosemand|dukaan|sone|chandi|gehne|sewa|kaam|daam|kapde|samaan|jagah)\b/i;
+  for (const phrase of hinglishTerms) {
+    assert.ok(
+      romanHindiPattern.test(phrase),
+      `Expected Roman Hindi words in Hinglish SEO phrase "${phrase}"`,
+    );
+  }
+});
+
+test('TC-UI-BOUNDARY-01: Client Portal hides delete/SEO/writing-library/slug/download-QR controls & public landing demo calls no live AI', () => {
+  const landingPath = path.join(process.cwd(), 'src/components/LandingPage.tsx');
+  const showcasePath = path.join(process.cwd(), 'src/components/landing/InteractiveShowcaseSection.tsx');
+  const brandingPath = path.join(process.cwd(), 'src/components/BrandingTab.tsx');
+  const qrStudioPath = path.join(process.cwd(), 'src/components/QrStudioTab.tsx');
+
+  const landingSrc = fs.readFileSync(landingPath, 'utf8');
+  const showcaseSrc = fs.readFileSync(showcasePath, 'utf8');
+  const brandingSrc = fs.readFileSync(brandingPath, 'utf8');
+  const qrStudioSrc = fs.readFileSync(qrStudioPath, 'utf8');
+
+  assert.equal(landingSrc.includes('onClick={onTryDemo}'), false);
+  assert.equal(showcaseSrc.includes('onClick={onTryDemo}'), false);
+  assert.ok(brandingSrc.includes('requiredKeyword="DELETE"'));
+  assert.ok(qrStudioSrc.includes('requiredKeyword="REGENERATE"'));
+  assert.ok(qrStudioSrc.includes("requiredKeyword={isActive ? 'PAUSE' : 'ACTIVATE'}"));
+});
+

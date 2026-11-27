@@ -102,6 +102,9 @@ function defaultServiceNoun(category: string | undefined, language: QualityRevie
   const lower = (category || '').toLowerCase();
   if (language === 'hi') {
     if (lower.includes('salon') || lower.includes('beauty')) return 'हेयर और ग्रूमिंग सर्विस';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'कपड़ों और फिटिंग की सर्विस';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'ज्वेलरी और डिज़ाइन की जानकारी';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'खरीदारी और सामान';
     if (lower.includes('restaurant')) return 'खाना और सर्विस';
     if (lower.includes('hotel')) return 'कमरा और ठहरने की व्यवस्था';
     if (lower.includes('spa')) return 'स्पा सेशन';
@@ -112,6 +115,9 @@ function defaultServiceNoun(category: string | undefined, language: QualityRevie
   }
   if (language === 'mr') {
     if (lower.includes('salon') || lower.includes('beauty')) return 'हेअर आणि ग्रूमिंग सर्व्हिस';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'कपडे आणि फिटिंगची सर्व्हिस';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'दागिने आणि डिझाइनची माहिती';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'खरेदी आणि वस्तू';
     if (lower.includes('restaurant')) return 'जेवण आणि सर्व्हिस';
     if (lower.includes('hotel')) return 'रूम आणि राहण्याची सोय';
     if (lower.includes('spa')) return 'स्पा सेशन';
@@ -122,6 +128,9 @@ function defaultServiceNoun(category: string | undefined, language: QualityRevie
   }
   if (language === 'hinglish') {
     if (lower.includes('salon') || lower.includes('beauty')) return 'kaam';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'kapde aur fitting';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'gehne aur design';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'samaan aur kharidari';
     if (lower.includes('restaurant')) return 'khana';
     if (lower.includes('hotel')) return 'jagah aur suvidha';
     if (lower.includes('spa')) return 'aaram';
@@ -132,6 +141,9 @@ function defaultServiceNoun(category: string | undefined, language: QualityRevie
   }
   if (lower.includes('hair salon')) return 'haircut';
   if (lower.includes('beauty salon')) return 'beauty service';
+  if (lower.includes('clothing') || lower.includes('apparel')) return 'outfit selection';
+  if (lower.includes('jewelry') || lower.includes('gold')) return 'jewellery selection';
+  if (lower.includes('local shop')) return 'shopping visit';
   if (lower.includes('restaurant')) return 'meal';
   if (lower.includes('hotel')) return 'stay';
   if (lower.includes('spa')) return 'spa session';

@@ -1547,7 +1547,7 @@ export function ClientPortalView({
                       </div>
                     </div>
 
-                    {/* Column 2: Featured Standee Kit (Warm Sunset Gradient Highlight Card) */}
+                    {/* Column 2: Business QR Stand Card (No Downloads in Client Portal) */}
                     <div
                       className="rounded-2xl p-5 text-[#101015] flex flex-col justify-between gap-4 shadow-md overflow-hidden"
                       style={{
@@ -1560,7 +1560,7 @@ export function ClientPortalView({
                           Standee Kit
                         </span>
                         <span className="font-mono text-[10px] font-semibold text-[#101015]/75">
-                          PDF &amp; PNG
+                          Live QR
                         </span>
                       </div>
 
@@ -1576,7 +1576,7 @@ export function ClientPortalView({
                             Business QR Stand
                           </h2>
                           <p className="text-[11px] text-[#101015]/80 mt-1 leading-snug">
-                            Print-ready tabletop posters or up to 4 placement stands.
+                            Active customer scan link. Poster downloads are managed by Business Management.
                           </p>
                         </div>
                       </div>
@@ -1584,28 +1584,25 @@ export function ClientPortalView({
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={handleDownloadPng}
+                          onClick={handleCopyLink}
                           className="py-2 px-2.5 rounded-xl bg-white/90 hover:bg-white text-[#101015] text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>PNG</span>
+                          {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
                         </button>
 
-                        {activeBusiness.enabledFeatures.pdfPosterExport && (
-                          <button
-                            type="button"
-                            disabled={isExportingPdf}
-                            onClick={handleDownloadPdf}
-                            className="py-2 px-2.5 rounded-xl bg-[#101015] hover:bg-black/85 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 transition-colors"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>{isExportingPdf ? 'Exporting' : 'A4 PDF'}</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => selectTab('preview')}
+                          className="py-2 px-2.5 rounded-xl bg-[#101015] hover:bg-black/85 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Preview</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Column 3: Google Destination & Keywords */}
+                    {/* Column 3: Google Destination */}
                     <div className={`${surfaceCard} rounded-2xl p-5 flex flex-col justify-between gap-4`}>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -1635,21 +1632,6 @@ export function ClientPortalView({
                         <p className={`font-mono text-[11px] truncate ${surfaceMuted}`}>
                           {sanitizeGoogleDest.replace(/^https?:\/\//, '')}
                         </p>
-
-                        {activeBusiness.seoKeywords && activeBusiness.seoKeywords.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {activeBusiness.seoKeywords.slice(0, 4).map((kw) => (
-                              <span
-                                key={kw}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
-                                  isDark ? 'bg-white/[0.06] text-[#C4C4D4]' : 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                {kw}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
 
                       {canEditBranding && activeBusiness.enabledFeatures.brandingSettings !== false && (
@@ -2108,8 +2090,31 @@ export function ClientPortalView({
               </div>
 
               {activeTab === 'preview' && previewProfile && (
-                <div className={`rounded-2xl border ${borderHairline} overflow-hidden bg-white`}>
-                  <CustomerReviewFlow profile={previewProfile} isPreview />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => selectTab('qr_features')}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                        isDark
+                          ? 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-xs'
+                      }`}
+                    >
+                      <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                      <span>Back to Portal</span>
+                    </button>
+                    <span className={`text-xs font-medium ${surfaceMuted}`}>
+                      Live Customer Form Preview
+                    </span>
+                  </div>
+                  <div className={`rounded-2xl border ${borderHairline} overflow-hidden bg-white`}>
+                    <CustomerReviewFlow
+                      profile={previewProfile}
+                      isPreview
+                      onExit={() => selectTab('qr_features')}
+                    />
+                  </div>
                 </div>
               )}
             </>

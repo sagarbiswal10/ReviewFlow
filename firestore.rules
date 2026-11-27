@@ -61,6 +61,9 @@ service cloud.firestore {
         'Gyms',
         'Healthcare',
         'Retail Stores',
+        'Clothing & Apparel',
+        'Jewelry & Gold Shops',
+        'Local Shops & Stores',
         'Automobile Services',
         'Other Businesses'
       ];
@@ -120,7 +123,10 @@ service cloud.firestore {
 
     function canClientEditFeatureFields(bizData, changedKeys) {
       return (!changedKeys.hasAny(['formTemplate']) || !('formTemplates' in bizData.enabledFeatures) || bizData.enabledFeatures.formTemplates == true) &&
-        (!changedKeys.hasAny(['reviewFlowMode']) || !('allowClientFlowModeSwitch' in bizData) || bizData.allowClientFlowModeSwitch == true) &&
+        (!changedKeys.hasAny(['reviewFlowMode']) || (
+          (!('packageTier' in bizData) || bizData.packageTier == 'standard_plus') &&
+          (!('allowClientFlowModeSwitch' in bizData) || bizData.allowClientFlowModeSwitch == true)
+        )) &&
         (!changedKeys.hasAny(['questions']) || bizData.enabledFeatures.customQuestions == true) &&
         (!changedKeys.hasAny(['qrConfig']) || !('qrStudio' in bizData.enabledFeatures) || bizData.enabledFeatures.qrStudio == true) &&
         (!changedKeys.hasAny([
@@ -134,9 +140,11 @@ service cloud.firestore {
     function isValidBranding(b) {
       return b is map &&
         b.keys().hasAll(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
-        b.keys().hasOnly(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
+        b.keys().hasOnly(['primaryColor', 'secondaryColor', 'questionColor', 'backgroundColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
         b.primaryColor is string && b.primaryColor.size() >= 4 && b.primaryColor.size() <= 20 &&
         b.secondaryColor is string && b.secondaryColor.size() >= 4 && b.secondaryColor.size() <= 20 &&
+        (!('questionColor' in b) || b.questionColor == null || (b.questionColor is string && b.questionColor.size() >= 4 && b.questionColor.size() <= 20)) &&
+        (!('backgroundColor' in b) || b.backgroundColor == null || (b.backgroundColor is string && b.backgroundColor.size() >= 4 && b.backgroundColor.size() <= 20)) &&
         b.welcomeMessage is string && b.welcomeMessage.size() <= 240 &&
         b.thankYouMessage is string && b.thankYouMessage.size() <= 240 &&
         b.defaultReviewStyle in ['short', 'detailed', 'professional'];
@@ -921,7 +929,11 @@ service cloud.firestore {
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
         existsAfter(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
-        (isAdmin() || incoming().ownerId == request.auth.uid);
+        (
+          isAdmin() ||
+          incoming().ownerId == request.auth.uid ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data)
+        );
       allow update: if isVerifiedUser() &&
         isValidSlug(slug) &&
         incoming().ownerId == existing().ownerId &&

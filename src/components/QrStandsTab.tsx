@@ -29,6 +29,7 @@ import {
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { TypedConfirmModal } from './TypedConfirmModal';
 
 interface QrStandsTabProps {
   business: Business;
@@ -96,6 +97,8 @@ export function QrStandsTab({
   const [standNotice, setStandNotice] = useState<string | null>(null);
   const [copiedStandId, setCopiedStandId] = useState<string | null>(null);
   const [exportingPdfId, setExportingPdfId] = useState<string | null>(null);
+  const [pendingStandToggle, setPendingStandToggle] = useState<QrStand | null>(null);
+  const [isTogglingStand, setIsTogglingStand] = useState(false);
 
   const [reqCount, setReqCount] = useState(2);
   const [reqReason, setReqReason] = useState('');
@@ -254,12 +257,23 @@ export function QrStandsTab({
     }
   };
 
-  const handleToggleStandActive = async (stand: QrStand) => {
+  const handleToggleStandActive = (stand: QrStand) => {
+    if (!isAdmin) return;
     setStandError(null);
+    setPendingStandToggle(stand);
+  };
+
+  const handleConfirmToggleStand = async () => {
+    if (!pendingStandToggle || !isAdmin) return;
+    setStandError(null);
+    setIsTogglingStand(true);
     try {
-      await updateQrStand(stand, { isActive: !stand.isActive });
+      await updateQrStand(pendingStandToggle, { isActive: !pendingStandToggle.isActive });
+      if (mountedRef.current) setPendingStandToggle(null);
     } catch (err) {
       setStandError(err instanceof Error ? err.message : 'Failed to update stand status.');
+    } finally {
+      if (mountedRef.current) setIsTogglingStand(false);
     }
   };
 
@@ -577,24 +591,39 @@ export function QrStandsTab({
                           Top Stand
                         </span>
                       )}
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={() => handleToggleStandActive(stand)}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 cursor-pointer disabled:cursor-default"
-                      >
-                        {stand.isActive ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Active</span>
-                          </>
-                        ) : (
-                          <>
-                            <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Paused</span>
-                          </>
-                        )}
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStandActive(stand)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 cursor-pointer hover:underline"
+                        >
+                          {stand.isActive ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Active</span>
+                            </>
+                          ) : (
+                            <>
+                              <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Paused</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700">
+                          {stand.isActive ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Active</span>
+                            </>
+                          ) : (
+                            <>
+                              <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Paused</span>
+                            </>
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -638,19 +667,21 @@ export function QrStandsTab({
 
                 <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const canvas = canvasMapRef.current[stand.id];
-                        if (canvas) downloadQrPng(canvas, `${business.slug}-${stand.standCode}`);
-                      }}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>PNG</span>
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const canvas = canvasMapRef.current[stand.id];
+                          if (canvas) downloadQrPng(canvas, `${business.slug}-${stand.standCode}`);
+                        }}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>PNG</span>
+                      </button>
+                    )}
 
-                    {business.enabledFeatures.pdfPosterExport && (
+                    {isAdmin && business.enabledFeatures.pdfPosterExport && (
                       <button
                         type="button"
                         disabled={exportingPdfId === stand.id}
@@ -881,6 +912,22 @@ export function QrStandsTab({
           )}
         </div>
       </div>
+
+      <TypedConfirmModal
+        open={Boolean(pendingStandToggle && isAdmin)}
+        title={pendingStandToggle?.isActive ? 'Pause QR Stand?' : 'Activate QR Stand?'}
+        description={
+          pendingStandToggle?.isActive
+            ? `Pausing "${pendingStandToggle.name}" (${pendingStandToggle.standCode}) will block new scans on that stand until reactivated.`
+            : `Activating "${pendingStandToggle?.name || ''}" will re-enable customer scans on this stand.`
+        }
+        requiredKeyword={pendingStandToggle?.isActive ? 'PAUSE' : 'ACTIVATE'}
+        confirmLabel={pendingStandToggle?.isActive ? 'Pause Stand' : 'Activate Stand'}
+        tone="warning"
+        isBusy={isTogglingStand}
+        onCancel={() => setPendingStandToggle(null)}
+        onConfirm={handleConfirmToggleStand}
+      />
     </div>
   );
 }

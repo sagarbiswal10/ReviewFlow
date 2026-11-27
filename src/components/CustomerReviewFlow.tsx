@@ -44,7 +44,7 @@ import {
   resolveVisitorQuotaState,
   sanitizeFormTemplate,
   sanitizePackageTier,
-  sanitizeReviewFlowMode,
+  sanitizeReviewFlowModeForTier,
   VISITOR_QUOTA_WINDOW_MS,
 } from '../utils/domainHelpers';
 import {
@@ -189,8 +189,9 @@ export function CustomerReviewFlow({
   const isEmojiChecklist =
     activeTemplate === 'emoji_checklist_light' || activeTemplate === 'emoji_checklist_dark';
 
+  const isDemoPreviewProfile = profile.businessId === 'demo-stylish-hair-studio';
   const packageTier = sanitizePackageTier(profile.packageTier);
-  const reviewFlowMode = sanitizeReviewFlowMode(profile.reviewFlowMode);
+  const reviewFlowMode = sanitizeReviewFlowModeForTier(profile.reviewFlowMode, packageTier);
   const allowedLanguages = useMemo(
     () => getAllowedLanguagesForTier(packageTier),
     [packageTier],
@@ -229,18 +230,19 @@ export function CustomerReviewFlow({
     profile.branding?.defaultReviewStyle || 'short',
   );
 
-  // Instant Ready AI Drafts Mode state (rotates across the 55+ review bank on every QR scan)
+  // Instant Ready AI Drafts Mode state (stays stable across page reloads; only rotates when clicking Refresh)
   const [instantSeed, setInstantSeed] = useState<number>(() => {
-    const freshSeed = ((Math.floor(Math.random() * 55) + Date.now()) % 55) + 1;
     try {
-      if (typeof window === 'undefined' || !window.localStorage) return freshSeed;
+      if (typeof window === 'undefined' || !window.localStorage) return 1;
       const key = `reviewflow_instant_seed_${profile.slug || 'default'}`;
       const prev = Number.parseInt(window.localStorage.getItem(key) || '', 10);
-      const next = Number.isFinite(prev) && prev >= 1 ? (prev % 55) + 1 : freshSeed;
-      window.localStorage.setItem(key, String(next));
-      return next;
+      if (Number.isFinite(prev) && prev >= 1 && prev <= 55) {
+        return prev;
+      }
+      window.localStorage.setItem(key, '1');
+      return 1;
     } catch {
-      return freshSeed;
+      return 1;
     }
   });
   const [instantDrafts, setInstantDrafts] = useState<string[]>(() =>
@@ -385,6 +387,9 @@ export function CustomerReviewFlow({
 
   const primaryColor = profile.branding?.primaryColor || '#0F766E';
   const secondaryColor = profile.branding?.secondaryColor || '#0F172A';
+  const questionTextColor = profile.branding?.questionColor || undefined;
+  const formBackgroundColor = profile.branding?.backgroundColor || undefined;
+  const questionTextStyle = questionTextColor ? { color: questionTextColor } : undefined;
   const templateAccentColor = isEmojiChecklist
     ? primaryColor === '#0F766E' && isPreview === false
       ? primaryColor
@@ -825,7 +830,7 @@ export function CustomerReviewFlow({
         void persistDraftSafely(generatedText, computedQuality, telemetry);
       };
 
-      if (profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) {
+      if ((profile.enabledFeatures && !profile.enabledFeatures.aiReviewDrafts) || isDemoPreviewProfile) {
         const composed = buildLocalFallback();
         await applyFinalDraft(composed.reviewText, undefined, undefined, undefined, {
           provider: 'grounded-fallback',
@@ -1338,10 +1343,24 @@ export function CustomerReviewFlow({
   const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
 
   const handleRefreshInstantAiDrafts = async () => {
-    const nextSeed = instantSeed + 1;
+    const nextSeed = (instantSeed % 55) + 1;
     setInstantSeed(nextSeed);
     setEditingInstantIdx(null);
     setCopiedInstantIdx(null);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(
+          `reviewflow_instant_seed_${profile.slug || 'default'}`,
+          String(nextSeed),
+        );
+      }
+    } catch {
+      // Ignore storage quota failures
+    }
+
+    if (isDemoPreviewProfile) {
+      return;
+    }
 
     const seoForLang =
       profile.seoKeywordsByLanguage?.[effectiveInstantLanguage]?.length
@@ -1455,7 +1474,7 @@ export function CustomerReviewFlow({
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="font-display text-xl sm:text-2xl font-bold">
+            <h1 className="font-display text-xl sm:text-2xl font-bold" style={questionTextStyle}>
               Choose &amp; Post Your Review
             </h1>
             <p
@@ -1479,7 +1498,7 @@ export function CustomerReviewFlow({
             <RefreshCw
               className={`w-3.5 h-3.5 ${isRefreshingInstantAi ? 'animate-spin' : ''}`}
             />
-            <span>{isRefreshingInstantAi ? 'Refreshing AI...' : 'New Human AI Set'}</span>
+            <span>{isRefreshingInstantAi ? 'Refreshing...' : 'Refresh'}</span>
           </button>
         </div>
 
@@ -1834,6 +1853,7 @@ export function CustomerReviewFlow({
       <div className="space-y-3">
         <div className="flex items-baseline justify-between gap-2">
           <h2
+            style={questionTextStyle}
             className={`text-base sm:text-lg font-semibold ${
               isDarkTemplate ? 'text-white' : 'text-slate-900'
             }`}
@@ -1921,6 +1941,7 @@ export function CustomerReviewFlow({
       <div key={question.id} className="space-y-2.5">
         <div className="flex items-baseline justify-between gap-2">
           <h2
+            style={questionTextStyle}
             className={`text-base font-semibold ${
               isDarkTemplate ? 'text-white' : 'text-slate-900'
             }`}
@@ -3074,7 +3095,7 @@ export function CustomerReviewFlow({
             className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6"
           >
             <div className="flex items-baseline justify-between gap-3 mb-4">
-              <h2 className="text-base font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900" style={questionTextStyle}>
                 {qIndex + 1}. {question.prompt}
               </h2>
               <span className="text-xs text-slate-500 whitespace-nowrap shrink-0">
@@ -3189,7 +3210,14 @@ export function CustomerReviewFlow({
   };
 
   return (
-    <div className={outerShellClass}>
+    <div
+      className={outerShellClass}
+      style={
+        formBackgroundColor
+          ? { backgroundColor: formBackgroundColor, backgroundImage: 'none' }
+          : undefined
+      }
+    >
       {/* Minimal Header */}
       <header className={headerClass}>
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">

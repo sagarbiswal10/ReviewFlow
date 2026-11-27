@@ -15,6 +15,7 @@ import { generateRandomToken, updateBusiness } from '../services/businessService
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { TypedConfirmModal } from './TypedConfirmModal';
 
 interface QrStudioTabProps {
   business: Business;
@@ -31,7 +32,7 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'toggle_pause' | 'regenerate' | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isDirtyRef = useRef(false);
@@ -139,6 +140,9 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
     if (!ok) {
       setIsActive(prevActive);
     }
+    if (mountedRef.current) {
+      setPendingAction(null);
+    }
   };
 
   const handleRegenerateToken = async () => {
@@ -151,6 +155,9 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
     );
     if (!ok) {
       setToken(prevToken);
+    }
+    if (mountedRef.current) {
+      setPendingAction(null);
     }
   };
 
@@ -237,32 +244,34 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
           <p className="font-mono text-xs text-slate-500 break-all">{reviewUrl}</p>
         </div>
 
-        <div className="mt-6 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={handleDownloadPng}
-            className="min-h-[44px] px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-800 inline-flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            <span>Download PNG</span>
-          </button>
+        {isAdmin && (
+          <div className="mt-6 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadPng}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-800 inline-flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download PNG</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            className="min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-          >
-            {isExportingPdf ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileText className="w-4 h-4" />
-            )}
-            <span>Printable PDF</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4" />
+              )}
+              <span>Printable PDF</span>
+            </button>
+          </div>
+        )}
 
-        <div className="mt-3 w-full grid grid-cols-2 gap-3">
+        <div className="mt-4 w-full grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={handleCopyUrl}
@@ -415,87 +424,86 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
           </div>
         </div>
 
-        {/* Lifecycle Controls */}
-        <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
-          <h2 className="text-lg font-display font-bold text-slate-900">QR Status &amp; Replacement</h2>
+        {/* Lifecycle Controls (Business Management Only) */}
+        {isAdmin && (
+          <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
+            <h2 className="text-lg font-display font-bold text-slate-900">QR Status &amp; Replacement</h2>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {isActive ? 'QR Code is Active' : 'QR Code is Paused'}
-              </p>
-              <p className="text-xs text-slate-600 mt-0.5">
-                {isActive
-                  ? 'Customers scanning this code can complete your form and open Google Reviews.'
-                  : 'Scanning is temporarily disabled and visitors see a paused notice.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={handleToggleActive}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap cursor-pointer ${
-                isActive
-                  ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
-                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
-              }`}
-            >
-              {isActive ? 'Pause QR Code' : 'Activate QR Code'}
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Regenerate Damaged QR Code</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {isActive ? 'QR Code is Active' : 'QR Code is Paused'}
+                </p>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Rotates the QR revision token when replacing worn, scratched, or tampered printouts.
+                  {isActive
+                    ? 'Customers scanning this code can complete your form and open Google Reviews.'
+                    : 'Scanning is temporarily disabled and visitors see a paused notice.'}
                 </p>
               </div>
-              {!confirmRegenerate && (
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => setPendingAction('toggle_pause')}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
+                }`}
+              >
+                {isActive ? 'Pause QR Code' : 'Activate QR Code'}
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Regenerate Damaged QR Code</p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Rotates the QR revision token when replacing worn, scratched, or tampered printouts.
+                  </p>
+                </div>
                 <button
                   type="button"
                   disabled={isSaving}
-                  onClick={() => setConfirmRegenerate(true)}
+                  onClick={() => setPendingAction('regenerate')}
                   className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span>Regenerate QR</span>
                 </button>
-              )}
-            </div>
-
-            {confirmRegenerate && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <p className="text-xs text-amber-900">
-                  Rotating the QR token updates newly downloaded QR posters and flags older printed stickers with a stale-token notice. Continue?
-                </p>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={async () => {
-                      await handleRegenerateToken();
-                      if (mountedRef.current) setConfirmRegenerate(false);
-                    }}
-                    className="px-3.5 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold cursor-pointer disabled:opacity-60"
-                  >
-                    Confirm Regenerate
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={() => setConfirmRegenerate(false)}
-                    className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 text-xs font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
+      <TypedConfirmModal
+        open={pendingAction === 'toggle_pause'}
+        title={isActive ? 'Pause QR Code?' : 'Activate QR Code?'}
+        description={
+          isActive
+            ? `Pausing the QR code will immediately show a paused notice to all customers scanning ${business.name}'s QR code.`
+            : `Activating the QR code will re-enable customer reviews for ${business.name}.`
+        }
+        requiredKeyword={isActive ? 'PAUSE' : 'ACTIVATE'}
+        confirmLabel={isActive ? 'Pause QR Code' : 'Activate QR Code'}
+        tone="warning"
+        isBusy={isSaving}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={handleToggleActive}
+      />
+
+      <TypedConfirmModal
+        open={pendingAction === 'regenerate'}
+        title="Regenerate QR Token?"
+        description="Rotating the QR token invalidates older printed QR stickers with a stale-token notice and updates new downloads."
+        requiredKeyword="REGENERATE"
+        confirmLabel="Regenerate QR"
+        tone="danger"
+        isBusy={isSaving}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={handleRegenerateToken}
+      />
     </div>
   );
 }

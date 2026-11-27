@@ -518,31 +518,22 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
                     <div>
                       <button
                         type="button"
-                        onClick={handleCopyDraft}
-                        className="w-full py-3.5 px-4 rounded-xl bg-[#FF3D8B] hover:bg-[#ff267d] text-[#111114] font-bold text-xs sm:text-sm transition-all shadow-[0_10px_28px_-8px_rgba(255,61,139,0.55)] cursor-pointer flex items-center justify-center gap-2"
+                        disabled
+                        aria-disabled="true"
+                        title="Preview showcase only — live AI posting is active on store QR stands"
+                        className="w-full py-3.5 px-4 rounded-xl bg-[#FF3D8B] text-[#111114] font-bold text-xs sm:text-sm shadow-[0_10px_28px_-8px_rgba(255,61,139,0.55)] opacity-85 cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        {copiedToast ? (
-                          <>
-                            <Check className="w-4 h-4 stroke-[2.5]" />
-                            <span>Draft Copied! Ready for Google</span>
-                          </>
-                        ) : (
-                          <span>Scan to Post: 18–24 Seconds</span>
-                        )}
+                        <span>Scan to Post: 18–24 Seconds</span>
                       </button>
-
-                      {copyErrorToast && (
-                        <p className="mt-2 text-[11px] font-mono text-amber-300 text-center">
-                          {copyErrorToast}
-                        </p>
-                      )}
 
                       <button
                         type="button"
-                        onClick={onTryDemo}
-                        className="mt-3 w-full text-center text-[11px] text-white/50 hover:text-white/85 transition-colors cursor-pointer leading-snug"
+                        disabled
+                        aria-disabled="true"
+                        title="Public demo navigation disabled to protect AI tokens"
+                        className="mt-3 w-full text-center text-[11px] text-white/45 cursor-not-allowed leading-snug"
                       >
-                        Try the full real AI flow with our Stylish Hair Studio demo.
+                        Preview only — live AI generation activates after QR stand onboarding.
                       </button>
                     </div>
                   </div>

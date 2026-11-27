@@ -1537,6 +1537,7 @@ export function ManagementConsoleView({
                           onClick={() => {
                             setPackageTierInput('standard');
                             setReviewFlowModeInput('ai_drafted_instant');
+                            setAllowClientFlowModeSwitchInput(false);
                           }}
                           className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
                             packageTierInput === 'standard'
@@ -1610,8 +1611,9 @@ export function ManagementConsoleView({
 
                         <button
                           type="button"
+                          disabled={packageTierInput === 'standard'}
                           onClick={() => setReviewFlowModeInput('guided_questions')}
-                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                             reviewFlowModeInput === 'guided_questions'
                               ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
                               : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -1621,25 +1623,34 @@ export function ManagementConsoleView({
                             2. Guided Questions Mode (Questions → AI Draft)
                           </p>
                           <p className="mt-1 text-xs text-slate-600">
-                            Customers answer quick store feedback questions first, then generate a custom review.
+                            {packageTierInput === 'standard'
+                              ? 'Available on ₹4,000 Standard Plus plan only.'
+                              : 'Customers answer quick store feedback questions first, then generate a custom review.'}
                           </p>
                         </button>
                       </div>
 
-                      <label className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3 cursor-pointer">
+                      <label
+                        className={`p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3 ${
+                          packageTierInput === 'standard' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
+                      >
                         <div>
                           <p className="text-xs font-semibold text-slate-900">
                             Allow Business Client to Switch Mode (AI Drafts ↔ Questions)
                           </p>
                           <p className="text-[11px] text-slate-600">
-                            When enabled, the client can switch their QR scan experience between 5+ Ready AI Drafts and Questions mode in their Client Portal.
+                            {packageTierInput === 'standard'
+                              ? 'Disabled on ₹3,000 Standard Plan (locked to English Ready AI Drafts only).'
+                              : 'When enabled, the client can switch their QR scan experience between 5+ Ready AI Drafts and Questions mode in their Client Portal.'}
                           </p>
                         </div>
                         <input
                           type="checkbox"
-                          checked={allowClientFlowModeSwitchInput}
+                          disabled={packageTierInput === 'standard'}
+                          checked={packageTierInput === 'standard' ? false : allowClientFlowModeSwitchInput}
                           onChange={(e) => setAllowClientFlowModeSwitchInput(e.target.checked)}
-                          className="w-4 h-4 rounded border-slate-300 text-teal-700 shrink-0"
+                          className="w-4 h-4 rounded border-slate-300 text-teal-700 shrink-0 disabled:cursor-not-allowed"
                         />
                       </label>
                     </div>
@@ -1802,8 +1813,27 @@ export function ManagementConsoleView({
                 />
               )}
               {detailTab === 'preview' && previewProfile && (
-                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50">
-                  <CustomerReviewFlow profile={previewProfile} isPreview />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab('access')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer shadow-xs"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Manage</span>
+                    </button>
+                    <span className="text-xs font-medium text-slate-500">
+                      Customer Form Preview · {selectedBiz.name}
+                    </span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50">
+                    <CustomerReviewFlow
+                      profile={previewProfile}
+                      isPreview
+                      onExit={() => setDetailTab('access')}
+                    />
+                  </div>
                 </div>
               )}
             </div>

@@ -115,6 +115,24 @@ const CATEGORY_SHOWCASE_DATA: Record<BusinessCategory, CategoryShowcaseMeta> = {
     desc: 'Highlights curated product selection, attentive associates, and smooth in-store pickup or checkout.',
     tags: ['CURATED PRODUCTS', 'HELPFUL STAFF', 'EASY CHECKOUT', 'ORGANIZED STORE'],
   },
+  'Clothing & Apparel': {
+    badge: 'SELECTED: CLOTHING & FASHION SHOWROOMS',
+    title: 'Pre-Loaded with Fitting, Fabric Quality, & Ethnic Wear Prompts',
+    desc: 'Captures bridal, ethnic, casual, and bespoke tailoring feedback alongside trial room assistance and pricing clarity.',
+    tags: ['FABRIC QUALITY', 'FITTING & TRIALS', 'FESTIVE COLLECTION', 'HELPFUL STAFF'],
+  },
+  'Jewelry & Gold Shops': {
+    badge: 'SELECTED: GOLD, DIAMOND & JEWELLERY SHOWROOMS',
+    title: 'Pre-Loaded with Hallmark Purity, Design Craft, & Transparency Prompts',
+    desc: 'Helps jewellery shoppers highlight hallmark purity explanation, making charge clarity, and patient showroom guidance.',
+    tags: ['HALLMARK PURITY', 'BRIDAL DESIGNS', 'TRANSPARENT BILLING', 'PATIENT STAFF'],
+  },
+  'Local Shops & Stores': {
+    badge: 'SELECTED: NEIGHBOURHOOD SHOPS & GENERAL STORES',
+    title: 'Pre-Loaded with Daily Essentials, Fair Pricing, & Quick Service Prompts',
+    desc: 'Ready out-of-the-box for kirana, neighbourhood stores, hardware, sweet marts, and everyday local storefronts.',
+    tags: ['FRESH STOCK', 'FAIR PRICING', 'FRIENDLY OWNER', 'QUICK BILLING'],
+  },
   'Automobile Services': {
     badge: 'SELECTED: AUTOMOTIVE & DETAILING',
     title: 'Pre-Loaded with Honest Pricing, Turnaround, & Repair Prompts',
@@ -132,6 +150,9 @@ const CATEGORY_SHOWCASE_DATA: Record<BusinessCategory, CategoryShowcaseMeta> = {
 const ONBOARDING_CATEGORY_ORDER: BusinessCategory[] = [
   'Hair Salons',
   'Restaurants',
+  'Clothing & Apparel',
+  'Jewelry & Gold Shops',
+  'Local Shops & Stores',
   'Healthcare',
   'Spas',
   'Gyms',
@@ -623,11 +644,10 @@ export function LandingPage({
               ))}
               <button
                 type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onTryDemo();
-                }}
-                className="w-full py-2.5 rounded-xl bg-white border border-black/15 text-xs font-bold text-[#111114] cursor-pointer"
+                disabled
+                aria-disabled="true"
+                title="Public live demo disabled to protect AI tokens"
+                className="w-full py-2.5 rounded-xl bg-white/70 border border-black/15 text-xs font-bold text-[#111114]/55 cursor-not-allowed"
               >
                 Open Live Customer Demo
               </button>
@@ -1239,7 +1259,7 @@ export function LandingPage({
                 <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-[#111114] leading-[1.03] mb-5">
                   Pre-configured forms across{' '}
                   <span className="font-editorial text-[1.08em] font-normal">
-                    10 service categories.
+                    13 service categories.
                   </span>
                 </h2>
                 <p className="text-sm sm:text-base text-[#111114]/68 leading-relaxed mb-6">
@@ -1248,8 +1268,10 @@ export function LandingPage({
 
                 <button
                   type="button"
-                  onClick={onTryDemo}
-                  className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-[#111114] hover:text-[#FF3D8B] transition-colors cursor-pointer"
+                  disabled
+                  aria-disabled="true"
+                  title="Public live demo disabled to protect AI tokens"
+                  className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-[#111114]/45 cursor-not-allowed"
                 >
                   <span>Preview Interactive Hair Salon Demo</span>
                   <ArrowRight className="w-4 h-4" />

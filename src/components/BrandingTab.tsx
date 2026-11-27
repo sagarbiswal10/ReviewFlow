@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Loader2, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, Lock, Loader2, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
   type Business,
@@ -18,7 +18,6 @@ import {
   buildWritingStyleProfile,
   getStarterReferenceReviewsForCategory,
 } from '../data/realReviewDatasets';
-import { auth } from '../firebase';
 import {
   deleteBusiness,
   fetchContextualSeoKeywords,
@@ -28,12 +27,13 @@ import {
 import {
   getAllowedLanguagesForTier,
   sanitizePackageTier,
-  sanitizeReviewFlowMode,
+  sanitizeReviewFlowModeForTier,
 } from '../utils/domainHelpers';
 import { compressLogoFile } from '../utils/qrAndPdf';
 import { sanitizeSeoKeywordPhrase } from '../utils/seoKeywordEngine';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { BusinessLogo } from './BusinessLogo';
+import { TypedConfirmModal } from './TypedConfirmModal';
 
 interface BrandingTabProps {
   business: Business;
@@ -56,14 +56,15 @@ export function BrandingTab({
   onDeleted,
 }: BrandingTabProps) {
   const packageTier = sanitizePackageTier(business.packageTier);
-  const canSwitchFlowMode = isAdmin || business.allowClientFlowModeSwitch !== false;
+  const canSwitchFlowMode =
+    isAdmin || (packageTier === 'standard_plus' && business.allowClientFlowModeSwitch !== false);
   const allowedLanguages = useMemo(
     () => getAllowedLanguagesForTier(packageTier),
     [packageTier],
   );
 
   const [reviewFlowMode, setReviewFlowMode] = useState<ReviewFlowMode>(
-    sanitizeReviewFlowMode(business.reviewFlowMode),
+    sanitizeReviewFlowModeForTier(business.reviewFlowMode, packageTier),
   );
   const [name, setName] = useState(business.name);
   const [ownerName, setOwnerName] = useState(business.ownerName || '');
@@ -89,6 +90,10 @@ export function BrandingTab({
   const [logoDataUrl, setLogoDataUrl] = useState(business.logoDataUrl);
   const [primaryColor, setPrimaryColor] = useState(business.branding.primaryColor);
   const [secondaryColor, setSecondaryColor] = useState(business.branding.secondaryColor);
+  const [questionColor, setQuestionColor] = useState(business.branding.questionColor || '#0F172A');
+  const [backgroundColor, setBackgroundColor] = useState(
+    business.branding.backgroundColor || '#F8FAFC',
+  );
   const [welcomeMessage, setWelcomeMessage] = useState(business.branding.welcomeMessage);
   const [thankYouMessage, setThankYouMessage] = useState(business.branding.thankYouMessage);
   const [defaultReviewStyle, setDefaultReviewStyle] = useState<ReviewStyle>(
@@ -123,7 +128,6 @@ export function BrandingTab({
   const isDirtyRef = useRef(false);
   const lastBusinessIdRef = useRef(business.id);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canEditSlug = isAdmin || auth.currentUser?.uid === business.ownerId;
 
   useEffect(() => {
     return () => {
@@ -144,7 +148,9 @@ export function BrandingTab({
     }
     lastBusinessIdRef.current = business.id;
     isDirtyRef.current = false;
-    setReviewFlowMode(sanitizeReviewFlowMode(business.reviewFlowMode));
+    setReviewFlowMode(
+      sanitizeReviewFlowModeForTier(business.reviewFlowMode, business.packageTier),
+    );
     setName(business.name);
     setOwnerName(business.ownerName || '');
     setCategory(business.category);
@@ -161,6 +167,8 @@ export function BrandingTab({
     setLogoDataUrl(business.logoDataUrl);
     setPrimaryColor(business.branding.primaryColor);
     setSecondaryColor(business.branding.secondaryColor);
+    setQuestionColor(business.branding.questionColor || '#0F172A');
+    setBackgroundColor(business.branding.backgroundColor || '#F8FAFC');
     setWelcomeMessage(business.branding.welcomeMessage);
     setThankYouMessage(business.branding.thankYouMessage);
     setDefaultReviewStyle(business.branding.defaultReviewStyle);
@@ -240,7 +248,7 @@ export function BrandingTab({
           ownerName: ownerName.trim(),
           ...(canSwitchFlowMode ? { reviewFlowMode } : {}),
           category,
-          ...(canEditSlug ? { slug: sanitizeSlug(slug || name) } : {}),
+          ...(isAdmin ? { slug: sanitizeSlug(slug || name) } : {}),
           address: address.trim(),
           locality: locality.trim(),
           city: city.trim(),
@@ -254,12 +262,18 @@ export function BrandingTab({
             'https://www.google.com/maps',
           ),
           logoDataUrl,
-          seoKeywords,
-          seoKeywordsByLanguage: nextSeoByLang,
-          referenceReviews,
+          ...(isAdmin
+            ? {
+                seoKeywords,
+                seoKeywordsByLanguage: nextSeoByLang,
+                referenceReviews,
+              }
+            : {}),
           branding: {
             primaryColor,
             secondaryColor,
+            questionColor,
+            backgroundColor,
             welcomeMessage: welcomeMessage.trim(),
             thankYouMessage: thankYouMessage.trim(),
             defaultReviewStyle,
@@ -269,7 +283,11 @@ export function BrandingTab({
       );
       isDirtyRef.current = false;
       setSlug(nextSlug);
-      setSavedNotice('Business identity, contextual SEO keywords, and writing library saved.');
+      setSavedNotice(
+        isAdmin
+          ? 'Business identity, contextual SEO keywords, and writing library saved.'
+          : 'Business profile and Customer Form Branding & Messaging saved.',
+      );
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3500);
     } catch (err) {
@@ -556,31 +574,27 @@ export function BrandingTab({
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1.5">
-              Customer Review Slug
-            </label>
-            <div className="flex items-center h-10 rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
-              <span className="px-2.5 text-xs font-mono text-slate-500 border-r border-slate-200">
-                /review/
-              </span>
-              <input
-                type="text"
-                value={slug}
-                disabled={!canEditSlug}
-                onChange={(e) => {
-                  isDirtyRef.current = true;
-                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
-                }}
-                className="flex-1 h-full px-2.5 text-sm font-mono bg-white focus:outline-none disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
-              />
+          {isAdmin && (
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                Customer Review Slug
+              </label>
+              <div className="flex items-center h-10 rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
+                <span className="px-2.5 text-xs font-mono text-slate-500 border-r border-slate-200">
+                  /review/
+                </span>
+                <input
+                  type="text"
+                  value={slug}
+                  onChange={(e) => {
+                    isDirtyRef.current = true;
+                    setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+                  }}
+                  className="flex-1 h-full px-2.5 text-sm font-mono bg-white focus:outline-none"
+                />
+              </div>
             </div>
-            {!canEditSlug && (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Public URL slugs can only be renamed by Business Management or the original owner.
-              </p>
-            )}
-          </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">
@@ -825,7 +839,9 @@ export function BrandingTab({
               Customer QR Review Experience
             </h2>
             <p className="text-sm text-slate-600 mt-0.5">
-              Choose whether scanning your QR shows 5+ instant tailored AI drafts or guided feedback questions first.
+              {canSwitchFlowMode
+                ? 'Choose whether scanning your QR shows 5+ instant tailored AI drafts or guided feedback questions first.'
+                : 'Your active customer QR experience mode is managed by Business Management.'}
             </p>
           </div>
           <span
@@ -841,61 +857,69 @@ export function BrandingTab({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            disabled={!canSwitchFlowMode}
-            onClick={() => {
-              isDirtyRef.current = true;
-              setReviewFlowMode('ai_drafted_instant');
-            }}
-            className={`p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-              reviewFlowMode === 'ai_drafted_instant'
-                ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
-                : 'border-slate-200 bg-white hover:bg-slate-50'
-            }`}
-          >
-            <p className="text-sm font-bold text-slate-900">
-              Instant AI-Drafted Reviews (5+ Options → Google)
-            </p>
-            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              {packageTier === 'standard'
-                ? 'Guests see at least 5 tailored English drafts right away, can edit if they like, copy, and post directly on Google.'
-                : 'Guests pick any language (English, Hindi, Marathi, Hinglish), choose from 5+ tailored drafts, and post directly on Google.'}
-            </p>
-          </button>
+        {canSwitchFlowMode ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                isDirtyRef.current = true;
+                setReviewFlowMode('ai_drafted_instant');
+              }}
+              className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                reviewFlowMode === 'ai_drafted_instant'
+                  ? 'border-teal-700 bg-teal-50/70 ring-1 ring-teal-700'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <p className="text-sm font-bold text-slate-900">
+                Instant AI-Drafted Reviews (5+ Options → Google)
+              </p>
+              <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+                {packageTier === 'standard'
+                  ? 'Guests see at least 5 tailored English drafts right away, can edit if they like, copy, and post directly on Google.'
+                  : 'Guests pick any language (English, Hindi, Marathi, Hinglish), choose from 5+ tailored drafts, and post directly on Google.'}
+              </p>
+            </button>
 
-          <button
-            type="button"
-            disabled={!canSwitchFlowMode}
-            onClick={() => {
-              isDirtyRef.current = true;
-              setReviewFlowMode('guided_questions');
-            }}
-            className={`p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-              reviewFlowMode === 'guided_questions'
-                ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
-                : 'border-slate-200 bg-white hover:bg-slate-50'
-            }`}
-          >
-            <p className="text-sm font-bold text-slate-900">
-              Guided Questions Mode (Questions → AI Draft)
-            </p>
-            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              Guests tap answers to quick feedback questions first, then AI generates a personalized review from their experience.
-            </p>
-          </button>
-        </div>
-
-        {!canSwitchFlowMode && (
-          <p className="text-xs text-slate-500">
-            Mode switching is managed by Business Management permissions for your account.
-          </p>
+            <button
+              type="button"
+              onClick={() => {
+                isDirtyRef.current = true;
+                setReviewFlowMode('guided_questions');
+              }}
+              className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                reviewFlowMode === 'guided_questions'
+                  ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <p className="text-sm font-bold text-slate-900">
+                Guided Questions Mode (Questions → AI Draft)
+              </p>
+              <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+                Guests tap answers to quick feedback questions first, then AI generates a personalized review from their experience.
+              </p>
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs sm:text-sm text-slate-700 flex items-center gap-2.5">
+            <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+            <span>
+              Active mode:{' '}
+              <strong className="text-slate-900">
+                {reviewFlowMode === 'ai_drafted_instant'
+                  ? 'Instant AI-Drafted Reviews (5+ Options → Google)'
+                  : 'Guided Questions Mode (Questions → AI Draft)'}
+              </strong>{' '}
+              — switching is locked for your plan/permissions.
+            </span>
+          </div>
         )}
       </div>
       )}
 
-      {/* Contextual SEO Keyword Engine */}
+      {/* Contextual SEO Keyword Engine (Business Management Only) */}
+      {isAdmin && (
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="space-y-1">
@@ -1015,8 +1039,10 @@ export function BrandingTab({
           </button>
         </div>
       </div>
+      )}
 
-      {/* Isolated Real Customer Review Learning Library */}
+      {/* Isolated Real Customer Review Learning Library (Business Management Only) */}
+      {isAdmin && (
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="space-y-1">
@@ -1153,6 +1179,7 @@ export function BrandingTab({
           </div>
         )}
       </div>
+      )}
 
       {/* Customer Experience Branding */}
       {sectionMode === 'all' && (
@@ -1163,18 +1190,19 @@ export function BrandingTab({
             Customer Form Branding &amp; Messaging
           </h2>
           <p className="text-sm text-slate-600 mt-0.5">
-            Customize colors, welcome prompt, thank-you message, and default AI review style.
+            Customize colors (buttons, headings, question text, page background), welcome prompt, thank-you message, and default AI review style.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">
-              Primary Color
+              Primary Color (Buttons &amp; Accents)
             </label>
             <div className="flex items-center gap-2.5">
               <input
                 type="color"
+                aria-label="Primary Color Picker"
                 value={/^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : '#0F766E'}
                 onChange={(e) => {
                   isDirtyRef.current = true;
@@ -1184,6 +1212,7 @@ export function BrandingTab({
               />
               <input
                 type="text"
+                aria-label="Primary Color Hex"
                 value={primaryColor}
                 onChange={(e) => {
                   isDirtyRef.current = true;
@@ -1196,11 +1225,12 @@ export function BrandingTab({
 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">
-              Secondary Heading Color
+              Heading Text Color
             </label>
             <div className="flex items-center gap-2.5">
               <input
                 type="color"
+                aria-label="Heading Color Picker"
                 value={/^#[0-9a-fA-F]{6}$/.test(secondaryColor) ? secondaryColor : '#0F172A'}
                 onChange={(e) => {
                   isDirtyRef.current = true;
@@ -1210,10 +1240,67 @@ export function BrandingTab({
               />
               <input
                 type="text"
+                aria-label="Heading Color Hex"
                 value={secondaryColor}
                 onChange={(e) => {
                   isDirtyRef.current = true;
                   setSecondaryColor(e.target.value);
+                }}
+                className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+              Question &amp; Prompt Text Color
+            </label>
+            <div className="flex items-center gap-2.5">
+              <input
+                type="color"
+                aria-label="Question Text Color Picker"
+                value={/^#[0-9a-fA-F]{6}$/.test(questionColor) ? questionColor : '#0F172A'}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setQuestionColor(e.target.value);
+                }}
+                className="w-10 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
+              />
+              <input
+                type="text"
+                aria-label="Question Text Color Hex"
+                value={questionColor}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setQuestionColor(e.target.value);
+                }}
+                className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+              Scanned Form Background Color
+            </label>
+            <div className="flex items-center gap-2.5">
+              <input
+                type="color"
+                aria-label="Scanned Form Background Color Picker"
+                value={/^#[0-9a-fA-F]{6}$/.test(backgroundColor) ? backgroundColor : '#F8FAFC'}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setBackgroundColor(e.target.value);
+                }}
+                className="w-10 h-10 rounded-lg border border-slate-200 p-1 bg-white cursor-pointer"
+              />
+              <input
+                type="text"
+                aria-label="Scanned Form Background Color Hex"
+                value={backgroundColor}
+                onChange={(e) => {
+                  isDirtyRef.current = true;
+                  setBackgroundColor(e.target.value);
                 }}
                 className="flex-1 h-10 px-3 rounded-lg border border-slate-200 font-mono text-sm"
               />
@@ -1274,16 +1361,16 @@ export function BrandingTab({
         </div>
       </div>
 
-      {/* Delete Business */}
-      <div className="liquid-glass spatial-card-3d rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Remove Business Profile</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Permanently deletes {business.name} and deactivates /review/{business.slug}.
-          </p>
-        </div>
+      {/* Delete Business (Business Management Console Only) */}
+      {isAdmin && (
+        <div className="liquid-glass spatial-card-3d rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Remove Business Profile</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Permanently deletes {business.name} and deactivates /review/{business.slug}.
+            </p>
+          </div>
 
-        {!confirmDelete ? (
           <button
             type="button"
             onClick={() => setConfirmDelete(true)}
@@ -1292,29 +1379,22 @@ export function BrandingTab({
             <Trash2 className="w-3.5 h-3.5" />
             <span>Delete Business</span>
           </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={isDeleting}
-              onClick={handleDeleteBusiness}
-              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-            >
-              {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>Confirm Delete</span>
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
         </>
       )}
+
+      <TypedConfirmModal
+        open={confirmDelete && isAdmin}
+        title={`Delete ${business.name}?`}
+        description={`This will permanently delete ${business.name}, remove its review stands, OAuth grants, and feedback history, and deactivate /review/${business.slug}.`}
+        requiredKeyword="DELETE"
+        confirmLabel="Delete Business"
+        tone="danger"
+        isBusy={isDeleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={handleDeleteBusiness}
+      />
     </form>
   );
 }

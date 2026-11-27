@@ -277,6 +277,16 @@ export function sanitizeReviewFlowMode(mode?: unknown): 'ai_drafted_instant' | '
   return 'guided_questions';
 }
 
+export function sanitizeReviewFlowModeForTier(
+  mode?: unknown,
+  tier?: unknown,
+): 'ai_drafted_instant' | 'guided_questions' {
+  if (sanitizePackageTier(tier) === 'standard') {
+    return 'ai_drafted_instant';
+  }
+  return sanitizeReviewFlowMode(mode);
+}
+
 export function getAllowedLanguagesForTier(tier?: unknown): ReviewLanguage[] {
   return sanitizePackageTier(tier) === 'standard' ? ['en'] : ['en', 'hi', 'mr', 'hinglish'];
 }
@@ -301,4 +311,40 @@ export function sanitizeShortTagList(val: unknown, maxItems = 15, maxLen = 60): 
     }
   }
   return clean;
+}
+
+export function resolvePersistedInstantSeed(
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null | undefined,
+  slug: string,
+  maxBank = 55,
+): number {
+  const key = `reviewflow_instant_seed_${slug || 'default'}`;
+  try {
+    if (!storage) return 1;
+    const prev = Number.parseInt(storage.getItem(key) || '', 10);
+    if (Number.isFinite(prev) && prev >= 1 && prev <= maxBank) {
+      return prev;
+    }
+    storage.setItem(key, '1');
+    return 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function advancePersistedInstantSeed(
+  storage: Pick<Storage, 'setItem'> | null | undefined,
+  slug: string,
+  currentSeed: number,
+  maxBank = 55,
+): number {
+  const safeCurrent =
+    Number.isFinite(currentSeed) && currentSeed >= 1 ? Math.floor(currentSeed) : 1;
+  const next = (safeCurrent % maxBank) + 1;
+  try {
+    storage?.setItem(`reviewflow_instant_seed_${slug || 'default'}`, String(next));
+  } catch {
+    // Ignore storage quota failures
+  }
+  return next;
 }

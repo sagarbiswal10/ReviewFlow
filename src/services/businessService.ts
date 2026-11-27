@@ -62,6 +62,7 @@ import {
   sanitizeGbpSettings,
   sanitizePackageTier,
   sanitizeReviewFlowMode,
+  sanitizeReviewFlowModeForTier,
   sanitizeShortTagList,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
@@ -99,9 +100,13 @@ function sanitizeColorHex(val: unknown, fallback: string): string {
 }
 
 function sanitizeBranding(branding?: Partial<BusinessBranding>): BusinessBranding {
+  const questionColorRaw = clampString(branding?.questionColor, 20);
+  const backgroundColorRaw = clampString(branding?.backgroundColor, 20);
   return {
     primaryColor: sanitizeColorHex(branding?.primaryColor, '#0F766E'),
     secondaryColor: sanitizeColorHex(branding?.secondaryColor, '#0F172A'),
+    ...(questionColorRaw.length >= 4 ? { questionColor: questionColorRaw } : {}),
+    ...(backgroundColorRaw.length >= 4 ? { backgroundColor: backgroundColorRaw } : {}),
     welcomeMessage: clampString(branding?.welcomeMessage, 240),
     thankYouMessage: clampString(branding?.thankYouMessage, 240),
     defaultReviewStyle:
@@ -285,6 +290,8 @@ export async function fetchAutoSeoKeywords(input: {
 const ALLOWED_BRANDING_KEYS = new Set([
   'primaryColor',
   'secondaryColor',
+  'questionColor',
+  'backgroundColor',
   'welcomeMessage',
   'thankYouMessage',
   'defaultReviewStyle',
@@ -312,6 +319,24 @@ function needsBrandingRepair(b?: Partial<BusinessBranding>): boolean {
   if (!b || typeof b !== 'object') return true;
   const keys = Object.keys(b);
   if (keys.some((k) => !ALLOWED_BRANDING_KEYS.has(k))) return true;
+  if (
+    b.questionColor !== undefined &&
+    b.questionColor !== null &&
+    (typeof b.questionColor !== 'string' ||
+      b.questionColor.length < 4 ||
+      b.questionColor.length > 20)
+  ) {
+    return true;
+  }
+  if (
+    b.backgroundColor !== undefined &&
+    b.backgroundColor !== null &&
+    (typeof b.backgroundColor !== 'string' ||
+      b.backgroundColor.length < 4 ||
+      b.backgroundColor.length > 20)
+  ) {
+    return true;
+  }
   return (
     typeof b.primaryColor !== 'string' ||
     b.primaryColor.length < 4 ||
@@ -369,6 +394,9 @@ const VALID_BUSINESS_CATEGORIES = new Set<BusinessCategory>([
   'Gyms',
   'Healthcare',
   'Retail Stores',
+  'Clothing & Apparel',
+  'Jewelry & Gold Shops',
+  'Local Shops & Stores',
   'Automobile Services',
   'Other Businesses',
 ]);
@@ -523,13 +551,15 @@ function hydrateBusiness(id: string, raw: Record<string, unknown>): Business {
   const hydratedKeywords = sanitizeSeoKeywords(data.seoKeywords);
   const normalizedClientEmail = normalizeEmail(data.clientEmail || '');
   const rawLimit = Number(data.qrStandLimit);
+  const hydratedPackageTier = sanitizePackageTier(data.packageTier);
   const hydrated: Business = {
     id,
     ownerId: data.ownerId || '',
     ownerName: clampString(data.ownerName, 120),
-    packageTier: sanitizePackageTier(data.packageTier),
-    reviewFlowMode: sanitizeReviewFlowMode(data.reviewFlowMode),
-    allowClientFlowModeSwitch: data.allowClientFlowModeSwitch !== false,
+    packageTier: hydratedPackageTier,
+    reviewFlowMode: sanitizeReviewFlowModeForTier(data.reviewFlowMode, hydratedPackageTier),
+    allowClientFlowModeSwitch:
+      hydratedPackageTier === 'standard' ? false : data.allowClientFlowModeSwitch !== false,
     clientEmail: normalizedClientEmail,
     clientUid: clampString(data.clientUid, 128),
     clientAccessLevel: sanitizeAccessLevel(data.clientAccessLevel),
@@ -1077,8 +1107,9 @@ export async function createBusiness(
   const cleanName = clampString(input.name, 120) || 'My Business';
   const cleanOwnerName = clampString(input.ownerName, 120);
   const cleanPackageTier = sanitizePackageTier(input.packageTier);
-  const cleanFlowMode = sanitizeReviewFlowMode(input.reviewFlowMode);
-  const cleanAllowFlowSwitch = input.allowClientFlowModeSwitch !== false;
+  const cleanFlowMode = sanitizeReviewFlowModeForTier(input.reviewFlowMode, cleanPackageTier);
+  const cleanAllowFlowSwitch =
+    cleanPackageTier === 'standard' ? false : input.allowClientFlowModeSwitch !== false;
   const cleanAddress = clampString(input.address, 240);
   const cleanLocality = clampString(input.locality, 120);
   const cleanCity = clampString(input.city, 120);
@@ -1432,7 +1463,7 @@ export async function updateBusiness(
   if (updates.contactEmail !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
     businessUpdates.contactEmail = clampString(updates.contactEmail ?? current.contactEmail, 120);
   }
-  if (updates.website !== undefined || optionalRepairs?.website) {
+  if (updates.website !== undefined || (isAdmin && optionalRepairs?.website)) {
     businessUpdates.website = clampString(
       updates.website ? sanitizeExternalUrl(updates.website, '') : current.website || '',
       300,
@@ -1485,37 +1516,37 @@ export async function updateBusiness(
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;
   }
-  if (updates.formTemplate !== undefined || optionalRepairs?.formTemplate) {
+  if (updates.formTemplate !== undefined || (isAdmin && optionalRepairs?.formTemplate)) {
     businessUpdates.formTemplate = nextFormTemplate;
     publicUpdates.formTemplate = nextFormTemplate;
   }
-  if (updates.seoKeywords !== undefined || optionalRepairs?.seoKeywords || publicNeedsSeoRepair) {
+  if (updates.seoKeywords !== undefined || (isAdmin && (optionalRepairs?.seoKeywords || publicNeedsSeoRepair))) {
     businessUpdates.seoKeywords = nextSeoKeywords;
     publicUpdates.seoKeywords = nextSeoKeywords;
   }
-  if (updates.seoKeywordsByLanguage !== undefined || optionalRepairs?.seoKeywordsByLanguage) {
+  if (updates.seoKeywordsByLanguage !== undefined || (isAdmin && optionalRepairs?.seoKeywordsByLanguage)) {
     const cleanSeoByLang = sanitizeSeoKeywordsByLanguageMap(
       updates.seoKeywordsByLanguage ?? current.seoKeywordsByLanguage,
     );
     businessUpdates.seoKeywordsByLanguage = cleanSeoByLang;
     publicUpdates.seoKeywordsByLanguage = cleanSeoByLang;
   }
-  if (updates.referenceReviews !== undefined || optionalRepairs?.referenceReviews) {
+  if (updates.referenceReviews !== undefined || (isAdmin && optionalRepairs?.referenceReviews)) {
     const cleanRefs = sanitizeReferenceReviewsList(updates.referenceReviews ?? current.referenceReviews);
     businessUpdates.referenceReviews = cleanRefs;
     publicUpdates.referenceReviews = cleanRefs;
   }
-  if (updates.ownerName !== undefined || optionalRepairs?.ownerName) {
+  if (updates.ownerName !== undefined || (isAdmin && optionalRepairs?.ownerName)) {
     const cleanOwner = clampString(updates.ownerName ?? current.ownerName, 120);
     businessUpdates.ownerName = cleanOwner;
     publicUpdates.ownerName = cleanOwner;
   }
-  if (updates.locality !== undefined || optionalRepairs?.locality) {
+  if (updates.locality !== undefined || (isAdmin && optionalRepairs?.locality)) {
     const cleanLocality = clampString(updates.locality ?? current.locality, 120);
     businessUpdates.locality = cleanLocality;
     publicUpdates.locality = cleanLocality;
   }
-  if (updates.city !== undefined || optionalRepairs?.city) {
+  if (updates.city !== undefined || (isAdmin && optionalRepairs?.city)) {
     const cleanCity = clampString(updates.city ?? current.city, 120);
     businessUpdates.city = cleanCity;
     publicUpdates.city = cleanCity;
@@ -1530,26 +1561,30 @@ export async function updateBusiness(
     businessUpdates.productsOffered = cleanProducts;
     publicUpdates.productsOffered = cleanProducts;
   }
-  if (updates.businessHighlights !== undefined || optionalRepairs?.businessHighlights) {
+  if (updates.businessHighlights !== undefined || (isAdmin && optionalRepairs?.businessHighlights)) {
     const cleanHighlights = clampString(updates.businessHighlights ?? current.businessHighlights, 500);
     businessUpdates.businessHighlights = cleanHighlights;
     publicUpdates.businessHighlights = cleanHighlights;
   }
-  if (updates.gbpSettings !== undefined || optionalRepairs?.gbpSettings) {
+  if (isAdmin && (updates.gbpSettings !== undefined || optionalRepairs?.gbpSettings)) {
     businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings ?? current.gbpSettings);
   }
-  if (updates.weeklyReportConfig !== undefined || optionalRepairs?.weeklyReportConfig) {
+  if (isAdmin && (updates.weeklyReportConfig !== undefined || optionalRepairs?.weeklyReportConfig)) {
     businessUpdates.weeklyReportConfig = sanitizeWeeklyReportConfig(
       updates.weeklyReportConfig ?? current.weeklyReportConfig,
       nextClientEmail,
     );
   }
 
-  if (
-    updates.reviewFlowMode !== undefined &&
-    (isAdmin || current.allowClientFlowModeSwitch !== false)
-  ) {
-    const cleanMode = sanitizeReviewFlowMode(updates.reviewFlowMode);
+  const effectivePackageTier = sanitizePackageTier(
+    isAdmin && updates.packageTier !== undefined ? updates.packageTier : current.packageTier,
+  );
+  const canSwitchFlowMode =
+    isAdmin ||
+    (effectivePackageTier === 'standard_plus' && current.allowClientFlowModeSwitch !== false);
+
+  if (updates.reviewFlowMode !== undefined && canSwitchFlowMode) {
+    const cleanMode = sanitizeReviewFlowModeForTier(updates.reviewFlowMode, effectivePackageTier);
     businessUpdates.reviewFlowMode = cleanMode;
     publicUpdates.reviewFlowMode = cleanMode;
   }
@@ -1560,9 +1595,16 @@ export async function updateBusiness(
       const cleanTier = sanitizePackageTier(updates.packageTier);
       businessUpdates.packageTier = cleanTier;
       publicUpdates.packageTier = cleanTier;
+      if (cleanTier === 'standard') {
+        businessUpdates.reviewFlowMode = 'ai_drafted_instant';
+        publicUpdates.reviewFlowMode = 'ai_drafted_instant';
+        businessUpdates.allowClientFlowModeSwitch = false;
+        publicUpdates.allowClientFlowModeSwitch = false;
+      }
     }
     if (updates.allowClientFlowModeSwitch !== undefined) {
-      const cleanAllowSwitch = Boolean(updates.allowClientFlowModeSwitch);
+      const cleanAllowSwitch =
+        effectivePackageTier === 'standard' ? false : Boolean(updates.allowClientFlowModeSwitch);
       businessUpdates.allowClientFlowModeSwitch = cleanAllowSwitch;
       publicUpdates.allowClientFlowModeSwitch = cleanAllowSwitch;
     }
@@ -1599,18 +1641,19 @@ export async function updateBusiness(
   const nextServices = sanitizeShortTagList(updates.servicesOffered ?? current.servicesOffered, 15, 60);
   const nextProducts = sanitizeShortTagList(updates.productsOffered ?? current.productsOffered, 15, 60);
   const nextHighlights = clampString(updates.businessHighlights ?? current.businessHighlights, 500);
-  const nextPackageTier = sanitizePackageTier(
-    isAdmin && updates.packageTier !== undefined ? updates.packageTier : current.packageTier,
-  );
-  const nextFlowMode = sanitizeReviewFlowMode(
-    updates.reviewFlowMode !== undefined && (isAdmin || current.allowClientFlowModeSwitch !== false)
+  const nextPackageTier = effectivePackageTier;
+  const nextFlowMode = sanitizeReviewFlowModeForTier(
+    updates.reviewFlowMode !== undefined && canSwitchFlowMode
       ? updates.reviewFlowMode
       : current.reviewFlowMode,
+    nextPackageTier,
   );
   const nextAllowFlowSwitch =
-    isAdmin && updates.allowClientFlowModeSwitch !== undefined
-      ? Boolean(updates.allowClientFlowModeSwitch)
-      : current.allowClientFlowModeSwitch !== false;
+    nextPackageTier === 'standard'
+      ? false
+      : isAdmin && updates.allowClientFlowModeSwitch !== undefined
+        ? Boolean(updates.allowClientFlowModeSwitch)
+        : current.allowClientFlowModeSwitch !== false;
   const nextSeoByLang = sanitizeSeoKeywordsByLanguageMap(
     updates.seoKeywordsByLanguage ?? current.seoKeywordsByLanguage,
   );
@@ -1655,9 +1698,7 @@ export async function updateBusiness(
     }
     batch.set(doc(db, 'publicProfiles', nextSlug), buildFreshPublicProfilePayload(nextSlug));
   } else if (publicProfileState === 'missing') {
-    if (isOwnerOrAdmin) {
-      batch.set(doc(db, 'publicProfiles', current.slug), buildFreshPublicProfilePayload(current.slug));
-    }
+    batch.set(doc(db, 'publicProfiles', current.slug), buildFreshPublicProfilePayload(current.slug));
   } else if (Object.keys(publicUpdates).length > 1) {
     batch.update(doc(db, 'publicProfiles', current.slug), publicUpdates);
   }
@@ -1679,23 +1720,27 @@ export async function updateBusiness(
     const rawMsg = error instanceof Error ? error.message.toLowerCase() : '';
     const isPermErr = rawMsg.includes('permission') || rawMsg.includes('insufficient');
 
-    // If an admin/owner batch failed because the sibling publicProfiles doc had a legacy/broken schema,
-    // update businesses/{id} first and recreate publicProfiles/{slug} cleanly so the save succeeds.
-    if (isPermErr && isOwnerOrAdmin && !slugChanged) {
+    // If batch commit failed because the sibling publicProfiles doc had a legacy/broken schema or missing fields,
+    // update businesses/{id} first and update or recreate publicProfiles/{slug} cleanly so the save succeeds.
+    if (isPermErr && !slugChanged) {
       try {
         await updateDoc(doc(db, 'businesses', current.id), businessUpdates);
         try {
-          if (Object.keys(publicUpdates).length > 1) {
+          if (publicProfileState === 'missing') {
+            await setDoc(doc(db, 'publicProfiles', current.slug), buildFreshPublicProfilePayload(current.slug));
+          } else if (Object.keys(publicUpdates).length > 1) {
             await updateDoc(doc(db, 'publicProfiles', current.slug), publicUpdates);
           }
         } catch {
-          const repairBatch = writeBatch(db);
-          repairBatch.delete(doc(db, 'publicProfiles', current.slug));
-          repairBatch.set(
-            doc(db, 'publicProfiles', current.slug),
-            buildFreshPublicProfilePayload(current.slug),
-          );
-          await repairBatch.commit();
+          if (isOwnerOrAdmin) {
+            const repairBatch = writeBatch(db);
+            repairBatch.delete(doc(db, 'publicProfiles', current.slug));
+            repairBatch.set(
+              doc(db, 'publicProfiles', current.slug),
+              buildFreshPublicProfilePayload(current.slug),
+            );
+            await repairBatch.commit();
+          }
         }
         return nextSlug;
       } catch (isolatedErr) {

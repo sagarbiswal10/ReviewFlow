@@ -82,37 +82,111 @@ function deriveCategoryNoun(category: string, language: ReviewLanguage): string 
   const lower = category.toLowerCase();
   if (language === 'hi') {
     if (lower.includes('salon') || lower.includes('beauty')) return 'सैलून';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'कपड़ों की दुकान';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'ज्वेलरी और सोने की दुकान';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'स्थानीय दुकान';
     if (lower.includes('restaurant')) return 'रेस्टोरेंट';
     if (lower.includes('hotel')) return 'होटल';
     if (lower.includes('spa')) return 'स्पा';
     if (lower.includes('gym')) return 'जिम';
     if (lower.includes('health')) return 'क्लिनिक';
+    if (lower.includes('auto')) return 'ऑटो सर्विस सेंटर';
     return category;
   }
   if (language === 'mr') {
     if (lower.includes('salon') || lower.includes('beauty')) return 'सलून';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'कपड्यांचे दुकान';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'सोन्याचे व दागिन्यांचे दुकान';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'स्थानिक दुकान';
     if (lower.includes('restaurant')) return 'रेस्टॉरंट';
     if (lower.includes('hotel')) return 'हॉटेल';
     if (lower.includes('spa')) return 'स्पा';
     if (lower.includes('gym')) return 'जिम';
     if (lower.includes('health')) return 'क्लिनिक';
+    if (lower.includes('auto')) return 'ऑटो सर्व्हिस सेंटर';
     return category;
   }
   if (language === 'hinglish') {
-    if (lower.includes('salon') || lower.includes('beauty')) return 'salon';
-    if (lower.includes('restaurant')) return 'restaurant';
-    if (lower.includes('hotel')) return 'hotel';
-    if (lower.includes('spa')) return 'spa';
-    if (lower.includes('gym')) return 'gym';
-    if (lower.includes('health')) return 'clinic';
-    return category.toLowerCase();
+    if (lower.includes('salon') || lower.includes('beauty')) return 'hair aur grooming dukaan';
+    if (lower.includes('clothing') || lower.includes('apparel')) return 'kapde ki dukaan';
+    if (lower.includes('jewelry') || lower.includes('gold')) return 'sone chandi ki dukaan';
+    if (lower.includes('local shop') || lower.includes('retail')) return 'local dukaan';
+    if (lower.includes('restaurant')) return 'khane ki jagah';
+    if (lower.includes('hotel')) return 'hotel aur thikana';
+    if (lower.includes('spa')) return 'aaram aur spa jagah';
+    if (lower.includes('gym')) return 'kasrat aur fitness jagah';
+    if (lower.includes('health')) return 'doctor aur jaanch seva';
+    if (lower.includes('auto')) return 'gaadi servicing dukaan';
+    return 'bharosemand dukaan';
   }
   if (lower.includes('hair salon')) return 'hair salon';
   if (lower.includes('beauty salon')) return 'beauty salon';
+  if (lower.includes('clothing') || lower.includes('apparel')) return 'clothing store';
+  if (lower.includes('jewelry') || lower.includes('gold')) return 'gold jewellery shop';
+  if (lower.includes('local shop')) return 'local shop';
   if (lower.includes('restaurant')) return 'restaurant';
   if (lower.includes('hotel')) return 'hotel';
   if (lower.includes('automobile')) return 'auto service center';
   return category.toLowerCase().replace(/s$/, '');
+}
+
+const HINGLISH_CATEGORY_PHRASES: Record<string, string[]> = {
+  salon: [
+    'baal katwane ki acchi jagah',
+    'saaf-suthra salon aur staff',
+    'sahi daam mein haircut',
+    'aaramdayak grooming seva',
+  ],
+  clothing: [
+    'kapde ki bharosemand dukaan',
+    'shaadi aur tyohaar ke kapde',
+    'accha kapda aur sahi fitting',
+    'sahi daam mein naye kapde',
+  ],
+  jewelry: [
+    'sone chandi ke shuddh gehne',
+    'hallmark gehno ki dukaan',
+    'naye sone ke design',
+    'bharosemand jeweller aur saaf hisab',
+  ],
+  shop: [
+    'rozana zarurat ki acchi dukaan',
+    'bharosemand local dukaan',
+    'sahi daam aur taaza samaan',
+    'parivar ke liye acchi dukaan',
+  ],
+  restaurant: [
+    'taza aur swadisht khana',
+    'parivar ke sath khane ki jagah',
+    'tezi aur achhi sewa',
+    'saaf-suthra khana aur mahaul',
+  ],
+  generic: [
+    'bharosemand sewa aur staff',
+    'sahi daam mein accha kaam',
+    'saaf jagah aur badhiya bartaav',
+    'samay par kaam aur madad',
+  ],
+};
+
+function getHinglishPhrasePool(category: string): string[] {
+  const lower = category.toLowerCase();
+  if (lower.includes('salon') || lower.includes('beauty') || lower.includes('spa')) {
+    return HINGLISH_CATEGORY_PHRASES.salon;
+  }
+  if (lower.includes('clothing') || lower.includes('apparel')) {
+    return HINGLISH_CATEGORY_PHRASES.clothing;
+  }
+  if (lower.includes('jewelry') || lower.includes('gold')) {
+    return HINGLISH_CATEGORY_PHRASES.jewelry;
+  }
+  if (lower.includes('shop') || lower.includes('retail') || lower.includes('store')) {
+    return HINGLISH_CATEGORY_PHRASES.shop;
+  }
+  if (lower.includes('restaurant')) {
+    return HINGLISH_CATEGORY_PHRASES.restaurant;
+  }
+  return HINGLISH_CATEGORY_PHRASES.generic;
 }
 
 /**
@@ -151,16 +225,16 @@ export function buildContextualSeoSuggestions(
     const noun = deriveCategoryNoun(String(input.category || ''), lang);
     const tpl = LANGUAGE_LOCAL_TEMPLATES[lang];
 
-    if (input.businessName.trim()) {
-      candidates.push(input.businessName.trim());
-    }
-    if (primaryArea) {
-      candidates.push(tpl.inArea(noun, primaryArea));
-    }
-    if (secondaryArea) {
-      candidates.push(tpl.inArea(noun, secondaryArea));
-    }
     if (lang === 'en') {
+      if (input.businessName.trim()) {
+        candidates.push(input.businessName.trim());
+      }
+      if (primaryArea) {
+        candidates.push(tpl.inArea(noun, primaryArea));
+      }
+      if (secondaryArea) {
+        candidates.push(tpl.inArea(noun, secondaryArea));
+      }
       for (const s of services) {
         candidates.push(primaryArea ? `${s} ${primaryArea}` : s);
       }
@@ -168,7 +242,35 @@ export function buildContextualSeoSuggestions(
         candidates.push(p);
       }
       candidates.push(...baseDefaults);
+    } else if (lang === 'hinglish') {
+      if (primaryArea) {
+        candidates.push(`${primaryArea} mein ${noun}`);
+        candidates.push(`${primaryArea} ki bharosemand dukaan`);
+      }
+      if (secondaryArea) {
+        candidates.push(`${secondaryArea} mein ${noun}`);
+      }
+      candidates.push(...getHinglishPhrasePool(String(input.category || '')));
+      for (const s of services.slice(0, 3)) {
+        candidates.push(primaryArea ? `${primaryArea} mein ${s} sewa` : `accha ${s} kaam`);
+      }
+      if (input.businessName.trim()) {
+        candidates.push(
+          primaryArea
+            ? `${input.businessName.trim()} ${primaryArea} mein`
+            : `${input.businessName.trim()} bharosemand`,
+        );
+      }
     } else {
+      if (input.businessName.trim()) {
+        candidates.push(input.businessName.trim());
+      }
+      if (primaryArea) {
+        candidates.push(tpl.inArea(noun, primaryArea));
+      }
+      if (secondaryArea) {
+        candidates.push(tpl.inArea(noun, secondaryArea));
+      }
       candidates.push(tpl.qualityService(noun));
       for (const s of services.slice(0, 2)) {
         candidates.push(primaryArea ? `${s} ${primaryArea}` : s);
