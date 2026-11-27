@@ -84,6 +84,7 @@ export function OnboardingModal({
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [keywordsTouched, setKeywordsTouched] = useState(false);
   const lastAutoKeyRef = useRef('');
+  const keywordRequestSeqRef = useRef(0);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -123,6 +124,8 @@ export function OnboardingModal({
   ) => {
     const cleanName = targetName.trim();
     if (cleanName.length < 2) return;
+    const requestSeq = keywordRequestSeqRef.current + 1;
+    keywordRequestSeqRef.current = requestSeq;
     setIsGeneratingKeywords(true);
     try {
       const result = await fetchContextualSeoKeywords({
@@ -133,12 +136,12 @@ export function OnboardingModal({
         city: targetCity,
         packageTier: sanitizePackageTier(targetTier),
       });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSeq !== keywordRequestSeqRef.current) return;
       setSeoKeywords(result.keywords);
       setSeoKeywordsByLanguage(result.keywordsByLanguage);
       lastAutoKeyRef.current = `${cleanName.toLowerCase()}|${targetCategory}|${targetAddress.trim().toLowerCase()}|${targetLocality.trim().toLowerCase()}|${targetCity.trim().toLowerCase()}|${targetTier}`;
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestSeq === keywordRequestSeqRef.current) {
         setIsGeneratingKeywords(false);
       }
     }

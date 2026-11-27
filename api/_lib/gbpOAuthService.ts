@@ -267,6 +267,7 @@ export interface AuthorizedBusinessRecord {
   businessId: string;
   ownerId: string;
   clientEmail: string;
+  slug: string;
   name: string;
   category: string;
   gbpSettings: {
@@ -275,6 +276,28 @@ export interface AuthorizedBusinessRecord {
     brandVoice: string;
     autoSyncEnabled: boolean;
   };
+}
+
+export function isCallerAuthorizedForBusinessRecord(input: {
+  callerUid: string;
+  callerEmail: string;
+  isAdmin: boolean;
+  ownerId: string;
+  clientEmail: string;
+  accessLevel: string;
+}): boolean {
+  if (input.isAdmin) return true;
+  const callerEmail = (input.callerEmail || '').trim().toLowerCase();
+  const clientEmail = (input.clientEmail || '').trim().toLowerCase();
+  const isSelfOwned = Boolean(
+    input.ownerId &&
+      input.ownerId === input.callerUid &&
+      (!clientEmail || (callerEmail && clientEmail === callerEmail)),
+  );
+  const isAssignedFullClient = Boolean(
+    callerEmail && clientEmail && clientEmail === callerEmail && input.accessLevel === 'full',
+  );
+  return isSelfOwned || isAssignedFullClient;
 }
 
 export async function assertAuthorizedForBusiness(
@@ -305,13 +328,18 @@ export async function assertAuthorizedForBusiness(
   const bf = bizDoc.fields;
   const ownerId = readFsStr(bf, 'ownerId');
   const clientEmail = readFsStr(bf, 'clientEmail').toLowerCase();
+  const slug = readFsStr(bf, 'slug');
   const accessLevel = readFsStr(bf, 'clientAccessLevel') || 'full';
   const callerEmail = (caller.email || '').trim().toLowerCase();
 
-  const bootstrappedAdmin = (
-    cleanSecretEnv(process.env.VITE_ADMIN_EMAIL) || 'harkiratcourse36@gmail.com'
-  ).toLowerCase();
-  let isAdmin = Boolean(callerEmail && bootstrappedAdmin && callerEmail === bootstrappedAdmin);
+  const superAdminEnv = cleanSecretEnv(process.env.SUPER_ADMIN_EMAILS || process.env.ADMIN_EMAILS || '');
+  const envAdminSet = new Set(
+    superAdminEnv
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  let isAdmin = Boolean(callerEmail && envAdminSet.has(callerEmail));
   if (!isAdmin) {
     const [adminUidDoc, adminEmailDoc] = await Promise.all([
       fsGetDoc(serviceToken, 'admins', caller.uid).catch(() => ({ exists: false })),
@@ -322,12 +350,16 @@ export async function assertAuthorizedForBusiness(
     isAdmin = adminUidDoc.exists || adminEmailDoc.exists;
   }
 
-  const isOwner = Boolean(ownerId && ownerId === caller.uid);
-  const isAssignedFullClient = Boolean(
-    callerEmail && clientEmail && clientEmail === callerEmail && accessLevel === 'full',
-  );
-
-  if (!isAdmin && !isOwner && !isAssignedFullClient) {
+  if (
+    !isCallerAuthorizedForBusinessRecord({
+      callerUid: caller.uid,
+      callerEmail,
+      isAdmin,
+      ownerId,
+      clientEmail,
+      accessLevel,
+    })
+  ) {
     return {
       ok: false,
       status: 403,
@@ -343,6 +375,7 @@ export async function assertAuthorizedForBusiness(
       businessId: cleanBizId,
       ownerId,
       clientEmail,
+      slug,
       name: readFsStr(bf, 'name') || 'Business',
       category: readFsStr(bf, 'category'),
       gbpSettings: {
@@ -835,32 +868,22 @@ export async function handleGbpOAuthCallback(input: {
 
   if (alreadyUsed || !expiresAtMs || Date.now() > expiresAtMs) {
     return {
-      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error=${encodeURIComponent(
-        'OAuth state expired (10 minute limit) or already consumed. Please retry connecting.',
-      )}`,
+      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error_code=oauth_state_expired`,
     };
   }
 
   if (input.oauthError) {
-    const friendly =
-      input.oauthError === 'access_denied'
-        ? 'Google sign-in or permissions were denied. No tokens were saved.'
-        : `Google OAuth error (${input.oauthError}): ${sanitizeApiErrorDetail(
-            input.oauthErrorDescription || input.oauthError,
-          )}`;
+    const codeKey =
+      input.oauthError === 'access_denied' ? 'access_denied' : 'google_oauth_rejected';
     return {
-      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error=${encodeURIComponent(
-        friendly,
-      )}`,
+      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error_code=${codeKey}`,
     };
   }
 
   const code = (input.code || '').trim();
   if (!code) {
     return {
-      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error=${encodeURIComponent(
-        'Missing authorization code from Google OAuth callback.',
-      )}`,
+      redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(businessId)}&gbp_error_code=missing_code`,
     };
   }
 
@@ -902,9 +925,11 @@ export async function handleGbpOAuthCallback(input: {
 
     const grantedScope = (tokenJson.scope || '').trim();
     if (grantedScope && !grantedScope.includes('business.manage')) {
-      throw new Error(
-        'Required Google Business Profile scope (business.manage) was not granted. Please check all permission boxes during Google consent.',
-      );
+      return {
+        redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(
+          businessId,
+        )}&gbp_error_code=missing_scope`,
+      };
     }
 
     let connectedEmail = decodeEmailFromIdToken(tokenJson.id_token);
@@ -974,15 +999,15 @@ export async function handleGbpOAuthCallback(input: {
       return {
         redirectUrl: `${targetBase}?gbp_oauth=pending_api_approval&businessId=${encodeURIComponent(
           businessId,
-        )}&gbp_error=${encodeURIComponent(msg)}`,
+        )}&gbp_error_code=api_pending_approval`,
       };
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'OAuth callback failed.';
+    console.error('GBP callback token exchange error:', sanitizeApiErrorDetail(err instanceof Error ? err.message : String(err)));
     return {
       redirectUrl: `${targetBase}?gbp_oauth=error&businessId=${encodeURIComponent(
         businessId,
-      )}&gbp_error=${encodeURIComponent(sanitizeApiErrorDetail(msg))}`,
+      )}&gbp_error_code=callback_failed`,
     };
   }
 }
@@ -1671,6 +1696,128 @@ export async function disconnectGbpAction(input: {
     data: {
       ok: true,
       disconnected: true,
+    },
+  };
+}
+
+async function fsQueryCollectionDocIdsByBusinessId(
+  serviceToken: string,
+  collectionId: string,
+  businessId: string,
+): Promise<string[]> {
+  const docIds: string[] = [];
+  const res = await fetchWithTimeout(
+    `${getFsBase()}:runQuery`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceToken}`,
+      },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: 'businessId' },
+              op: 'EQUAL',
+              value: { stringValue: businessId },
+            },
+          },
+          select: { fields: [] },
+          limit: 1000,
+        },
+      }),
+    },
+    10_000,
+  ).catch(() => null);
+
+  if (!res || !res.ok) return docIds;
+  const rows = (await res.json()) as Array<{ document?: { name?: string } }>;
+  for (const row of rows) {
+    const fullName = row.document?.name || '';
+    if (!fullName) continue;
+    const id = fullName.split('/').pop();
+    if (id) docIds.push(id);
+  }
+  return docIds;
+}
+
+export async function deleteBusinessCascadeAction(input: {
+  businessId: string;
+  caller: { uid: string; email: string };
+}): Promise<{ status: number; data: Record<string, unknown> }> {
+  const authCheck = await assertAuthorizedForBusiness(input.businessId, input.caller);
+  if (!authCheck.ok) return { status: authCheck.status, data: { error: authCheck.error } };
+
+  const serviceToken = await requireServiceToken();
+  const vault = await readDecryptedTokensFromVault(serviceToken, input.businessId).catch(() => null);
+  const tokenToRevoke = vault?.refreshToken || vault?.accessToken || '';
+
+  if (tokenToRevoke) {
+    await fetchWithTimeout(
+      'https://oauth2.googleapis.com/revoke',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: tokenToRevoke }).toString(),
+      },
+      6000,
+    ).catch(() => null);
+  }
+
+  let deletedDocs = 0;
+
+  const singletonTargets: Array<[string, string]> = [
+    ['gbpTokenVault', input.businessId],
+    ['gbpConnections', input.businessId],
+    ['businessIntegrations', input.businessId],
+    ['businessStats', input.businessId],
+    ['businesses', input.businessId],
+  ];
+  if (authCheck.business.slug) {
+    singletonTargets.push(['publicProfiles', authCheck.business.slug]);
+  }
+
+  await Promise.all(
+    singletonTargets.map(async ([col, docId]) => {
+      await fsDeleteDoc(serviceToken, col, docId);
+      deletedDocs += 1;
+    }),
+  );
+
+  const dependentCollections = [
+    'qrStands',
+    'qrStandRequests',
+    'gbpReviews',
+    'weeklyReports',
+    'reviewEvents',
+    'aiUsageLogs',
+    'feedbackSubmissions',
+    'reviewDrafts',
+    'reviewEvaluations',
+    'consentedExamples',
+  ];
+
+  for (const col of dependentCollections) {
+    const ids = await fsQueryCollectionDocIdsByBusinessId(
+      serviceToken,
+      col,
+      input.businessId,
+    );
+    for (let i = 0; i < ids.length; i += 20) {
+      const slice = ids.slice(i, i + 20);
+      await Promise.all(slice.map((id) => fsDeleteDoc(serviceToken, col, id)));
+      deletedDocs += slice.length;
+    }
+  }
+
+  return {
+    status: 200,
+    data: {
+      ok: true,
+      businessId: input.businessId,
+      deletedDocs,
     },
   };
 }

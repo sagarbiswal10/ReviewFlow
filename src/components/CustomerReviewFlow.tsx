@@ -437,8 +437,15 @@ export function CustomerReviewFlow({
     return { standId, standCode, standName, sessionId };
   }, [isPreview, profile.businessId]);
 
+  const isStandPaused = Boolean(
+    !isPreview &&
+      standContext.standId &&
+      Array.isArray(profile.pausedStandIds) &&
+      profile.pausedStandIds.includes(standContext.standId),
+  );
+
   useEffect(() => {
-    if (!isPreview && !scanLoggedRef.current && profile.qrConfig?.isActive) {
+    if (!isPreview && !scanLoggedRef.current && profile.qrConfig?.isActive && !isStandPaused) {
       scanLoggedRef.current = true;
       recordReviewEvent(profile, 'scan', {
         standId: standContext.standId,
@@ -447,7 +454,7 @@ export function CustomerReviewFlow({
         sessionId: standContext.sessionId,
       });
     }
-  }, [isPreview, profile, standContext]);
+  }, [isPreview, profile, standContext, isStandPaused]);
 
   useEffect(() => {
     if (isPreview || typeof window === 'undefined') return;
@@ -845,6 +852,7 @@ export function CustomerReviewFlow({
         method: 'POST',
         body: JSON.stringify({
           businessId: profile.businessId,
+          standId: standContext.standId,
           visitorId,
           businessName: profile.name,
           ownerName: profile.ownerName,
@@ -1346,6 +1354,7 @@ export function CustomerReviewFlow({
         method: 'POST',
         body: JSON.stringify({
           businessId: profile.businessId,
+          standId: standContext.standId,
           visitorId,
           businessName: profile.name,
           ownerName: profile.ownerName,
@@ -3261,7 +3270,20 @@ export function CustomerReviewFlow({
           </div>
         )}
 
-        {reviewFlowMode === 'ai_drafted_instant' ? (
+        {isStandPaused ? (
+          <div
+            className={`rounded-3xl p-8 text-center space-y-3 ${
+              isDarkTemplate
+                ? 'bg-[#131C31] border border-slate-800 text-white'
+                : 'bg-white border border-slate-200 text-slate-900 shadow-sm'
+            }`}
+          >
+            <h1 className="font-display text-xl font-bold">QR Stand Temporarily Paused</h1>
+            <p className={`text-sm leading-relaxed ${isDarkTemplate ? 'text-slate-300' : 'text-slate-600'}`}>
+              This in-store QR stand has been paused by {profile.name}. Please ask a staff member or try another stand in the store.
+            </p>
+          </div>
+        ) : reviewFlowMode === 'ai_drafted_instant' ? (
           renderInstantReadyReviewsView()
         ) : (
           <>

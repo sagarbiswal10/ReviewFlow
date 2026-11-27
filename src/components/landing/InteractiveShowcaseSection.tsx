@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { ReviewLanguage } from '../../types';
+import { copyToClipboard } from '../../utils/clipboard';
 import { SpatialTilt } from '../ui/spatial-tilt';
 import { ReviewFlowMark } from './ReviewFlowMark';
 
@@ -79,6 +80,7 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
   const [tone, setTone] = useState<DraftTone>('short');
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [copyErrorToast, setCopyErrorToast] = useState<string | null>(null);
 
   // 4 QR Stands interactive state
   const [stands, setStands] = useState<StandItem[]>(INITIAL_STANDS);
@@ -154,13 +156,15 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
   }, [selectedPills, tone, phraseIdx, language]);
 
   const handleCopyDraft = async () => {
-    try {
-      await navigator.clipboard.writeText(draftText);
-    } catch {
-      // Ignore clipboard permission errors
+    setCopyErrorToast(null);
+    const ok = await copyToClipboard(draftText);
+    if (ok) {
+      setCopiedToast(true);
+      window.setTimeout(() => setCopiedToast(false), 2400);
+    } else {
+      setCopyErrorToast('Clipboard unavailable in this preview — please select and copy manually.');
+      window.setTimeout(() => setCopyErrorToast(null), 2600);
     }
-    setCopiedToast(true);
-    window.setTimeout(() => setCopiedToast(false), 2400);
   };
 
   const simulateStandScan = (standId: string) => {
@@ -527,6 +531,12 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
                         )}
                       </button>
 
+                      {copyErrorToast && (
+                        <p className="mt-2 text-[11px] font-mono text-amber-300 text-center">
+                          {copyErrorToast}
+                        </p>
+                      )}
+
                       <button
                         type="button"
                         onClick={onTryDemo}
@@ -769,14 +779,70 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setPdfNotice('Sample A4 PDF report ready in your Business Portal.');
+                        onClick={async () => {
+                          try {
+                            const { downloadWeeklyReportPdf } = await import('../../utils/qrAndPdf');
+                            await downloadWeeklyReportPdf({
+                              id: 'demo-weekly-sample',
+                              businessId: 'demo-studio-sample',
+                              ownerId: 'demo',
+                              clientEmail: 'demo@reviewflow.app',
+                              businessName: 'Lumina Hair Studio (Interactive Demo)',
+                              weekStart: '2026-03-16',
+                              weekEnd: '2026-03-22',
+                              reviewGenMetrics: {
+                                totalScans: stands.reduce((sum, s) => sum + s.scans, 0),
+                                uniqueSessions: stands.reduce((sum, s) => sum + Math.round(s.scans * 0.9), 0),
+                                formsStarted: stands.reduce((sum, s) => sum + Math.round(s.scans * 0.78), 0),
+                                draftsGenerated: stands.reduce((sum, s) => sum + Math.round(s.scans * 0.7), 0),
+                                googleRedirects: stands.reduce((sum, s) => sum + s.redirects, 0),
+                                confirmedGoogleReviews: 46,
+                                averageGoogleRating: 4.8,
+                                bestStandName: stands[0]?.name || 'Reception',
+                                bestStandScans: stands[0]?.scans ?? 96,
+                                lowestStandName: stands[stands.length - 1]?.name || 'Station 2',
+                                lowestStandScans: stands[stands.length - 1]?.scans ?? 52,
+                              },
+                              autoReplyMetrics: {
+                                totalNewReviews: 46,
+                                aiRepliesGenerated: 46,
+                                autoPublished: 41,
+                                manuallyApproved: 4,
+                                waitingApproval: 1,
+                                failedReplies: 0,
+                                ignoredReviews: 0,
+                              },
+                              aiUsageMetrics: {
+                                totalRequests: 112,
+                                successfulRequests: 112,
+                                failedRequests: 0,
+                                totalTokens: 28450,
+                                estimatedCostUsd: 0.0082,
+                                byModel: [
+                                  {
+                                    provider: 'gemini',
+                                    modelId: 'gemini-2.5-flash-lite',
+                                    count: 112,
+                                    successCount: 112,
+                                    failedCount: 0,
+                                    totalTokens: 28450,
+                                    estimatedCostUsd: 0.0082,
+                                  },
+                                ],
+                              },
+                              dispatchedToEmails: ['owner@luminastudio.example'],
+                              generatedBy: 'Interactive Demo Showcase',
+                            });
+                            setPdfNotice('Sample A4 PDF downloaded (interactive demo metrics).');
+                          } catch {
+                            setPdfNotice('Sample PDF ready inside your authenticated Business Portal.');
+                          }
                           window.setTimeout(() => setPdfNotice(null), 2600);
                         }}
                         className="w-full py-2 px-3 rounded-lg bg-[#111114] hover:bg-[#232329] text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
                       >
                         <Download className="w-3.5 h-3.5 text-[#FF3D8B]" />
-                        <span>Download Weekly A4 PDF</span>
+                        <span>Download Sample A4 PDF</span>
                       </button>
 
                       {pdfNotice && (

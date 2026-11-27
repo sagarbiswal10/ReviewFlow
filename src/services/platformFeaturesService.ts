@@ -1,4 +1,6 @@
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -272,11 +274,12 @@ export async function updateQrStand(
 
   const rawFg = clampString(updates.fgColor ?? stand.fgColor, 20);
   const rawBg = clampString(updates.bgColor ?? stand.bgColor, 20);
+  const nextIsActive = updates.isActive ?? stand.isActive;
   const payload: Record<string, unknown> = {
     name: nextName,
     placement: nextPlacement,
     standCode: nextCode.length >= 2 ? nextCode : `stand-${stand.slotNumber}`,
-    isActive: updates.isActive ?? stand.isActive,
+    isActive: nextIsActive,
     fgColor: rawFg.length >= 4 ? rawFg : '#0F172A',
     bgColor: rawBg.length >= 4 ? rawBg : '#FFFFFF',
     includeLogo: updates.includeLogo ?? stand.includeLogo,
@@ -285,14 +288,26 @@ export async function updateQrStand(
 
   try {
     await updateDoc(doc(db, 'qrStands', stand.id), payload);
+    if (updates.isActive !== undefined && stand.slug) {
+      await updateDoc(doc(db, 'publicProfiles', stand.slug), {
+        pausedStandIds: nextIsActive ? arrayRemove(stand.id) : arrayUnion(stand.id),
+        updatedAt: serverTimestamp(),
+      }).catch(() => null);
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `qrStands/${stand.id}`);
   }
 }
 
-export async function deleteQrStand(standId: string): Promise<void> {
+export async function deleteQrStand(standId: string, slug?: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'qrStands', standId));
+    if (slug) {
+      await updateDoc(doc(db, 'publicProfiles', slug), {
+        pausedStandIds: arrayRemove(standId),
+        updatedAt: serverTimestamp(),
+      }).catch(() => null);
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `qrStands/${standId}`);
   }
@@ -1089,7 +1104,9 @@ export async function generateAndStoreGbpReviewReply(input: {
         finalStatus = 'awaiting_approval';
       }
     } else {
-      publishedAt = new Date().toISOString();
+      errorMessage =
+        'Reply drafted, but no live Google Business Profile connection token is available to auto-publish. Connect Google Business Profile or publish manually.';
+      finalStatus = 'awaiting_approval';
     }
   }
 
@@ -1276,7 +1293,9 @@ export async function approveAndPublishGbpReply(input: {
     await updateDoc(doc(db, 'gbpReviews', input.review.id), {
       aiReplyText: cleanText,
       replyStatus: nextStatus,
-      ...(nextStatus !== 'failed' ? { publishedAt: new Date().toISOString() } : {}),
+      ...(nextStatus === 'published'
+        ? { publishedAt: new Date().toISOString() }
+        : { publishedAt: '' }),
       errorMessage: clampString(errorMessage, 400),
       updatedAt: serverTimestamp(),
     });
@@ -1470,9 +1489,56 @@ export async function generateAndSaveWeeklyReport(input: {
   startMs: number;
   endMs: number;
   existingReport?: WeeklyReport;
+  overwriteConfirmed?: boolean;
 }): Promise<WeeklyReport> {
   const { business, weekStart, weekEnd, startMs, endMs } = input;
-  const bizEvents = input.events.filter((ev) => {
+  const reportId = `${business.id}_${weekStart}`;
+  const reportRef = doc(db, 'weeklyReports', reportId);
+
+  let existingDoc = input.existingReport;
+  if (!existingDoc) {
+    try {
+      const snap = await getDoc(reportRef);
+      if (snap.exists()) {
+        existingDoc = snap.data() as WeeklyReport;
+      }
+    } catch {
+      // Proceed to check
+    }
+  }
+
+  if (existingDoc?.dispatchedAt && !input.overwriteConfirmed) {
+    throw new Error(
+      'DISPATCHED_REPORT_EXISTS:This weekly report was already dispatched to recipients. Confirm overwrite to regenerate it.',
+    );
+  }
+
+  const [freshEventsSnap, freshReviewsSnap, freshLogsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'reviewEvents'), where('businessId', '==', business.id), limit(5000))).catch(
+      () => null,
+    ),
+    getDocs(query(collection(db, 'gbpReviews'), where('businessId', '==', business.id), limit(5000))).catch(
+      () => null,
+    ),
+    getDocs(query(collection(db, 'aiUsageLogs'), where('businessId', '==', business.id), limit(5000))).catch(
+      () => null,
+    ),
+  ]);
+
+  const sourceEvents: ReviewEvent[] =
+    freshEventsSnap && freshEventsSnap.docs.length >= input.events.length
+      ? freshEventsSnap.docs.map((d) => ({ ...(d.data() as Omit<ReviewEvent, 'id'>), id: d.id }))
+      : input.events;
+  const sourceReviews: GbpReview[] =
+    freshReviewsSnap && freshReviewsSnap.docs.length >= input.gbpReviews.length
+      ? freshReviewsSnap.docs.map((d) => ({ ...(d.data() as Omit<GbpReview, 'id'>), id: d.id }))
+      : input.gbpReviews;
+  const sourceLogs: AiUsageLog[] =
+    freshLogsSnap && freshLogsSnap.docs.length >= input.aiUsageLogs.length
+      ? freshLogsSnap.docs.map((d) => ({ ...(d.data() as Omit<AiUsageLog, 'id'>), id: d.id }))
+      : input.aiUsageLogs;
+
+  const bizEvents = sourceEvents.filter((ev) => {
     if (ev.businessId !== business.id) return false;
     const ms = getTimestampMs(ev.createdAt);
     return ms >= startMs && ms <= endMs;
@@ -1503,7 +1569,7 @@ export async function generateAndSaveWeeklyReport(input: {
   const bestStand = rankedStands[0];
   const lowestStand = rankedStands.length > 0 ? rankedStands[rankedStands.length - 1] : undefined;
 
-  const weekReviews = input.gbpReviews.filter((r) => {
+  const weekReviews = sourceReviews.filter((r) => {
     if (r.businessId !== business.id) return false;
     const ms = Date.parse(r.reviewDate || '') || getTimestampMs(r.createdAt);
     return ms >= startMs && ms <= endMs;
@@ -1513,7 +1579,7 @@ export async function generateAndSaveWeeklyReport(input: {
   const averageGoogleRating =
     weekReviews.length > 0 ? Number((ratingSum / weekReviews.length).toFixed(2)) : 0;
 
-  const weekLogs = input.aiUsageLogs.filter((l) => {
+  const weekLogs = sourceLogs.filter((l) => {
     if (l.businessId !== business.id) return false;
     const ms = getTimestampMs(l.createdAt);
     return ms >= startMs && ms <= endMs;
@@ -1555,21 +1621,7 @@ export async function generateAndSaveWeeklyReport(input: {
     modelBuckets.set(bucketKey, existingBucket);
   }
 
-  const reportId = `${business.id}_${weekStart}`;
-  const reportRef = doc(db, 'weeklyReports', reportId);
   const now = serverTimestamp();
-
-  let existingDoc = input.existingReport;
-  if (!existingDoc) {
-    try {
-      const snap = await getDoc(reportRef);
-      if (snap.exists()) {
-        existingDoc = snap.data() as WeeklyReport;
-      }
-    } catch {
-      // Proceed to write
-    }
-  }
 
   const mutableFields = {
     businessName: clampString(business.name, 120) || 'Business',

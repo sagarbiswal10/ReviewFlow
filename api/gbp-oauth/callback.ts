@@ -36,7 +36,7 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader(
       'Location',
-      '/portal?gbp_oauth=error&gbp_error=Unexpected+error+completing+Google+connection',
+      '/portal?gbp_oauth=error&gbp_error_code=callback_failed',
     );
     res.end();
   }

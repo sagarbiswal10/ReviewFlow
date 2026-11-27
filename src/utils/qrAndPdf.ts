@@ -1,5 +1,4 @@
 import QRCode from 'qrcode';
-import { jsPDF } from 'jspdf';
 import type { WeeklyReport } from '../types';
 
 export interface RenderQrOptions {
@@ -103,6 +102,7 @@ export async function downloadQrPdf(options: {
   });
 
   const qrDataUrl = offscreen.toDataURL('image/png');
+  const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -145,38 +145,43 @@ export async function downloadQrPdf(options: {
     }
   }
 
-  pdf.setTextColor(15, 23, 42);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(24);
-  pdf.text(options.businessName, pageWidth / 2, cursorY, { align: 'center', maxWidth: 150 });
-  cursorY += 9;
+  const nameHeight = renderPdfText(pdf, options.businessName, pageWidth / 2, cursorY, {
+    fontSizePt: 24,
+    bold: true,
+    colorHex: '#0F172A',
+    align: 'center',
+    maxWidthMm: 150,
+  });
+  cursorY += Math.max(9, nameHeight + 2);
 
-  pdf.setTextColor(100, 116, 139);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(11);
-  pdf.text(
-    options.standLabel ? `${options.category} · ${options.standLabel}` : options.category,
-    pageWidth / 2,
-    cursorY,
-    { align: 'center', maxWidth: 155 },
-  );
-  cursorY += 13;
+  const subLabel = options.standLabel ? `${options.category} · ${options.standLabel}` : options.category;
+  const subHeight = renderPdfText(pdf, subLabel, pageWidth / 2, cursorY, {
+    fontSizePt: 11,
+    colorHex: '#64748B',
+    align: 'center',
+    maxWidthMm: 155,
+  });
+  cursorY += Math.max(12, subHeight + 6);
 
-  pdf.setTextColor(15, 23, 42);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(18);
-  pdf.text('Scan to Share Your Experience', pageWidth / 2, cursorY, { align: 'center' });
+  renderPdfText(pdf, 'Scan to Share Your Experience', pageWidth / 2, cursorY, {
+    fontSizePt: 18,
+    bold: true,
+    colorHex: '#0F172A',
+    align: 'center',
+    maxWidthMm: 155,
+  });
   cursorY += 8;
 
-  pdf.setTextColor(71, 85, 105);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(11);
-  const welcomeLines = pdf.splitTextToSize(
-    options.welcomeMessage || 'Tap a few quick options and get an instant review draft you can edit and post on Google.',
-    140,
-  );
-  pdf.text(welcomeLines, pageWidth / 2, cursorY, { align: 'center' });
-  cursorY += welcomeLines.length * 5 + 10;
+  const welcomeMsg =
+    options.welcomeMessage ||
+    'Tap a few quick options and get an instant review draft you can edit and post on Google.';
+  const welcomeHeight = renderPdfText(pdf, welcomeMsg, pageWidth / 2, cursorY, {
+    fontSizePt: 11,
+    colorHex: '#475569',
+    align: 'center',
+    maxWidthMm: 140,
+  });
+  cursorY += Math.max(12, welcomeHeight + 8);
 
   const qrSize = 86;
   const qrX = (pageWidth - qrSize) / 2;
@@ -210,7 +215,8 @@ export async function downloadQrPdf(options: {
   pdf.save(`reviewflow-poster-${options.slug}${standSuffix}.pdf`);
 }
 
-export function downloadWeeklyReportPdf(report: WeeklyReport): void {
+export async function downloadWeeklyReportPdf(report: WeeklyReport): Promise<void> {
+  const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -225,16 +231,22 @@ export function downloadWeeklyReportPdf(report: WeeklyReport): void {
 
   pdf.setFillColor(15, 118, 110);
   pdf.roundedRect(margin, y, contentWidth, 24, 3, 3, 'F');
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(16);
-  pdf.text('ReviewFlow Weekly Performance Report', margin + 6, y + 10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  pdf.text(
+  renderPdfText(pdf, 'ReviewFlow Weekly Performance Report', margin + 6, y + 10, {
+    fontSizePt: 16,
+    bold: true,
+    colorHex: '#FFFFFF',
+    maxWidthMm: contentWidth - 12,
+  });
+  renderPdfText(
+    pdf,
     `${report.businessName}  |  Week: ${report.weekStart} to ${report.weekEnd}`,
     margin + 6,
     y + 18,
+    {
+      fontSizePt: 10,
+      colorHex: '#FFFFFF',
+      maxWidthMm: contentWidth - 12,
+    },
   );
   y += 32;
 
@@ -270,14 +282,17 @@ export function downloadWeeklyReportPdf(report: WeeklyReport): void {
         pdf.setFillColor(248, 250, 252);
         pdf.setDrawColor(226, 232, 240);
         pdf.roundedRect(x, y, colWidth, 16, 2, 2, 'FD');
-        pdf.setTextColor(100, 116, 139);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        pdf.text(item.label, x + 3, y + 5.5, { maxWidth: colWidth - 6 });
-        pdf.setTextColor(15, 23, 42);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
-        pdf.text(item.value, x + 3, y + 12.5, { maxWidth: colWidth - 6 });
+        renderPdfText(pdf, item.label, x + 3, y + 5.5, {
+          fontSizePt: 8,
+          colorHex: '#64748B',
+          maxWidthMm: colWidth - 6,
+        });
+        renderPdfText(pdf, item.value, x + 3, y + 12.5, {
+          fontSizePt: 11,
+          bold: true,
+          colorHex: '#0F172A',
+          maxWidthMm: colWidth - 6,
+        });
       });
       y += 19;
     }
@@ -374,17 +389,120 @@ export function downloadWeeklyReportPdf(report: WeeklyReport): void {
     }
   }
 
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(148, 163, 184);
-  pdf.text(
+  renderPdfText(
+    pdf,
     `Generated by ReviewFlow  ·  Report Window ${report.weekStart} – ${report.weekEnd}`,
     pageWidth / 2,
     pageHeight - 10,
-    { align: 'center' },
+    { fontSizePt: 8.5, colorHex: '#94A3B8', align: 'center', maxWidthMm: contentWidth },
   );
 
   pdf.save(`reviewflow-weekly-report-${report.businessId}-${report.weekStart}.pdf`);
+}
+
+function containsNonLatinScript(text: string): boolean {
+  return /[^\u0000-\u00ff]/.test(text);
+}
+
+function renderPdfText(
+  pdf: import('jspdf').jsPDF,
+  text: string,
+  xMm: number,
+  yMm: number,
+  opts: {
+    fontSizePt?: number;
+    bold?: boolean;
+    colorHex?: string;
+    align?: 'left' | 'center' | 'right';
+    maxWidthMm?: number;
+  } = {},
+): number {
+  const clean = String(text ?? '');
+  const fontSizePt = opts.fontSizePt ?? 10;
+  const align = opts.align ?? 'left';
+  const colorHex = opts.colorHex ?? '#0F172A';
+
+  if (!clean) return 0;
+
+  if (!containsNonLatinScript(clean) || typeof document === 'undefined') {
+    pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+    pdf.setFontSize(fontSizePt);
+    pdf.setTextColor(colorHex);
+    pdf.text(clean, xMm, yMm, {
+      ...(opts.maxWidthMm ? { maxWidth: opts.maxWidthMm } : {}),
+      ...(align !== 'left' ? { align } : {}),
+    });
+    const approxLines = opts.maxWidthMm
+      ? Math.max(1, pdf.splitTextToSize(clean, opts.maxWidthMm).length)
+      : 1;
+    return approxLines * (fontSizePt * 0.42);
+  }
+
+  // Render non-Latin scripts (Devanagari Hindi/Marathi, etc.) as a crisp HiDPI bitmap
+  const scale = 3;
+  const pxPerMm = 3.7795275591;
+  const fontSizePx = fontSizePt * 1.3333;
+  const lineHeightPx = Math.ceil(fontSizePx * 1.35);
+  const maxWidthPx = Math.max(
+    40,
+    Math.round((opts.maxWidthMm ?? 170) * pxPerMm),
+  );
+
+  const measureCanvas = document.createElement('canvas');
+  const mCtx = measureCanvas.getContext('2d');
+  if (!mCtx) {
+    pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+    pdf.setFontSize(fontSizePt);
+    pdf.setTextColor(colorHex);
+    pdf.text(clean, xMm, yMm);
+    return fontSizePt * 0.45;
+  }
+
+  const fontSpec = `${opts.bold ? '700' : '400'} ${fontSizePx}px "Noto Sans Devanagari", "Kohinoor Devanagari", system-ui, -apple-system, sans-serif`;
+  mCtx.font = fontSpec;
+
+  const words = clean.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (mCtx.measureText(candidate).width <= maxWidthPx || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+
+  const canvasW = opts.maxWidthMm
+    ? maxWidthPx
+    : Math.max(20, Math.ceil(Math.max(...lines.map((l) => mCtx.measureText(l).width)) + 4));
+  const canvasH = Math.max(lineHeightPx, lines.length * lineHeightPx + 4);
+
+  const drawCanvas = document.createElement('canvas');
+  drawCanvas.width = Math.ceil(canvasW * scale);
+  drawCanvas.height = Math.ceil(canvasH * scale);
+  const ctx = drawCanvas.getContext('2d');
+  if (!ctx) return fontSizePt * 0.45;
+
+  ctx.scale(scale, scale);
+  ctx.font = fontSpec;
+  ctx.fillStyle = colorHex;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = align;
+  const textX = align === 'center' ? canvasW / 2 : align === 'right' ? canvasW : 0;
+  lines.forEach((line, idx) => {
+    ctx.fillText(line, textX, idx * lineHeightPx);
+  });
+
+  const widthMm = canvasW / pxPerMm;
+  const heightMm = canvasH / pxPerMm;
+  const drawX =
+    align === 'center' ? xMm - widthMm / 2 : align === 'right' ? xMm - widthMm : xMm;
+  const baselineOffsetMm = (fontSizePt * 0.3527) * 0.85;
+  pdf.addImage(drawCanvas.toDataURL('image/png'), 'PNG', drawX, yMm - baselineOffsetMm, widthMm, heightMm);
+  return heightMm;
 }
 
 const ALLOWED_LOGO_MIME_TYPES = new Set([

@@ -27,6 +27,7 @@ import {
   updateQrStand,
 } from '../services/platformFeaturesService';
 import { getPublicAppUrl } from '../utils/apiClient';
+import { copyToClipboard } from '../utils/clipboard';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
 
 interface QrStandsTabProps {
@@ -265,7 +266,7 @@ export function QrStandsTab({
   const handleDeleteStand = async (stand: QrStand) => {
     setStandError(null);
     try {
-      await deleteQrStand(stand.id);
+      await deleteQrStand(stand.id, stand.slug);
       setStandNotice(`Removed "${stand.name}". Slot ${stand.slotNumber} is now available.`);
       setTimeout(() => {
         if (mountedRef.current) setStandNotice(null);
@@ -276,14 +277,15 @@ export function QrStandsTab({
   };
 
   const handleCopyStandUrl = async (stand: QrStand) => {
-    try {
-      await navigator.clipboard.writeText(buildStandUrl(stand));
+    setStandError(null);
+    const ok = await copyToClipboard(buildStandUrl(stand));
+    if (ok) {
       setCopiedStandId(stand.id);
       setTimeout(() => {
         if (mountedRef.current) setCopiedStandId(null);
       }, 2000);
-    } catch {
-      // Ignore clipboard restriction
+    } else {
+      setStandError('Unable to copy stand URL. Please copy it manually from the card.');
     }
   };
 

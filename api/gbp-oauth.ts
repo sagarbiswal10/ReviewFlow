@@ -5,9 +5,11 @@ import {
   checkRateLimit,
   isOriginAllowed,
   readSafeJsonBody,
+  resolveTrustedRequestHost,
   sanitizeLogError,
 } from './_lib/apiCore.js';
 import {
+  deleteBusinessCascadeAction,
   disconnectGbpAction,
   listGbpAccountsAction,
   listGbpLocationsAction,
@@ -28,28 +30,23 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.end(JSON.stringify(payload));
 }
 
-function resolveRequestOrigin(req: NodeReq): string {
+function resolveRequestOrigin(req: NodeReq, trustedHost: string): string {
   const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin.trim() : '';
-  if (originHeader) return originHeader.replace(/\/+$/, '');
+  if (originHeader && isOriginAllowed(originHeader, trustedHost)) {
+    return originHeader.replace(/\/+$/, '');
+  }
   const proto =
-    typeof req.headers['x-forwarded-proto'] === 'string'
-      ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+    typeof req.headers['x-forwarded-proto'] === 'string' &&
+    req.headers['x-forwarded-proto'].split(',')[0].trim() === 'http'
+      ? 'http'
       : 'https';
-  const host =
-    (typeof req.headers['x-forwarded-host'] === 'string' &&
-      req.headers['x-forwarded-host'].split(',')[0].trim()) ||
-    (typeof req.headers.host === 'string' ? req.headers.host.split(',')[0].trim() : '');
-  return host ? `${proto}://${host}` : '';
+  return trustedHost ? `${proto}://${trustedHost}` : '';
 }
 
 export default async function handler(req: NodeReq, res: ServerResponse) {
   try {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-    const forwardedHost =
-      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
-    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
-      .filter(Boolean)
-      .join(',');
+    const host = resolveTrustedRequestHost(req.headers);
 
     if (origin && !isOriginAllowed(origin, host)) {
       if (req.method === 'OPTIONS') {
@@ -124,7 +121,7 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
     const businessId = typeof body.businessId === 'string' ? body.businessId : '';
 
     if (body.action === 'start') {
-      const requestOrigin = resolveRequestOrigin(req);
+      const requestOrigin = resolveRequestOrigin(req, host);
       if (!requestOrigin) {
         sendJson(res, 400, { error: 'Unable to determine request origin for OAuth callback.' });
         return;
@@ -188,6 +185,12 @@ export default async function handler(req: NodeReq, res: ServerResponse) {
 
     if (body.action === 'disconnect') {
       const result = await disconnectGbpAction({ businessId, caller });
+      sendJson(res, result.status, result.data);
+      return;
+    }
+
+    if (body.action === 'delete_business_cascade') {
+      const result = await deleteBusinessCascadeAction({ businessId, caller });
       sendJson(res, result.status, result.data);
       return;
     }

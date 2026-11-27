@@ -48,6 +48,7 @@ import {
   subscribeToBusinessReviewDrafts,
   subscribeToBusinessStats,
 } from '../services/businessService';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
 import { getPortalTimeGreeting } from '../utils/domainHelpers';
@@ -215,8 +216,14 @@ export function ClientPortalView({
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const bizParam = params.get('businessId');
-    if (bizParam && businesses.some((b) => b.id === bizParam) && activeBusiness?.id !== bizParam) {
-      onSelectBusiness(bizParam);
+    if (bizParam && businesses.some((b) => b.id === bizParam)) {
+      if (activeBusiness?.id !== bizParam) {
+        onSelectBusiness(bizParam);
+      }
+      params.delete('businessId');
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
     }
   }, [businesses, activeBusiness?.id, onSelectBusiness]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -455,12 +462,13 @@ export function ClientPortalView({
 
   const handleCopyLink = async () => {
     if (!reviewUrl) return;
-    try {
-      await navigator.clipboard.writeText(reviewUrl);
+    setPdfExportError(null);
+    const ok = await copyToClipboard(reviewUrl);
+    if (ok) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-    } catch {
-      // ignore
+    } else {
+      setPdfExportError('Unable to copy QR link automatically. Please copy it manually.');
     }
   };
 
@@ -1138,6 +1146,7 @@ export function ClientPortalView({
               />
               <input
                 type="text"
+                aria-label="Search customer activity, stands, or tone"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);

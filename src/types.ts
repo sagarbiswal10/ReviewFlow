@@ -211,6 +211,7 @@ export interface PublicProfile {
   enabledFeatures: EnabledFeatures;
   branding: BusinessBranding;
   qrConfig: QrConfig;
+  pausedStandIds?: string[];
   questions: FeedbackQuestion[];
   formTemplate?: FormTemplateId;
   seoKeywords?: string[];

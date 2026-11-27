@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, QrCode, CheckCircle2, PauseCircle } from 'lucide-react';
 import type { Business, ReviewEvent } from '../types';
 import { getPublicAppUrl } from '../utils/apiClient';
+import { copyToClipboard } from '../utils/clipboard';
 import { formatReviewEventActionLabel, getTimestampMs } from '../utils/domainHelpers';
 
 interface OverviewTabProps {
@@ -23,6 +24,7 @@ function formatEventTime(createdAt: unknown): string {
 
 export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProps) {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const businessEvents = useMemo(
     () => events.filter((ev) => ev.businessId === business.id),
@@ -66,17 +68,23 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
   const liveUrl = `${getPublicAppUrl()}/review/${business.slug}?v=${business.qrConfig.token}`;
 
   const handleCopyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(liveUrl);
+    setCopyError(null);
+    const ok = await copyToClipboard(liveUrl);
+    if (ok) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-    } catch {
-      // Ignore clipboard failures
+    } else {
+      setCopyError('Copy failed — please copy the link manually.');
     }
   };
 
   return (
     <div className="space-y-8">
+      {copyError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+          {copyError}
+        </div>
+      )}
       {/* Top Quick Share Bar */}
       <div className="liquid-glass spatial-card-3d rounded-2xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1 min-w-0">

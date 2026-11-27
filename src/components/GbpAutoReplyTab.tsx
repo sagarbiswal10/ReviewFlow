@@ -43,6 +43,8 @@ import {
   type ServerGbpAccount,
   type ServerGbpLocation,
 } from '../services/platformFeaturesService';
+import { copyToClipboard } from '../utils/clipboard';
+import { resolveSanitizedGbpError } from '../utils/urlAndAuth';
 
 interface GbpAutoReplyTabProps {
   business: Business;
@@ -277,11 +279,12 @@ export function GbpAutoReplyTab({
     if (!oauthState || (bizParam && bizParam !== business.id)) return;
 
     oauthCallbackHandledRef.current = true;
-    const oauthErr = params.get('gbp_error');
+    const oauthErrCode = params.get('gbp_error_code');
 
     // Clean callback params from URL bar while staying on the portal/admin route
     params.delete('gbp_oauth');
     params.delete('gbp_error');
+    params.delete('gbp_error_code');
     params.delete('businessId');
     params.delete('accounts');
     const nextSearch = params.toString();
@@ -295,11 +298,15 @@ export function GbpAutoReplyTab({
       void handleLoadAccounts();
     } else if (oauthState === 'pending_api_approval') {
       setConnError(
-        oauthErr ||
+        resolveSanitizedGbpError(
+          oauthErrCode,
           'Google OAuth completed, but Google Business Profile API access/quota is still pending approval.',
+        ),
       );
     } else if (oauthState === 'error') {
-      setConnError(oauthErr || 'Google Business Profile OAuth did not complete.');
+      setConnError(
+        resolveSanitizedGbpError(oauthErrCode, 'Google Business Profile OAuth did not complete.'),
+      );
     }
   }, [business.id]);
 
@@ -313,12 +320,13 @@ export function GbpAutoReplyTab({
   }, [business.id]);
 
   const handleCopyCallbackUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(callbackUrl);
+    setConnError(null);
+    const ok = await copyToClipboard(callbackUrl);
+    if (ok) {
       setCopiedCallbackUrl(true);
       setTimeout(() => setCopiedCallbackUrl(false), 2000);
-    } catch {
-      // ignore clipboard errors
+    } else {
+      setConnError('Unable to copy callback URL. Please copy it manually from the box.');
     }
   };
 
@@ -1314,7 +1322,11 @@ export function GbpAutoReplyTab({
                                 : 'bg-slate-100 text-slate-500'
                       }`}
                     >
-                      {rev.replyStatus.replace(/_/g, ' ')}
+                      {rev.replyStatus === 'published'
+                        ? 'Published on Google'
+                        : rev.replyStatus === 'manually_approved'
+                          ? 'Approved Locally'
+                          : rev.replyStatus.replace(/_/g, ' ')}
                     </span>
                   </div>
 
@@ -1335,6 +1347,7 @@ export function GbpAutoReplyTab({
                       <div className="space-y-2.5">
                         <textarea
                           rows={3}
+                          aria-label="Edit AI response draft"
                           value={editDraftText}
                           onChange={(e) => setEditDraftText(e.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white p-3 text-xs sm:text-sm text-slate-900"

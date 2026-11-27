@@ -5,6 +5,7 @@ import {
   isOriginAllowed,
   processGenerateReview,
   readSafeJsonBody,
+  resolveTrustedRequestHost,
   sanitizeLogError,
   type GenerateReviewBody,
 } from './_lib/apiCore.js';
@@ -22,11 +23,7 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
 export default async function handler(req: NodeReq, res: ServerResponse) {
   try {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-    const forwardedHost =
-      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
-    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
-      .filter(Boolean)
-      .join(',');
+    const host = resolveTrustedRequestHost(req.headers);
 
     if (origin && !isOriginAllowed(origin, host)) {
       if (req.method === 'OPTIONS') {

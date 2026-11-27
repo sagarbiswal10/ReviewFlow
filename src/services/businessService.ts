@@ -79,7 +79,7 @@ export {
 };
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = (
-  import.meta.env.VITE_ADMIN_EMAIL || 'harkiratcourse36@gmail.com'
+  import.meta.env.VITE_ADMIN_EMAIL || ''
 )
   .trim()
   .toLowerCase();
@@ -663,7 +663,10 @@ export function subscribeToClientBusinesses(
     (snapshot) => {
       byOwner.clear();
       snapshot.docs.forEach((d) => {
-        byOwner.set(d.id, hydrateBusiness(d.id, d.data() as Record<string, unknown>));
+        const biz = hydrateBusiness(d.id, d.data() as Record<string, unknown>);
+        const assignedEmail = (biz.clientEmail || '').trim().toLowerCase();
+        if (assignedEmail && assignedEmail !== normalizedEmail) return;
+        byOwner.set(d.id, biz);
       });
       ownerReady = true;
       emitMerged();
@@ -1751,6 +1754,59 @@ export async function updateBusiness(
 }
 
 export async function deleteBusiness(business: Business): Promise<void> {
+  try {
+    const res = await apiFetch('/api/gbp-oauth', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        action: 'delete_business_cascade',
+        businessId: business.id,
+      }),
+    });
+    const parsed = await parseApiJson<{ ok?: boolean; error?: string }>(res);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(parsed.data?.error || 'Not authorized to delete this business.');
+    }
+    if (res.ok && parsed.data?.ok) {
+      return;
+    }
+  } catch (err) {
+    // Only fall through to client-side cleanup on network/503/unavailable API errors
+    const msg = err instanceof Error ? err.message.toLowerCase() : '';
+    if (msg.includes('not authorized') || msg.includes('permission denied')) {
+      throw err;
+    }
+  }
+
+  const bestEffortDeleteCollection = async (colName: string) => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, colName), where('businessId', '==', business.id), limit(400)),
+      );
+      if (snap.empty) return;
+      const chunkBatch = writeBatch(db);
+      snap.docs.forEach((d) => chunkBatch.delete(d.ref));
+      await chunkBatch.commit();
+    } catch {
+      // Best-effort cleanup across secondary collections when running without admin service account
+    }
+  };
+
+  await Promise.all([
+    bestEffortDeleteCollection('qrStands'),
+    bestEffortDeleteCollection('qrStandRequests'),
+    bestEffortDeleteCollection('gbpReviews'),
+    bestEffortDeleteCollection('weeklyReports'),
+    bestEffortDeleteCollection('reviewDrafts'),
+    bestEffortDeleteCollection('reviewEvaluations'),
+    bestEffortDeleteCollection('consentedExamples'),
+  ]);
+
+  await Promise.all([
+    deleteDoc(doc(db, 'gbpConnections', business.id)).catch(() => null),
+    deleteDoc(doc(db, 'businessIntegrations', business.id)).catch(() => null),
+  ]);
+
   const batch = writeBatch(db);
   batch.delete(doc(db, 'businesses', business.id));
   batch.delete(doc(db, 'publicProfiles', business.slug));
@@ -1798,6 +1854,9 @@ export async function getPublicProfileBySlug(slug: string): Promise<{
       enabledFeatures: sanitizeEnabledFeatures(raw.enabledFeatures),
       branding: sanitizeBranding(raw.branding),
       qrConfig: sanitizeQrConfig(raw.qrConfig, 'v1token'),
+      pausedStandIds: Array.isArray(raw.pausedStandIds)
+        ? raw.pausedStandIds.filter((s): s is string => typeof s === 'string' && s.length > 0)
+        : [],
       questions: Array.isArray(raw.questions) ? raw.questions : [],
       formTemplate: sanitizeFormTemplate(raw.formTemplate),
       seoKeywords: kw.length > 0 ? kw : DEFAULT_SEO_KEYWORDS_BY_CATEGORY[cat] ?? [],

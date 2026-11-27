@@ -1249,6 +1249,7 @@ export function ManagementConsoleView({
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
+                    aria-label="Search business, slug, or client email"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search business, slug, or client email..."
@@ -1466,10 +1467,11 @@ export function ManagementConsoleView({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="admin-client-email" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Assigned Business Client Email
                       </label>
                       <input
+                        id="admin-client-email"
                         type="email"
                         value={clientEmailInput}
                         onChange={(e) => setClientEmailInput(e.target.value)}
@@ -1482,10 +1484,11 @@ export function ManagementConsoleView({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="admin-client-access-level" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Client Portal Access Level
                       </label>
                       <select
+                        id="admin-client-access-level"
                         value={accessLevelInput}
                         onChange={(e) =>
                           setAccessLevelInput(e.target.value as ClientAccessLevel)
@@ -1505,10 +1508,11 @@ export function ManagementConsoleView({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="admin-qr-stand-limit" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Active QR Stand Limit (Default: 4)
                       </label>
                       <input
+                        id="admin-qr-stand-limit"
                         type="number"
                         min={1}
                         max={100}
@@ -3204,10 +3208,11 @@ export function ManagementConsoleView({
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="assign-business-select" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Select Business
                       </label>
                       <select
+                        id="assign-business-select"
                         value={assignBizId}
                         onChange={(e) => handleSelectAssignBusiness(e.target.value)}
                         className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
@@ -3221,10 +3226,11 @@ export function ManagementConsoleView({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="assign-customer-email" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Customer Gmail ID
                       </label>
                       <input
+                        id="assign-customer-email"
                         type="email"
                         required
                         value={assignEmail}
@@ -3235,10 +3241,11 @@ export function ManagementConsoleView({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                      <label htmlFor="assign-access-tier" className="block text-xs font-medium text-slate-700 mb-1.5">
                         Portal Access Tier
                       </label>
                       <select
+                        id="assign-access-tier"
                         value={assignTier}
                         onChange={(e) => setAssignTier(e.target.value as ClientAccessLevel)}
                         className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm bg-white"
@@ -3266,6 +3273,7 @@ export function ManagementConsoleView({
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
+                      aria-label="Filter customer directory by business or Gmail"
                       value={clientSearchQuery}
                       onChange={(e) => setClientSearchQuery(e.target.value)}
                       placeholder="Filter by business or Gmail..."

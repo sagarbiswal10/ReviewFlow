@@ -77,6 +77,34 @@ export function getProviderSignature(providerData?: ReadonlyArray<ProviderSummar
     .join(',');
 }
 
+const ALLOWED_GBP_ERROR_MESSAGES: Record<string, string> = {
+  oauth_state_expired:
+    'Your Google authorization session expired (10 minute limit). Please click Connect Google Business Profile again.',
+  access_denied:
+    'Google sign-in or Business Profile permissions were denied. No credentials were saved.',
+  google_oauth_rejected:
+    'Google OAuth could not complete authorization. Please verify your consent screen settings and retry.',
+  missing_code:
+    'Google did not return an authorization code. Please retry connecting.',
+  missing_scope:
+    'Required Google Business Profile permission (business.manage) was not granted. Please check all permission boxes during Google consent.',
+  api_pending_approval:
+    'Google OAuth completed, but Google Business Profile API access or quota is still pending approval.',
+  callback_failed:
+    'Unable to complete Google Business Profile connection. Please verify server configuration and retry.',
+};
+
+export function resolveSanitizedGbpError(
+  errorCode: string | null | undefined,
+  fallbackMessage?: string | null,
+): string {
+  const code = (errorCode || '').trim();
+  if (code && ALLOWED_GBP_ERROR_MESSAGES[code]) {
+    return ALLOWED_GBP_ERROR_MESSAGES[code];
+  }
+  return fallbackMessage || 'Google Business Profile OAuth did not complete.';
+}
+
 export type AuthErrorKind =
   | 'email_exists'
   | 'invalid_credential'
@@ -101,6 +129,7 @@ export function classifyAuthError(
   err: unknown,
   context: {
     mode?: 'signin' | 'signup' | 'reset' | 'link';
+    provider?: 'google' | 'password';
     email?: string;
     methods?: string[];
     projectId?: string;
@@ -110,6 +139,18 @@ export function classifyAuthError(
   const cleanEmail = (context.email || '').trim().toLowerCase();
   const methods = Array.isArray(context.methods) ? context.methods : [];
   const hasGoogleOnlyHint = methods.includes('google.com') && !methods.includes('password');
+
+  if (
+    context.provider === 'google' &&
+    (raw.includes('auth/invalid-credential') || raw.includes('auth/internal-error'))
+  ) {
+    return {
+      kind: 'invalid_credential',
+      email: cleanEmail || undefined,
+      message:
+        'Google Sign-In failed verification. Ask your administrator to verify the Google OAuth Web Client ID and Client Secret in Firebase Authentication -> Sign-in method -> Google, or sign in with Email & Password below.',
+    };
+  }
 
   if (raw.includes('auth/operation-not-allowed')) {
     return {
