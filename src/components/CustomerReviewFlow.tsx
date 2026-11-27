@@ -2066,6 +2066,7 @@ export function CustomerReviewFlow({
                 <div className="flex items-baseline justify-between gap-2">
                   <label
                     htmlFor={`comment-${question.id}`}
+                    style={questionTextStyle}
                     className={`text-base font-semibold ${
                       isDarkTemplate ? 'text-white' : 'text-slate-900'
                     }`}
@@ -2192,7 +2193,7 @@ export function CustomerReviewFlow({
               className="bg-[#FFFDF9] rounded-2xl border border-stone-200/90 shadow-xs p-5 sm:p-7"
             >
               <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 className="text-base sm:text-lg font-semibold text-stone-900 flex items-baseline gap-2.5">
+                <h2 style={questionTextStyle} className="text-base sm:text-lg font-semibold text-stone-900 flex items-baseline gap-2.5">
                   <span className="font-mono text-xs text-amber-700 font-bold">
                     {String(qIndex + 1).padStart(2, '0')}
                   </span>
@@ -2320,7 +2321,7 @@ export function CustomerReviewFlow({
               className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6"
             >
               <div className="flex items-baseline justify-between gap-2 mb-3.5 pb-2.5 border-b border-slate-100">
-                <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                <h2 style={questionTextStyle} className="text-sm sm:text-base font-bold text-slate-900">
                   {qIndex + 1}. {question.prompt}
                 </h2>
                 <span className="text-[11px] font-medium text-slate-500 shrink-0">
@@ -2442,7 +2443,7 @@ export function CustomerReviewFlow({
           {profile.questions.map((question) => (
             <div key={question.id} className="space-y-2">
               <div className="flex items-baseline justify-between gap-2">
-                <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                <h2 style={questionTextStyle} className="text-sm sm:text-base font-semibold text-slate-900">
                   {question.prompt}
                 </h2>
                 {question.required && (
@@ -2577,7 +2578,7 @@ export function CustomerReviewFlow({
             <SpatialTilt key={question.id} maxTilt={3.5} scale={1.006} glare>
               <section className="rounded-3xl bg-white/75 backdrop-blur-xl border border-white/90 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] p-5 sm:p-6">
                 <div className="flex items-baseline justify-between gap-3 mb-4">
-                  <h2 className="text-base font-semibold text-slate-900">
+                  <h2 style={questionTextStyle} className="text-base font-semibold text-slate-900">
                     <span className="text-indigo-500 mr-2 font-mono text-xs">{String(qIndex + 1).padStart(2, '0')}</span>
                     {question.prompt}
                   </h2>
@@ -2707,7 +2708,7 @@ export function CustomerReviewFlow({
               className="bg-white rounded-2xl border-2 border-slate-900 shadow-[6px_6px_0px_#0F172A] p-5 sm:p-6"
             >
               <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 className="text-base font-extrabold text-slate-950">
+                <h2 style={questionTextStyle} className="text-base font-extrabold text-slate-950">
                   <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#FB923C] border-2 border-slate-900 text-xs font-black mr-2">
                     {qIndex + 1}
                   </span>
@@ -2831,7 +2832,7 @@ export function CustomerReviewFlow({
             <SpatialTilt key={question.id} maxTilt={3} scale={1.005} glare>
               <section className="rounded-3xl bg-[#0B1120]/90 border border-cyan-500/25 shadow-[0_18px_36px_-18px_rgba(34,211,238,0.2)] p-5 sm:p-6">
                 <div className="flex items-baseline justify-between gap-3 mb-4">
-                  <h2 className="text-base font-semibold text-white">
+                  <h2 style={questionTextStyle} className="text-base font-semibold text-white">
                     <span className="font-mono text-xs text-cyan-400 mr-2">
                       [{String(qIndex + 1).padStart(2, '0')}]
                     </span>
@@ -2960,7 +2961,7 @@ export function CustomerReviewFlow({
               }}
             >
               <div className="flex items-baseline justify-between gap-3 mb-4">
-                <h2 className="text-base font-bold text-slate-900">
+                <h2 style={questionTextStyle} className="text-base font-bold text-slate-900">
                   <span className="text-rose-500 mr-1.5">{qIndex + 1}.</span>
                   {question.prompt}
                 </h2>

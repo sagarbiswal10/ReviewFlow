@@ -854,15 +854,15 @@ service cloud.firestore {
           // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit, packageTier, or permissions)
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
-            (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
-            (!('packageTier' in incoming()) || ('packageTier' in existing() && incoming().packageTier == existing().packageTier)) &&
-            (!('allowClientFlowModeSwitch' in incoming()) || ('allowClientFlowModeSwitch' in existing() && incoming().allowClientFlowModeSwitch == existing().allowClientFlowModeSwitch)) &&
+            !incoming().diff(existing()).affectedKeys().hasAny([
+              'ownerId', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+              'qrStandLimit', 'packageTier', 'allowClientFlowModeSwitch', 'createdAt'
+            ]) &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'reviewFlowMode', 'name', 'category', 'address', 'locality', 'city',
@@ -872,12 +872,23 @@ service cloud.firestore {
               'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'slug', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-            ])
+            ]) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['branding']) || isValidBranding(incoming().branding)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['category']) || isValidCategory(incoming().category)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['name']) || (incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 120)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['googleReviewUrl']) || (incoming().googleReviewUrl is string && incoming().googleReviewUrl.size() <= 500)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['logoDataUrl']) || (incoming().logoDataUrl is string && incoming().logoDataUrl.size() <= 350000)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywords']) || incoming().seoKeywords == null || isValidSeoKeywords(incoming().seoKeywords)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywordsByLanguage']) || incoming().seoKeywordsByLanguage == null || isValidSeoKeywordsByLanguage(incoming().seoKeywordsByLanguage)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['referenceReviews']) || incoming().referenceReviews == null || isValidReferenceReviews(incoming().referenceReviews)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['reviewFlowMode']) || incoming().reviewFlowMode in ['ai_drafted_instant', 'guided_questions'])
           ) ||
           // Action 3: Assigned Client with 'qr_and_questions' tier
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'qr_and_questions' &&
             incoming().clientEmail == existing().clientEmail &&
@@ -886,12 +897,14 @@ service cloud.firestore {
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'qrConfig', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
-            ])
+            ]) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
           ) ||
           // Action 4: Assigned Client links verified clientUid for Portal event history
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             incoming().clientUid == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -957,7 +970,6 @@ service cloud.firestore {
             (!('allowClientFlowModeSwitch' in incoming()) || incoming().allowClientFlowModeSwitch == null || incoming().allowClientFlowModeSwitch is bool)
           ) ||
           (
-            isValidPublicProfile(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
             isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
@@ -976,7 +988,12 @@ service cloud.firestore {
                   'branding', 'qrConfig', 'pausedStandIds', 'questions', 'formTemplate',
                   'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
                   'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-                ])
+                ]) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['branding']) || isValidBranding(incoming().branding)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['category']) || isValidCategory(incoming().category)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
               ) ||
               (
                 get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'qr_and_questions' &&
@@ -987,7 +1004,10 @@ service cloud.firestore {
                 ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'qrConfig', 'pausedStandIds', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
-                ])
+                ]) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
               ) ||
               (
                 incoming().clientUid == request.auth.uid &&

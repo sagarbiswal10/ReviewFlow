@@ -1441,26 +1441,26 @@ export async function updateBusiness(
   if (slugChanged) {
     businessUpdates.slug = nextSlug;
   }
-  if (updates.name !== undefined || liveNeedsCoreRepair) {
+  if (updates.name !== undefined || (isAdmin && liveNeedsCoreRepair)) {
     const repairedName = clampString(nextName, 120) || 'Business';
     businessUpdates.name = repairedName;
     publicUpdates.name = repairedName;
   }
-  if (updates.category !== undefined || liveNeedsCoreRepair || publicNeedsCategoryRepair) {
+  if (updates.category !== undefined || (isAdmin && (liveNeedsCoreRepair || publicNeedsCategoryRepair))) {
     businessUpdates.category = nextCategory;
     publicUpdates.category = nextCategory;
   }
-  if (updates.address !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
+  if (updates.address !== undefined || (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair))) {
     const cleanAddr = clampString(updates.address ?? current.address, 240);
     businessUpdates.address = cleanAddr;
     if (updates.address !== undefined) {
       publicUpdates.address = cleanAddr;
     }
   }
-  if (updates.phone !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
+  if (updates.phone !== undefined || (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair))) {
     businessUpdates.phone = clampString(updates.phone ?? current.phone, 40);
   }
-  if (updates.contactEmail !== undefined || rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair) {
+  if (updates.contactEmail !== undefined || (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair))) {
     businessUpdates.contactEmail = clampString(updates.contactEmail ?? current.contactEmail, 120);
   }
   if (updates.website !== undefined || (isAdmin && optionalRepairs?.website)) {
@@ -1471,18 +1471,14 @@ export async function updateBusiness(
   }
   if (
     updates.googleReviewUrl !== undefined ||
-    rawNeedsCoreStringsRepair.has(current) ||
-    liveNeedsCoreRepair ||
-    publicNeedsCoreRepair
+    (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair || publicNeedsCoreRepair))
   ) {
     businessUpdates.googleReviewUrl = nextGoogleUrl;
     publicUpdates.googleReviewUrl = nextGoogleUrl;
   }
   if (
     updates.logoDataUrl !== undefined ||
-    rawNeedsCoreStringsRepair.has(current) ||
-    liveNeedsCoreRepair ||
-    publicNeedsCoreRepair
+    (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair || publicNeedsCoreRepair))
   ) {
     businessUpdates.logoDataUrl = nextLogo;
     publicUpdates.logoDataUrl = nextLogo;
@@ -1499,19 +1495,19 @@ export async function updateBusiness(
   }
   if (
     updates.qrConfig !== undefined ||
-    needsQrConfigRepair(current.qrConfig) ||
-    rawNeedsQrRepair.has(current) ||
-    (rawBizLive && needsQrConfigRepair(rawBizLive.qrConfig as Partial<QrConfig>)) ||
-    publicNeedsQrRepair
+    (isAdmin && (
+      needsQrConfigRepair(current.qrConfig) ||
+      rawNeedsQrRepair.has(current) ||
+      (rawBizLive && needsQrConfigRepair(rawBizLive.qrConfig as Partial<QrConfig>)) ||
+      publicNeedsQrRepair
+    ))
   ) {
     businessUpdates.qrConfig = nextQrConfig;
     publicUpdates.qrConfig = nextQrConfig;
   }
   if (
     updates.questions !== undefined ||
-    rawNeedsCoreStringsRepair.has(current) ||
-    liveNeedsCoreRepair ||
-    publicNeedsCoreRepair
+    (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair || publicNeedsCoreRepair))
   ) {
     businessUpdates.questions = nextQuestions;
     publicUpdates.questions = nextQuestions;

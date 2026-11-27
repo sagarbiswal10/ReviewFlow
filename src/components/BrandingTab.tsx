@@ -297,6 +297,37 @@ export function BrandingTab({
     }
   };
 
+  const handleSaveBrandingOnly = async () => {
+    setError(null);
+    setSavedNotice(null);
+    setIsSaving(true);
+    try {
+      await updateBusiness(
+        business,
+        {
+          branding: {
+            primaryColor,
+            secondaryColor,
+            questionColor,
+            backgroundColor,
+            welcomeMessage: welcomeMessage.trim(),
+            thankYouMessage: thankYouMessage.trim(),
+            defaultReviewStyle,
+          },
+        },
+        { isAdmin },
+      );
+      isDirtyRef.current = false;
+      setSavedNotice('Customer Form Branding & Messaging saved!');
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save branding settings.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleRegenerateKeywords = async () => {
     if (!name.trim()) return;
     setIsGeneratingKeywords(true);
@@ -1185,13 +1216,24 @@ export function BrandingTab({
       {sectionMode === 'all' && (
         <>
       <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-6">
-        <div>
-          <h2 className="font-display text-lg font-bold text-slate-900">
-            Customer Form Branding &amp; Messaging
-          </h2>
-          <p className="text-sm text-slate-600 mt-0.5">
-            Customize colors (buttons, headings, question text, page background), welcome prompt, thank-you message, and default AI review style.
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-900">
+              Customer Form Branding &amp; Messaging
+            </h2>
+            <p className="text-sm text-slate-600 mt-0.5">
+              Customize colors (buttons, headings, question text, page background), welcome prompt, thank-you message, and default AI review style.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={handleSaveBrandingOnly}
+            className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60"
+          >
+            {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>Save Branding &amp; Messaging</span>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
