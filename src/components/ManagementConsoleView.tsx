@@ -206,6 +206,11 @@ export function ManagementConsoleView({
   const [directoryView, setDirectoryView] = useState<'board' | 'table'>('table');
   const [sortBy, setSortBy] = useState<'scans' | 'name' | 'redirects'>('scans');
   const [featuredBizId, setFeaturedBizId] = useState<string | null>(null);
+  const [velocityRangeDays, setVelocityRangeDays] = useState<5 | 7 | 14>(5);
+  const [velocityBizId, setVelocityBizId] = useState<string>('all');
+  const [showScansLine, setShowScansLine] = useState<boolean>(true);
+  const [showRedirectsLine, setShowRedirectsLine] = useState<boolean>(true);
+  const [activeVelocityIdx, setActiveVelocityIdx] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -441,17 +446,33 @@ export function ManagementConsoleView({
     );
   }, [aggregateStats.totalScans, aggregateStats.totalRedirects]);
 
-  const fiveDayPlatformSeries = useMemo(() => {
-    const days: { key: string; label: string; scans: number; redirects: number }[] = [];
+  const velocitySeries = useMemo(() => {
+    const days: {
+      key: string;
+      label: string;
+      fullDate: string;
+      scans: number;
+      redirects: number;
+      conversionPct: number;
+    }[] = [];
     const now = new Date();
-    for (let i = 4; i >= 0; i -= 1) {
+    for (let i = velocityRangeDays - 1; i >= 0; i -= 1) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const label = d.toLocaleDateString(undefined, { weekday: 'short' });
-      days.push({ key, label, scans: 0, redirects: 0 });
+      const label =
+        velocityRangeDays <= 7
+          ? d.toLocaleDateString(undefined, { weekday: 'short' })
+          : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const fullDate = d.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      days.push({ key, label, fullDate, scans: 0, redirects: 0, conversionPct: 0 });
     }
     const map = new Map(days.map((d) => [d.key, d]));
     for (const ev of events) {
+      if (velocityBizId !== 'all' && ev.businessId !== velocityBizId) continue;
       const ms = getEventTimestampMs(ev.createdAt);
       if (!ms) continue;
       const d = new Date(ms);
@@ -461,16 +482,21 @@ export function ManagementConsoleView({
       if (ev.eventType === 'scan') bucket.scans += 1;
       else if (ev.eventType === 'copy_redirect') bucket.redirects += 1;
     }
+    for (const day of days) {
+      day.conversionPct =
+        day.scans > 0 ? Math.min(100, Math.round((day.redirects / day.scans) * 100)) : 0;
+    }
     return days;
-  }, [events]);
+  }, [events, velocityRangeDays, velocityBizId]);
 
-  const maxFiveDayVal = useMemo(() => {
+  const maxVelocityVal = useMemo(() => {
     let m = 1;
-    for (const d of fiveDayPlatformSeries) {
-      m = Math.max(m, d.scans, d.redirects);
+    for (const d of velocitySeries) {
+      if (showScansLine) m = Math.max(m, d.scans);
+      if (showRedirectsLine) m = Math.max(m, d.redirects);
     }
     return m;
-  }, [fiveDayPlatformSeries]);
+  }, [velocitySeries, showScansLine, showRedirectsLine]);
 
   const topBusinesses = useMemo(() => {
     return [...businesses]
@@ -1878,51 +1904,176 @@ export function ManagementConsoleView({
 
               {/* Row 2: 8-Col Smooth Dual-Curve Velocity Chart + 4-Col Top Businesses */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                {/* 8-Col Scan Velocity Dual Curve Chart */}
+                {/* 8-Col Live Interactive Scan Velocity Dual Curve Chart */}
                 <div
                   className={`lg:col-span-8 rounded-2xl p-5 sm:p-6 border flex flex-col justify-between ${
                     isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
                   }`}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                     <div>
-                      <h2
-                        className={`font-display text-base font-bold ${
-                          isDark ? 'text-white' : 'text-slate-900'
-                        }`}
-                      >
-                        Scan Velocity
-                      </h2>
+                      <div className="flex items-center gap-2">
+                        <h2
+                          className={`font-display text-base font-bold ${
+                            isDark ? 'text-white' : 'text-slate-900'
+                          }`}
+                        >
+                          Scan Velocity
+                        </h2>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            isDark
+                              ? 'bg-emerald-500/15 text-emerald-300'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Live</span>
+                        </span>
+                      </div>
                       <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        5-day QR scans vs Google review redirects across all locations
+                        Hover or tap points to inspect QR scans vs Google review redirects
                       </p>
                     </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-medium">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#4F46E5]" />
-                        <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>QR Scans</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5 font-medium">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#EC4899]" />
-                        <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Redirects</span>
-                      </span>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Business filter */}
+                      <select
+                        aria-label="Filter Scan Velocity by business"
+                        value={velocityBizId}
+                        onChange={(e) => {
+                          setVelocityBizId(e.target.value);
+                          setActiveVelocityIdx(null);
+                        }}
+                        className={`text-[11px] font-medium rounded-lg px-2 py-1 border cursor-pointer max-w-[140px] truncate ${
+                          isDark
+                            ? 'bg-[#0F121C] border-[#262B3D] text-slate-200'
+                            : 'bg-slate-50 border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <option value="all">All Locations</option>
+                        {businesses.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Window selector */}
+                      <div
+                        className={`inline-flex items-center p-0.5 rounded-lg border text-[11px] font-semibold ${
+                          isDark ? 'bg-[#0F121C] border-[#262B3D]' : 'bg-slate-100 border-slate-200/80'
+                        }`}
+                      >
+                        {([5, 7, 14] as const).map((daysOpt) => (
+                          <button
+                            key={daysOpt}
+                            type="button"
+                            onClick={() => {
+                              setVelocityRangeDays(daysOpt);
+                              setActiveVelocityIdx(null);
+                            }}
+                            className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                              velocityRangeDays === daysOpt
+                                ? isDark
+                                  ? 'bg-[#252B42] text-white'
+                                  : 'bg-white text-slate-900 shadow-xs'
+                                : isDark
+                                  ? 'text-slate-400 hover:text-white'
+                                  : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                          >
+                            {daysOpt}D
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
+                  {/* Interactive Line Toggles + Window Totals */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showScansLine && !showRedirectsLine) {
+                            setShowRedirectsLine(true);
+                          } else {
+                            setShowScansLine((prev) => !prev);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                          showScansLine
+                            ? isDark
+                              ? 'bg-[#4F46E5]/15 border-[#4F46E5]/40 text-indigo-200'
+                              : 'bg-indigo-50/90 border-indigo-200 text-indigo-900'
+                            : isDark
+                              ? 'bg-transparent border-[#262B3D] text-slate-500 opacity-60'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 opacity-65'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#4F46E5]" />
+                        <span>QR Scans</span>
+                        <span className="font-mono tabular-nums font-bold">
+                          {velocitySeries.reduce((s, d) => s + d.scans, 0)}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showRedirectsLine && !showScansLine) {
+                            setShowScansLine(true);
+                          } else {
+                            setShowRedirectsLine((prev) => !prev);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                          showRedirectsLine
+                            ? isDark
+                              ? 'bg-[#EC4899]/15 border-[#EC4899]/40 text-pink-200'
+                              : 'bg-pink-50/90 border-pink-200 text-pink-900'
+                            : isDark
+                              ? 'bg-transparent border-[#262B3D] text-slate-500 opacity-60'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 opacity-65'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#EC4899]" />
+                        <span>Google Redirects</span>
+                        <span className="font-mono tabular-nums font-bold">
+                          {velocitySeries.reduce((s, d) => s + d.redirects, 0)}
+                        </span>
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const wScans = velocitySeries.reduce((s, d) => s + d.scans, 0);
+                      const wRedirs = velocitySeries.reduce((s, d) => s + d.redirects, 0);
+                      const wConv = wScans > 0 ? Math.min(100, Math.round((wRedirs / wScans) * 100)) : 0;
+                      return (
+                        <span className={`text-[11px] font-mono tabular-nums ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          {velocityRangeDays}D Rate: <strong className={isDark ? 'text-white' : 'text-slate-800'}>{wConv}%</strong>
+                        </span>
+                      );
+                    })()}
+                  </div>
+
                   {(() => {
-                    const pts = fiveDayPlatformSeries;
+                    const pts = velocitySeries;
                     const W = 600;
-                    const H = 190;
-                    const padX = 28;
-                    const padY = 24;
-                    const usableW = W - padX * 2;
-                    const usableH = H - padY * 2;
-                    const safeMax = Math.max(1, maxFiveDayVal);
+                    const H = 196;
+                    const padLeft = 34;
+                    const padRight = 18;
+                    const padTop = 22;
+                    const padBottom = 18;
+                    const usableW = W - padLeft - padRight;
+                    const usableH = H - padTop - padBottom;
+                    const safeMax = Math.max(1, maxVelocityVal);
 
                     const toCoords = (vals: number[]) =>
                       vals.map((v, i) => ({
-                        x: padX + (pts.length > 1 ? (i / (pts.length - 1)) * usableW : usableW / 2),
-                        y: padY + usableH - (v / safeMax) * usableH,
+                        x: padLeft + (pts.length > 1 ? (i / (pts.length - 1)) * usableW : usableW / 2),
+                        y: padTop + usableH - (v / safeMax) * usableH,
                         v,
                       }));
 
@@ -1942,117 +2093,229 @@ export function ManagementConsoleView({
                     const scanCoords = toCoords(pts.map((p) => p.scans));
                     const redirCoords = toCoords(pts.map((p) => p.redirects));
                     const scanPath = buildSmoothPath(scanCoords);
-                    const scanAreaPath = `${scanPath} L ${scanCoords[scanCoords.length - 1].x.toFixed(1)} ${(H - padY).toFixed(1)} L ${scanCoords[0].x.toFixed(1)} ${(H - padY).toFixed(1)} Z`;
+                    const scanAreaPath = `${scanPath} L ${scanCoords[scanCoords.length - 1].x.toFixed(1)} ${(H - padBottom).toFixed(1)} L ${scanCoords[0].x.toFixed(1)} ${(H - padBottom).toFixed(1)} Z`;
                     const redirPath = buildSmoothPath(redirCoords);
-                    const peakIdx = pts.reduce(
-                      (best, cur, idx) => (cur.scans > pts[best].scans ? idx : best),
-                      0,
-                    );
-                    const peakCoord = scanCoords[peakIdx];
+                    const redirAreaPath = `${redirPath} L ${redirCoords[redirCoords.length - 1].x.toFixed(1)} ${(H - padBottom).toFixed(1)} L ${redirCoords[0].x.toFixed(1)} ${(H - padBottom).toFixed(1)} Z`;
+
+                    const peakIdx = pts.reduce((best, cur, idx) => {
+                      const curScore = showScansLine ? cur.scans : cur.redirects;
+                      const bestScore = showScansLine ? pts[best].scans : pts[best].redirects;
+                      return curScore > bestScore ? idx : best;
+                    }, 0);
+                    const inspectedIdx =
+                      activeVelocityIdx !== null && activeVelocityIdx >= 0 && activeVelocityIdx < pts.length
+                        ? activeVelocityIdx
+                        : peakIdx;
+                    const inspectedPoint = pts[inspectedIdx];
+                    const inspectedX = scanCoords[inspectedIdx]?.x ?? padLeft;
+                    const tooltipLeftPct = Math.min(82, Math.max(18, (inspectedX / W) * 100));
 
                     return (
-                      <div className="space-y-2">
+                      <div className="space-y-2" onMouseLeave={() => setActiveVelocityIdx(null)}>
                         <div className="relative w-full">
-                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-48 overflow-visible">
+                          {/* Live Floating Inspection Tooltip */}
+                          {inspectedPoint && (
+                            <div
+                              style={{ left: `${tooltipLeftPct.toFixed(1)}%` }}
+                              className={`pointer-events-none absolute -top-1 -translate-x-1/2 z-10 rounded-xl px-3 py-1.5 shadow-lg border text-[11px] whitespace-nowrap transition-all duration-150 ${
+                                isDark
+                                  ? 'bg-[#1D2235]/95 border-[#323A56] text-white'
+                                  : 'bg-slate-900/95 border-slate-700 text-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="font-semibold text-slate-300">
+                                  {inspectedPoint.fullDate}
+                                </span>
+                                {showScansLine && (
+                                  <span className="inline-flex items-center gap-1 font-mono tabular-nums font-bold text-indigo-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#4F46E5]" />
+                                    {inspectedPoint.scans} scans
+                                  </span>
+                                )}
+                                {showRedirectsLine && (
+                                  <span className="inline-flex items-center gap-1 font-mono tabular-nums font-bold text-pink-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#EC4899]" />
+                                    {inspectedPoint.redirects} redirects
+                                  </span>
+                                )}
+                                <span className="font-mono tabular-nums text-emerald-300">
+                                  {inspectedPoint.conversionPct}%
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-52 overflow-visible select-none">
                             <defs>
                               <linearGradient id="rfAdminScanFill" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#4F46E5" stopOpacity={isDark ? '0.32' : '0.18'} />
                                 <stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
                               </linearGradient>
+                              <linearGradient id="rfAdminRedirFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#EC4899" stopOpacity={isDark ? '0.26' : '0.16'} />
+                                <stop offset="100%" stopColor="#EC4899" stopOpacity="0" />
+                              </linearGradient>
                             </defs>
-                            {[0.25, 0.5, 0.75, 1].map((frac) => {
-                              const gy = padY + usableH * (1 - frac);
+
+                            {/* Horizontal Grid + Y-axis scale labels */}
+                            {[0, 0.5, 1].map((frac) => {
+                              const gy = padTop + usableH * (1 - frac);
+                              const tickVal = Math.round(safeMax * frac);
                               return (
-                                <line
-                                  key={frac}
-                                  x1={padX}
-                                  y1={gy}
-                                  x2={W - padX}
-                                  y2={gy}
-                                  stroke={isDark ? '#262B3D' : '#F1F5F9'}
-                                  strokeDasharray="4 4"
-                                  strokeWidth="1"
+                                <g key={frac}>
+                                  <line
+                                    x1={padLeft}
+                                    y1={gy}
+                                    x2={W - padRight}
+                                    y2={gy}
+                                    stroke={isDark ? '#262B3D' : '#F1F5F9'}
+                                    strokeDasharray={frac === 0 ? undefined : '4 4'}
+                                    strokeWidth="1"
+                                  />
+                                  <text
+                                    x={padLeft - 6}
+                                    y={gy + 3}
+                                    textAnchor="end"
+                                    fontSize="9"
+                                    fill={isDark ? '#64748B' : '#94A3B8'}
+                                  >
+                                    {tickVal}
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {/* Vertical crosshair line on inspected day */}
+                            <line
+                              x1={inspectedX}
+                              y1={padTop}
+                              x2={inspectedX}
+                              y2={H - padBottom}
+                              stroke={isDark ? '#475569' : '#CBD5E1'}
+                              strokeDasharray="3 3"
+                              strokeWidth="1.2"
+                            />
+
+                            {showScansLine && (
+                              <>
+                                <path d={scanAreaPath} fill="url(#rfAdminScanFill)" />
+                                <path
+                                  d={scanPath}
+                                  fill="none"
+                                  stroke="#4F46E5"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                />
+                              </>
+                            )}
+
+                            {showRedirectsLine && (
+                              <>
+                                <path d={redirAreaPath} fill="url(#rfAdminRedirFill)" />
+                                <path
+                                  d={redirPath}
+                                  fill="none"
+                                  stroke="#EC4899"
+                                  strokeWidth="2.75"
+                                  strokeLinecap="round"
+                                />
+                              </>
+                            )}
+
+                            {showScansLine &&
+                              scanCoords.map((c, idx) => {
+                                const isActive = idx === inspectedIdx;
+                                return (
+                                  <circle
+                                    key={`s-${pts[idx].key}`}
+                                    cx={c.x}
+                                    cy={c.y}
+                                    r={isActive ? 5.5 : 3.2}
+                                    fill={isActive ? '#FFFFFF' : '#4F46E5'}
+                                    stroke="#4F46E5"
+                                    strokeWidth={isActive ? 3 : 0}
+                                  />
+                                );
+                              })}
+
+                            {showRedirectsLine &&
+                              redirCoords.map((c, idx) => {
+                                const isActive = idx === inspectedIdx;
+                                return (
+                                  <circle
+                                    key={`r-${pts[idx].key}`}
+                                    cx={c.x}
+                                    cy={c.y}
+                                    r={isActive ? 5.5 : 3.2}
+                                    fill={isActive ? '#FFFFFF' : '#EC4899'}
+                                    stroke="#EC4899"
+                                    strokeWidth={isActive ? 3 : 0}
+                                  />
+                                );
+                              })}
+
+                            {/* Interactive column hit zones for smooth hover & touch */}
+                            {pts.map((pt, idx) => {
+                              const colW = pts.length > 1 ? usableW / (pts.length - 1) : usableW;
+                              const cx = scanCoords[idx]?.x ?? padLeft;
+                              return (
+                                <rect
+                                  key={`hit-${pt.key}`}
+                                  x={Math.max(padLeft - 10, cx - colW / 2)}
+                                  y={padTop - 8}
+                                  width={colW}
+                                  height={usableH + 16}
+                                  fill="transparent"
+                                  className="cursor-crosshair"
+                                  onMouseEnter={() => setActiveVelocityIdx(idx)}
+                                  onClick={() => setActiveVelocityIdx(idx)}
                                 />
                               );
                             })}
-                            <path d={scanAreaPath} fill="url(#rfAdminScanFill)" />
-                            <path
-                              d={scanPath}
-                              fill="none"
-                              stroke="#4F46E5"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d={redirPath}
-                              fill="none"
-                              stroke="#EC4899"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                            />
-                            {scanCoords.map((c, idx) => (
-                              <circle
-                                key={`s-${pts[idx].key}`}
-                                cx={c.x}
-                                cy={c.y}
-                                r={idx === peakIdx ? 5.5 : 3.5}
-                                fill={idx === peakIdx ? '#FFFFFF' : '#4F46E5'}
-                                stroke="#4F46E5"
-                                strokeWidth={idx === peakIdx ? 3 : 0}
-                              />
-                            ))}
-                            {redirCoords.map((c, idx) => (
-                              <circle
-                                key={`r-${pts[idx].key}`}
-                                cx={c.x}
-                                cy={c.y}
-                                r="3"
-                                fill="#EC4899"
-                              />
-                            ))}
-                            {peakCoord && (
-                              <g transform={`translate(${Math.min(W - 88, Math.max(48, peakCoord.x)).toFixed(1)}, ${Math.max(14, peakCoord.y - 16).toFixed(1)})`}>
-                                <rect
-                                  x="-36"
-                                  y="-14"
-                                  width="72"
-                                  height="22"
-                                  rx="6"
-                                  fill={isDark ? '#252B42' : '#1E1B4B'}
-                                />
-                                <text
-                                  x="0"
-                                  y="1"
-                                  textAnchor="middle"
-                                  fontSize="10"
-                                  fontWeight="700"
-                                  fill="#FFFFFF"
-                                >
-                                  {pts[peakIdx].scans} scans
-                                </text>
-                              </g>
-                            )}
                           </svg>
                         </div>
-                        <div className="flex items-center justify-between px-4">
-                          {pts.map((d) => (
-                            <div key={d.key} className="text-center">
-                              <p
-                                className={`text-[11px] font-medium ${
-                                  isDark ? 'text-slate-400' : 'text-slate-500'
+
+                        <div className="flex items-center justify-between pl-6 pr-2 gap-1 overflow-x-auto">
+                          {pts.map((d, idx) => {
+                            const isActive = idx === inspectedIdx;
+                            return (
+                              <button
+                                key={d.key}
+                                type="button"
+                                onMouseEnter={() => setActiveVelocityIdx(idx)}
+                                onClick={() => setActiveVelocityIdx(idx)}
+                                className={`text-center px-1.5 py-1 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                                  isActive
+                                    ? isDark
+                                      ? 'bg-[#252B42]/70'
+                                      : 'bg-indigo-50/80'
+                                    : ''
                                 }`}
                               >
-                                {d.label}
-                              </p>
-                              <p
-                                className={`text-[10px] tabular-nums ${
-                                  isDark ? 'text-slate-500' : 'text-slate-400'
-                                }`}
-                              >
-                                {d.scans}/{d.redirects}
-                              </p>
-                            </div>
-                          ))}
+                                <p
+                                  className={`text-[10px] sm:text-[11px] font-medium ${
+                                    isActive
+                                      ? isDark
+                                        ? 'text-white font-semibold'
+                                        : 'text-indigo-700 font-semibold'
+                                      : isDark
+                                        ? 'text-slate-400'
+                                        : 'text-slate-500'
+                                  }`}
+                                >
+                                  {d.label}
+                                </p>
+                                <p
+                                  className={`text-[10px] tabular-nums ${
+                                    isDark ? 'text-slate-400' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {d.scans}/{d.redirects}
+                                </p>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     );

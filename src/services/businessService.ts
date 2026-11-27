@@ -770,7 +770,7 @@ export function subscribeToAllEvents(
   onError?: (err: Error) => void,
 ): Unsubscribe {
   const path = 'reviewEvents';
-  const q = query(collection(db, path), orderBy('createdAt', 'desc'), limit(250));
+  const q = query(collection(db, path), orderBy('createdAt', 'desc'), limit(500));
   return onSnapshot(
     q,
     (snapshot) => {
