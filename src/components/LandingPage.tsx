@@ -769,9 +769,9 @@ export function LandingPage({
                   transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
                   className="font-display font-bold tracking-[-0.04em] text-[#111114] leading-[0.95] text-[3.3rem] sm:text-[5rem] lg:text-[6.25rem]"
                 >
-                  <span className="block">Reviews in</span>
+                  <span className="block">Review in</span>
                   <span className="block font-editorial rf-3d-chromatic text-[1.12em] tracking-[-0.02em] mt-1">
-                    20 seconds.
+                    seconds.
                   </span>
                 </motion.h1>
               </motion.div>
@@ -785,7 +785,7 @@ export function LandingPage({
                 Customers often skip leaving reviews because staring at a blank text box feels like
                 work. With ReviewFlow, they scan up to 4 trackable QR stands, tap responses in
                 English, Hindi, Marathi, or Hinglish, and receive an authentic draft ready to post
-                in under 20 seconds.
+                in seconds.
               </motion.p>
 
               <motion.div
@@ -940,9 +940,6 @@ export function LandingPage({
               transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-2xl mb-14"
             >
-              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45 mb-3">
-                03 — ENGINEERED PRECISION
-              </p>
               <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-white leading-[1.04] mb-5">
                 Built for multi-location operators and{' '}
                 <span className="font-editorial text-[#FF3D8B] text-[1.08em] font-normal">
@@ -1257,7 +1254,7 @@ export function LandingPage({
                 className="lg:col-span-5"
               >
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#111114]/55 mb-3">
-                  04 — PLUG-AND-PLAY ONBOARDING
+                  PLUG-AND-PLAY ONBOARDING
                 </p>
                 <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-[#111114] leading-[1.03] mb-5">
                   Pre-configured forms across{' '}
@@ -1365,7 +1362,7 @@ export function LandingPage({
                 className="lg:col-span-6"
               >
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70 mb-3">
-                  05 — POLICY
+                  POLICY
                 </p>
                 <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-white leading-[1.05] mb-6">
                   Strict adherence to{' '}

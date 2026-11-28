@@ -233,13 +233,21 @@ export function CustomerReviewFlow({
   const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>(initialLang);
   const [includeBusinessName, setIncludeBusinessName] = useState<boolean>(true);
   const [selectedStyle, setSelectedStyle] = useState<ReviewStyle>(() => {
-    const rotatingStyles: ReviewStyle[] = ['short', 'detailed', 'professional'];
-    return (
-      rotatingStyles[Math.floor(Math.random() * rotatingStyles.length)] ||
-      profile.branding?.defaultReviewStyle ||
-      'short'
-    );
+    const rotatingStyles: ReviewStyle[] = ['detailed', 'professional', 'short'];
+    try {
+      if (typeof window !== 'undefined' && window.localStorage && !isPreview) {
+        const key = `reviewflow_style_idx_${profile.businessId || 'default'}`;
+        const prev = Number.parseInt(window.localStorage.getItem(key) || '', 10);
+        const nextIdx = Number.isFinite(prev) ? (prev + 1) % rotatingStyles.length : 0;
+        window.localStorage.setItem(key, String(nextIdx));
+        return rotatingStyles[nextIdx];
+      }
+    } catch {
+      // Ignore storage quota errors
+    }
+    return rotatingStyles[Math.floor(Math.random() * rotatingStyles.length)] || 'detailed';
   });
+  const hasGeneratedOnceRef = useRef(false);
 
   // Instant Ready AI Drafts Mode state (stays stable across page reloads; only rotates when clicking Refresh)
   const [instantSeed, setInstantSeed] = useState<number>(() => {
@@ -1092,8 +1100,15 @@ export function CustomerReviewFlow({
           });
 
       queuedAlternatesRef.current = {};
-      const nextSeed = variationSeed;
-      await requestAiDraft(selectedLanguage, nextSeed, submissionPromise);
+      const shouldRotateOnSubmit = hasGeneratedOnceRef.current;
+      hasGeneratedOnceRef.current = true;
+      const nextSeed = shouldRotateOnSubmit ? variationSeed + 1 : variationSeed;
+      const nextStyle = shouldRotateOnSubmit ? getNextReviewStyle(selectedStyle, 1) : selectedStyle;
+      if (shouldRotateOnSubmit) {
+        setVariationSeed(nextSeed);
+        setSelectedStyle(nextStyle);
+      }
+      await requestAiDraft(selectedLanguage, nextSeed, submissionPromise, nextStyle);
     } catch (err) {
       setGenerateError(formatApiError(err, 'Unable to save feedback or generate review draft.'));
       setIsGenerating(false);
@@ -1624,14 +1639,12 @@ export function CustomerReviewFlow({
             >
               <div className="flex items-center justify-between gap-2">
                 <span
+                  lang={effectiveInstantLanguage}
                   className={`text-[11px] font-semibold uppercase tracking-wider ${
                     isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >
-                  Option {idx + 1}
-                  {instantUi.instantOptionLabels[idx] ? ` · ${instantUi.instantOptionLabels[idx]}` : ''}
-                  {' · '}
-                  {getLanguageDisplayName(effectiveInstantLanguage)}
+                  {instantUi.instantReviewCardLabel(idx + 1)}
                 </span>
                 <button
                   type="button"

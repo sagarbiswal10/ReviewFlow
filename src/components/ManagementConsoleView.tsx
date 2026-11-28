@@ -2421,11 +2421,11 @@ export function ManagementConsoleView({
 
                 {/* 4-Col Top Businesses List */}
                 <div
-                  className={`lg:col-span-4 rounded-2xl p-5 sm:p-6 border flex flex-col justify-between ${
+                  className={`lg:col-span-4 rounded-2xl p-5 sm:p-6 border flex flex-col ${
                     isDark ? 'bg-[#151824] border-[#262B3D]' : 'bg-white border-slate-200/80 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center justify-between gap-2 mb-3">
                     <h2
                       className={`font-display text-base font-bold ${
                         isDark ? 'text-white' : 'text-slate-900'
@@ -2452,7 +2452,7 @@ export function ManagementConsoleView({
                       No businesses yet
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-1.5">
                       {topBusinesses.map((biz, idx) => {
                         const st = statsMap[biz.id];
                         return (
@@ -2463,7 +2463,7 @@ export function ManagementConsoleView({
                               setSelectedBizId(biz.id);
                               setDetailTab('access');
                             }}
-                            className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-colors text-left cursor-pointer ${
+                            className={`w-full flex items-center justify-between gap-3 px-2.5 py-2 rounded-xl border transition-colors text-left cursor-pointer ${
                               isDark
                                 ? 'border-transparent hover:bg-[#1C2030]'
                                 : 'border-transparent hover:bg-slate-50'
@@ -2519,6 +2519,19 @@ export function ManagementConsoleView({
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {topBusinesses.length > 0 && (
+                    <div
+                      className={`mt-auto pt-3 border-t flex items-center justify-between text-[11px] ${
+                        isDark ? 'border-[#262B3D] text-slate-400' : 'border-slate-100 text-slate-500'
+                      }`}
+                    >
+                      <span>Ranked by QR scans</span>
+                      <span className="font-semibold tabular-nums">
+                        Showing {topBusinesses.length} of {businesses.length}
+                      </span>
                     </div>
                   )}
                 </div>

@@ -1863,14 +1863,14 @@ export async function processGenerateReview(
     const styleGuidance: Record<ReviewStyle, string> =
       language === 'hinglish'
         ? {
-            short: 'Normally generate 2 concise sentences in natural Roman Hindi (do not force extra length or repeat details).',
-            detailed: 'Write 2-4 natural Roman Hindi sentences using only information present in the customer\'s answers.',
-            professional: 'Keep the tone polite, clear, and conversational in 2-4 everyday Roman Hindi sentences.',
+            short: 'Write 1-2 short, natural everyday Roman Hindi sentences covering the main takeaway.',
+            detailed: 'Write a detailed 3-5 sentence review in natural Roman Hindi weaving all selected feedback points, context, and 1-2 SEO concepts clearly without padding.',
+            professional: 'Write 2-3 polite, balanced, conversational Roman Hindi sentences with steady rhythm.',
           }
         : {
-            short: 'Keep it concise and natural (around 2-3 everyday sentences).',
-            detailed: 'Write a relaxed 3-5 sentence review covering only the points the customer actually shared.',
-            professional: 'Keep the tone polite, clear, and conversational (2-4 sentences).',
+            short: 'Keep it crisp and natural (1-2 everyday sentences).',
+            detailed: 'Write a noticeably fuller, natural 3-5 sentence review covering all selected answers, any written note, and smooth local context.',
+            professional: 'Keep the tone polite, clear, and well-structured (2-3 balanced sentences).',
           };
 
     const variationAngles = [
@@ -2019,10 +2019,10 @@ export async function processGenerateReview(
       '2. Owner Name Rule: NEVER assume the customer interacted with the shop owner unless the customer explicitly mentioned the owner in their answers or comment.',
       '3. Zero-Copying Rule: Learn natural tone, rhythm, and everyday phrasing from the isolated writing library, NEVER copy complete sentences or phrases from reference reviews or previous drafts.',
       '4. No SEO Hype / Superlatives: NEVER add unsupported claims such as "best", "top-rated", "number one", "#1", or "most popular" unless the customer themselves wrote it.',
-      '5. Preserve exact customer meaning and sentiment accurately — NEVER upgrade "average" to "excellent" or hide genuine criticism.',
+      '5. Preserve exact customer meaning and sentiment accurately — NEVER upgrade "average" or "poor" to "excellent" or hide genuine feedback. Whenever the customer selects Average, Mixed, or Poor/Negative options, ALWAYS end the final sentence in a polite, positive, constructive manner (hopeful for improvements next visit or appreciating the team, NEVER bitter or saying "never returning").',
       '6. Never generalize one person\'s behaviour to everyone. Keep punctuation minimal and natural.',
       '7. NEVER use generic AI clichés ("amazing experience", "delightful experience", "exceptional hospitality", "perfect blend", "epitome of excellence", "exceeded expectations", "hidden gem", "top-notch", "must-visit", "highly recommended", "everything was perfect", "one of the best places ever"). No quotes, no bullet points, no headings, no hashtags, no unrequested emojis.',
-      '8. In alternates, write 2 distinctly phrased original variations (varying length/structure smoothly between short, detailed, and professional while keeping the EXACT same language, script, and grounded facts). In keywordsUsed, list 0-3 short natural keywords used cleanly.',
+      '8. In alternates, write 2 distinctly phrased original variations spanning the OTHER review lengths/styles (if main is "short", make alternates clearly "detailed" and "professional"; if "detailed", make alternates "professional" and "short", etc.) while keeping the EXACT same language, script, grounded facts, and constructive positive closing if feedback is average/poor. In keywordsUsed, list 0-3 short natural keywords used cleanly.',
     ].join('\n');
 
     const reviewResponseSchema = {
@@ -2063,7 +2063,7 @@ export async function processGenerateReview(
           responseMimeType: 'application/json',
           responseSchema: reviewResponseSchema,
           temperature: 0.75,
-          maxOutputTokens: 420,
+          maxOutputTokens: 950,
         },
         1,
       );
@@ -2081,17 +2081,20 @@ export async function processGenerateReview(
         language,
         variationSeed,
       });
-      const fallbackAlts = [variationSeed + 1, variationSeed + 2]
+      const alternateStyles: ReviewStyle[] = (['detailed', 'professional', 'short'] as ReviewStyle[]).filter(
+        (s) => s !== style,
+      );
+      const fallbackAlts = alternateStyles
         .map(
-          (altSeed) =>
+          (altStyle, idx) =>
             composeGroundedFallbackReview({
               businessName,
               category,
               responses,
               additionalComments,
-              style,
+              style: altStyle,
               language,
-              variationSeed: altSeed,
+              variationSeed: variationSeed + idx + 1,
             }).reviewText,
         )
         .filter((txt, idx, arr) => txt && txt !== composed.reviewText && arr.indexOf(txt) === idx);

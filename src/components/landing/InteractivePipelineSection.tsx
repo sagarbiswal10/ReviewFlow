@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring } from 'motion/react';
-import { ArrowDown, Pause, Play, Smartphone, Star, ThumbsUp, Zap } from 'lucide-react';
+import { ArrowDown, Pause, Play, Star, ThumbsUp, Zap } from 'lucide-react';
 import { SpatialTilt } from '../ui/spatial-tilt';
 import { BrandedQrCard, ReviewFlowMark } from './ReviewFlowMark';
 
@@ -116,15 +116,12 @@ export function InteractivePipelineSection({
       className="relative w-full rf-dot-grid-stone border-t border-black/10 lg:h-[340vh]"
     >
       {/* Sticky Pinned Viewport Stage on Desktop (completes 01 -> 04 on scroll before scrolling down) */}
-      <div className="lg:sticky lg:top-16 lg:min-h-[calc(100vh-4rem)] flex items-center py-14 lg:py-10 overflow-hidden">
+      <div className="lg:sticky lg:top-16 lg:min-h-[calc(100vh-4rem)] flex items-center py-10 lg:py-5 overflow-hidden">
         <div className="w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
           {/* Top Editorial Header */}
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8 lg:mb-10">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6 lg:mb-6">
             <div className="max-w-xl">
               <div className="flex items-center gap-3 mb-2.5">
-                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#111114]/60">
-                  01 — THE FRICTIONLESS PIPELINE
-                </p>
                 <span className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/80 border border-black/10 font-mono text-[10px] font-semibold text-[#111114]/70">
                   {activeStep === 3 ? (
                     <>
@@ -175,8 +172,8 @@ export function InteractivePipelineSection({
           {/* 2-Column Interactive 3D Stage */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
             {/* Left: 4 Step Cards + Scroll-Synced Progress Bar */}
-            <div className="lg:col-span-4 flex flex-col justify-between gap-2.5">
-              <div className="flex flex-col gap-2.5">
+            <div className="lg:col-span-4 flex flex-col gap-3">
+              <div className="flex-1 flex flex-col gap-3">
                 {PIPELINE_STEPS.map((step, idx) => {
                   const isActive = idx === activeStep;
                   const isCompleted = idx < activeStep;
@@ -185,7 +182,7 @@ export function InteractivePipelineSection({
                       key={step.num}
                       type="button"
                       onClick={() => onJumpToStep(idx, trackRef.current)}
-                      className={`group text-left w-full rounded-2xl p-4 sm:p-4.5 transition-all duration-300 cursor-pointer border ${
+                      className={`group flex-1 flex flex-col justify-center text-left w-full rounded-2xl p-4 sm:p-5 transition-all duration-300 cursor-pointer border ${
                         isActive
                           ? 'bg-white border-[#FF3D8B] rf-shadow-pink -translate-y-0.5'
                           : isCompleted
@@ -256,7 +253,7 @@ export function InteractivePipelineSection({
                 glare={false}
                 className="h-full rounded-[28px]"
               >
-                <div className="relative h-full min-h-[490px] sm:min-h-[530px] rounded-[28px] rf-dot-grid-dark border border-white/10 p-5 sm:p-6 flex flex-col justify-between overflow-hidden shadow-[0_30px_70px_-20px_rgba(13,13,15,0.6)]">
+                <div className="relative h-full min-h-[580px] sm:min-h-[640px] lg:min-h-[650px] rounded-[28px] rf-dot-grid-dark border border-white/10 p-5 sm:p-6 flex flex-col justify-between overflow-hidden shadow-[0_30px_70px_-20px_rgba(13,13,15,0.6)]">
                   {/* Ambient glow */}
                   <div
                     aria-hidden="true"
@@ -346,42 +343,88 @@ export function InteractivePipelineSection({
                           className="w-full flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-6 sm:px-4"
                           style={{ perspective: 1200 }}
                         >
-                          <div className="flex items-center gap-6">
+                          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-7">
                             <motion.div
                               animate={{ y: [0, -6, 0] }}
                               transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+                              className="hidden sm:block"
                             >
                               <BrandedQrCard label="ReviewFlow" tone="bright" />
                             </motion.div>
 
-                            <div className="flex items-center gap-3">
-                              <motion.div
-                                initial={{ rotate: -14, scale: 0.9 }}
-                                animate={{ rotate: -8, scale: 1 }}
-                                transition={{ duration: 0.45 }}
-                                className="w-11 h-18 rounded-xl bg-[#222228] border-2 border-white/25 flex flex-col items-center justify-between p-1.5 shadow-xl"
-                              >
-                                <div className="w-5 h-1 rounded-full bg-white/30" />
-                                <Smartphone className="w-4 h-4 text-[#FF3D8B]" />
-                                <div className="w-4 h-0.5 rounded-full bg-white/20" />
-                              </motion.div>
+                            {/* Realistic 6.9-inch iPhone Pro Max Camera Scanner */}
+                            <motion.div
+                              initial={{ rotate: -5, y: 12, scale: 0.95 }}
+                              animate={{ rotate: -1.5, y: 0, scale: 1 }}
+                              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                              className="relative w-[240px] sm:w-[258px] rounded-[46px] bg-gradient-to-b from-[#4B4B55] via-[#27272E] to-[#131318] p-[3px] shadow-[0_32px_80px_-14px_rgba(0,0,0,0.9),inset_0_1px_1px_rgba(255,255,255,0.28)] shrink-0"
+                            >
+                              {/* Left Titanium Buttons: Action + Volume Up + Volume Down */}
+                              <div className="absolute -left-[4px] top-20 w-[3px] h-5 rounded-l bg-[#60606B]" />
+                              <div className="absolute -left-[4px] top-28 w-[3px] h-10 rounded-l bg-[#60606B]" />
+                              <div className="absolute -left-[4px] top-41 w-[3px] h-10 rounded-l bg-[#60606B]" />
+                              {/* Right Titanium Buttons: Side Power + Camera Control */}
+                              <div className="absolute -right-[4px] top-30 w-[3px] h-14 rounded-r bg-[#60606B]" />
+                              <div className="absolute -right-[4px] bottom-28 w-[3px] h-11 rounded-r bg-[#60606B]" />
 
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.85 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: 0.12, duration: 0.4 }}
-                                className="flex flex-col items-center gap-2"
-                              >
-                                <div className="w-14 h-14 rounded-full p-1 bg-gradient-to-tr from-[#FF3D8B] via-[#FACC15] to-[#2454FF] shadow-lg">
-                                  <div className="w-full h-full rounded-full bg-[#19191E] flex items-center justify-center font-display font-bold text-white text-base border-2 border-[#0D0D0F]">
-                                    RF
+                              {/* Ultra-thin black OLED display bezel */}
+                              <div className="rounded-[43px] bg-[#040406] p-[6px]">
+                                <div className="rounded-[37px] bg-gradient-to-b from-[#0E131E] via-[#0B0F17] to-[#080A10] px-4 pt-3 pb-3 flex flex-col justify-between min-h-[470px] sm:min-h-[490px] border border-white/10 overflow-hidden relative">
+                                  {/* Status bar + Dynamic Island */}
+                                  <div className="grid grid-cols-3 items-center px-1">
+                                    <span className="text-[11px] font-semibold text-white/90 tabular-nums text-left">
+                                      9:41
+                                    </span>
+                                    <div className="mx-auto w-[78px] h-[20px] rounded-full bg-black border border-white/15 flex items-center justify-end pr-2 shadow-inner">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-[#111827] ring-1 ring-blue-400/25 flex items-center justify-center">
+                                        <span className="w-1 h-1 rounded-full bg-indigo-400/50" />
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <span className="text-[9px] font-bold text-white/80">5G</span>
+                                      <div className="w-4 h-2.5 rounded-[3px] border border-white/55 p-[1px]">
+                                        <div className="w-full h-full bg-[#4ADE80] rounded-[1px]" />
+                                      </div>
+                                    </div>
                                   </div>
+
+                                  {/* Live iOS Camera QR Scanner Frame */}
+                                  <div className="my-4 flex flex-col items-center">
+                                    <p className="font-mono text-[9px] uppercase tracking-widest text-white/50 mb-4">
+                                      Camera · QR Auto-Detect
+                                    </p>
+                                    <div className="relative w-36 h-36 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center p-4">
+                                      <span className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-[#FF3D8B] rounded-tl" />
+                                      <span className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-[#FF3D8B] rounded-tr" />
+                                      <span className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-[#FF3D8B] rounded-bl" />
+                                      <span className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-[#FF3D8B] rounded-br" />
+
+                                      <motion.div
+                                        animate={{ y: [-40, 40, -40] }}
+                                        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                                        className="absolute left-3 right-3 h-[2px] bg-[#FF3D8B] shadow-[0_0_12px_#FF3D8B]"
+                                      />
+
+                                      <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-[#FF3D8B] via-[#FACC15] to-[#2454FF] shadow-lg">
+                                        <div className="w-full h-full rounded-full bg-[#16161B] flex items-center justify-center font-display font-bold text-white text-base">
+                                          RF
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-5 px-3.5 py-1.5 rounded-full bg-[#FACC15] text-[#111114] font-mono text-[9px] font-bold tracking-wider uppercase shadow-lg">
+                                      reviewflow.app ↗
+                                    </div>
+                                    <p className="text-[10px] text-white/55 mt-2">
+                                      Tap banner to start in seconds
+                                    </p>
+                                  </div>
+
+                                  {/* Bottom iOS Home Indicator */}
+                                  <div className="w-24 h-1 rounded-full bg-white/35 mx-auto" />
                                 </div>
-                                <span className="px-2.5 py-1 rounded-md bg-[#FACC15] text-[#111114] font-mono text-[9px] font-bold tracking-wider uppercase rf-shadow-dark-sm">
-                                  GUEST · SCANNING
-                                </span>
-                              </motion.div>
-                            </div>
+                              </div>
+                            </motion.div>
                           </div>
 
                           {/* 4 Placement Stand Attribution Preview */}
@@ -420,140 +463,205 @@ export function InteractivePipelineSection({
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: -18, scale: 0.97 }}
                           transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                          className="relative w-full flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-5"
+                          className="relative w-full flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-8 lg:px-4"
                         >
-                          {/* Left: Mini QR Card with Verified Badge */}
-                          <div className="hidden sm:flex flex-col items-center shrink-0 relative">
-                            <BrandedQrCard
-                              label="ReviewFlow"
-                              tone="bright"
-                              verified
-                              className="scale-[0.78] origin-center"
-                            />
-                          </div>
-
-                          <div className="hidden lg:block w-8 h-0.5 bg-gradient-to-r from-[#FF3D8B] to-[#FF3D8B]/40 shrink-0 -mx-4" />
-
-                          {/* Center: 3D Mobile Phone Frame (ReviewFlow — NO Lumina Studio!) */}
+                          {/* Center-Left: Realistic 6.9-inch iPhone Pro Max Titanium Frame */}
                           <motion.div
                             initial={{ rotateY: -6 }}
                             animate={{ rotateY: 0 }}
                             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                            className="w-full max-w-[262px] rounded-[32px] bg-[#ECE9E1] p-3 text-[#111114] border-[5px] border-[#1F1F25] shadow-[0_26px_60px_-15px_rgba(0,0,0,0.75)] shrink-0 relative"
+                            className="relative w-full max-w-[322px] sm:max-w-[338px] rounded-[50px] bg-gradient-to-b from-[#52525E] via-[#282830] to-[#131318] p-[3.5px] shadow-[0_36px_90px_-14px_rgba(0,0,0,0.92),inset_0_1px_1.5px_rgba(255,255,255,0.3)] shrink-0"
                           >
-                            <div className="w-16 h-3 rounded-full bg-[#111114] mx-auto mb-2.5" />
+                            {/* Left Titanium Hardware Buttons: Action + Volume Up + Volume Down */}
+                            <div className="hidden sm:block absolute -left-[4.5px] top-24 w-[3.5px] h-6 rounded-l-sm bg-[#6B6B76]" />
+                            <div className="hidden sm:block absolute -left-[4.5px] top-34 w-[3.5px] h-11 rounded-l-sm bg-[#6B6B76]" />
+                            <div className="hidden sm:block absolute -left-[4.5px] top-48 w-[3.5px] h-11 rounded-l-sm bg-[#6B6B76]" />
+                            {/* Right Titanium Hardware Buttons: Side Power + Camera Control */}
+                            <div className="hidden sm:block absolute -right-[4.5px] top-36 w-[3.5px] h-16 rounded-r-sm bg-[#6B6B76]" />
+                            <div className="hidden sm:block absolute -right-[4.5px] bottom-32 w-[3.5px] h-12 rounded-r-sm bg-[#6B6B76]" />
 
-                            {/* Phone Header: ReviewFlow */}
-                            <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-black/8">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-6 h-6 rounded-lg bg-[#111114] text-white flex items-center justify-center font-display font-bold text-[10px] shrink-0">
-                                  RF
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-[11px] font-bold text-[#111114] leading-tight truncate">
-                                    ReviewFlow
+                            {/* Razor-thin Black OLED Display Bezel */}
+                            <div className="rounded-[46.5px] bg-[#040406] p-[6.5px]">
+                              {/* Tall 6.9-inch Edge-to-Edge OLED Screen */}
+                              <div className="relative rounded-[40px] bg-[#F5F2EA] px-4 pt-3 pb-3 text-[#111114] min-h-[545px] sm:min-h-[565px] flex flex-col justify-between border border-black/15 overflow-hidden">
+                                {/* Top Micro Speaker Slit */}
+                                <div className="w-12 h-[2px] rounded-full bg-black/15 mx-auto -mt-1.5 mb-1.5" />
+
+                                <div className="flex-1 flex flex-col">
+                                  {/* Phone Status Bar + Centered Dynamic Island */}
+                                  <div className="grid grid-cols-3 items-center px-0.5 pb-3">
+                                    <span className="text-[11px] font-bold text-[#111114] tabular-nums text-left">
+                                      9:41
+                                    </span>
+                                    <div className="mx-auto w-[96px] h-[22px] rounded-full bg-[#09090C] flex items-center justify-end pr-2 shadow-inner ring-1 ring-black/20">
+                                      <span className="w-3 h-3 rounded-full bg-[#111827] ring-1 ring-blue-400/25 flex items-center justify-center">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/45" />
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <div className="flex items-end gap-[1.5px]">
+                                        <span className="w-[2px] h-1.5 rounded-full bg-[#111114]" />
+                                        <span className="w-[2px] h-2 rounded-full bg-[#111114]" />
+                                        <span className="w-[2px] h-2.5 rounded-full bg-[#111114]" />
+                                        <span className="w-[2px] h-3 rounded-full bg-[#111114]" />
+                                      </div>
+                                      <span className="text-[9px] font-bold text-[#111114]">5G</span>
+                                      <div className="w-4.5 h-2.5 rounded-[3px] border border-[#111114]/75 p-[1px]">
+                                        <div className="w-full h-full rounded-[1px] bg-[#16A34A]" />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* App Header: ReviewFlow */}
+                                  <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-black/10">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className="w-7 h-7 rounded-lg bg-[#111114] text-white flex items-center justify-center font-display font-bold text-xs shrink-0">
+                                        RF
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold text-[#111114] leading-tight truncate">
+                                          ReviewFlow
+                                        </p>
+                                        <p className="text-[10px] text-[#111114]/55 truncate">
+                                          Verified Storefront
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <span className="px-2.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#15803D] text-[10px] font-bold shrink-0">
+                                      Verified QR
+                                    </span>
+                                  </div>
+
+                                  {/* Full-Width 4-Language Pill Bar */}
+                                  <div className="grid grid-cols-4 gap-1.5 mb-3.5">
+                                    {['EN', 'हिंदी', 'मराठी', 'Hinglish'].map((lang, lIdx) => (
+                                      <span
+                                        key={lang}
+                                        className={`py-1 rounded-lg text-[9.5px] font-semibold text-center ${
+                                          lIdx === 0
+                                            ? 'bg-[#2454FF] text-white shadow-xs'
+                                            : 'bg-white/90 text-[#111114]/70 border border-black/10'
+                                        }`}
+                                      >
+                                        {lang}
+                                      </span>
+                                    ))}
+                                  </div>
+
+                                  {/* Quick Experience Rating Row */}
+                                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/85 border border-black/10 mb-3">
+                                    <span className="text-[10.5px] font-semibold text-[#111114]/75">
+                                      Visit Rating
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {[1, 2, 3, 4, 5].map((s) => (
+                                        <Star
+                                          key={s}
+                                          className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]"
+                                        />
+                                      ))}
+                                      <span className="text-[10px] font-bold text-[#111114] ml-1">
+                                        Great
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Prompt + Flush 2x2 Selection Chips */}
+                                  <p className="font-display text-[13.5px] font-bold text-[#111114] mb-2">
+                                    How was your visit today?
                                   </p>
-                                  <p className="text-[9px] text-[#111114]/55 truncate">
-                                    Verified Storefront
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#15803D] text-[9px] font-bold shrink-0">
-                                Verified QR
-                              </span>
-                            </div>
 
-                            {/* Multilingual Language Pill Strip */}
-                            <div className="flex items-center gap-1 mb-2">
-                              {['EN', 'हिंदी', 'मराठी', 'Hinglish'].map((lang, lIdx) => (
-                                <span
-                                  key={lang}
-                                  className={`px-1.5 py-0.5 rounded text-[8px] font-semibold ${
-                                    lIdx === 0
-                                      ? 'bg-[#2454FF] text-white'
-                                      : 'bg-white/80 text-[#111114]/65 border border-black/10'
-                                  }`}
-                                >
-                                  {lang}
-                                </span>
-                              ))}
-                            </div>
+                                  <div className="grid grid-cols-2 gap-1.5 mb-3">
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-[#111114] text-white text-[10px] font-semibold text-center">
+                                      Balayage
+                                    </span>
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-white text-[#111114]/75 border border-black/10 text-[10px] font-medium text-center">
+                                      Haircut
+                                    </span>
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-[#111114] text-white text-[10px] font-semibold text-center">
+                                      Warm vibe
+                                    </span>
+                                    <span
+                                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-semibold text-center transition-colors duration-300 ${
+                                        activeStep === 3
+                                          ? 'bg-[#111114] text-white'
+                                          : 'bg-white text-[#111114]/75 border border-black/10'
+                                      }`}
+                                    >
+                                      Attentive care
+                                    </span>
+                                  </div>
 
-                            <p className="font-display text-xs font-bold text-[#111114] mb-2">
-                              How was your visit today?
-                            </p>
-
-                            <div className="flex flex-wrap gap-1 mb-2.5">
-                              <span className="px-2 py-0.5 rounded-full bg-[#111114] text-white text-[9px] font-semibold">
-                                Balayage
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full bg-white text-[#111114]/70 border border-black/10 text-[9px] font-medium">
-                                Haircut
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full bg-[#111114] text-white text-[9px] font-semibold">
-                                Warm vibe
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-semibold transition-colors duration-300 ${
-                                  activeStep === 3
-                                    ? 'bg-[#111114] text-white'
-                                    : 'bg-white text-[#111114]/70 border border-black/10'
-                                }`}
-                              >
-                                Attentive care
-                              </span>
-                            </div>
-
-                            <div className="rounded-xl bg-white p-2.5 border border-black/8 mb-2.5 min-h-[96px] flex flex-col justify-between">
-                              <div>
-                                <div className="flex items-center justify-between font-mono text-[8px] font-bold uppercase tracking-wider mb-1">
-                                  <span className="text-[#FF3D8B]">PERSONALIZED GOOGLE DRAFT</span>
-                                  <span className="text-[#111114]/40">EDITABLE</span>
-                                </div>
-                                {activeStep === 3 ? (
-                                  <p className="text-[10px] text-[#111114]/85 leading-relaxed">
-                                    {fullDraft.slice(0, typedChars)}
-                                    {typedChars < fullDraft.length && (
-                                      <span className="inline-block w-1 h-3 bg-[#FF3D8B] ml-0.5 animate-pulse align-middle" />
+                                  {/* Draft Card (tight natural height — zero empty blank gap inside) */}
+                                  <div className="rounded-2xl bg-white p-3.5 border border-black/10 shadow-xs">
+                                    <div className="flex items-center justify-between font-mono text-[8.5px] font-bold uppercase tracking-wider mb-1.5">
+                                      <span className="text-[#FF3D8B]">PERSONALIZED GOOGLE DRAFT</span>
+                                      <span className="text-[#111114]/45">EDITABLE</span>
+                                    </div>
+                                    {activeStep === 3 ? (
+                                      <p className="text-[11.5px] text-[#111114]/85 leading-[1.55]">
+                                        {fullDraft.slice(0, typedChars)}
+                                        {typedChars < fullDraft.length && (
+                                          <span className="inline-block w-1 h-3.5 bg-[#FF3D8B] ml-0.5 animate-pulse align-middle" />
+                                        )}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[11.5px] text-[#111114]/45 italic leading-[1.55]">
+                                        Generating a natural review directly from your tapped selections...
+                                      </p>
                                     )}
-                                  </p>
-                                ) : (
-                                  <p className="text-[10px] text-[#111114]/35 italic">
-                                    Generating from your taps...
-                                  </p>
-                                )}
-                              </div>
-                              <p className="font-mono text-[8px] text-[#111114]/45 mt-1.5 tabular-nums">
-                                {activeStep === 3
-                                  ? `${Math.min(185, typedChars)} characters`
-                                  : '0 characters'}
-                              </p>
-                            </div>
+                                    <div className="flex items-center justify-between pt-2 mt-2.5 border-t border-black/8 font-mono text-[9px] text-[#111114]/50 tabular-nums">
+                                      <span>
+                                        {activeStep === 3
+                                          ? `${Math.min(185, typedChars)} characters`
+                                          : '0 characters'}
+                                      </span>
+                                      <span>Ready for Google</span>
+                                    </div>
+                                  </div>
+                                </div>
 
-                            <div
-                              className={`w-full py-2 rounded-full text-center text-[10px] font-bold transition-colors duration-300 ${
-                                activeStep === 3
-                                  ? 'bg-[#FF3D8B] text-[#111114] shadow-[0_6px_18px_rgba(255,61,139,0.45)]'
-                                  : 'bg-[#111114] text-white'
-                              }`}
-                            >
-                              Copy &amp; Post on Google
+                                {/* Bottom Action Dock */}
+                                <div className="space-y-2 pt-3">
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div className="py-1.5 rounded-xl border border-black/12 bg-white text-center text-[10px] font-semibold text-[#111114]/75">
+                                      Edit Review
+                                    </div>
+                                    <div className="py-1.5 rounded-xl border border-black/12 bg-white text-center text-[10px] font-semibold text-[#111114]/75">
+                                      Regenerate
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    className={`w-full py-2.5 rounded-full text-center text-[11px] font-bold transition-colors duration-300 ${
+                                      activeStep === 3
+                                        ? 'bg-[#FF3D8B] text-[#111114] shadow-[0_8px_22px_rgba(255,61,139,0.45)]'
+                                        : 'bg-[#111114] text-white'
+                                    }`}
+                                  >
+                                    Copy &amp; Post on Google
+                                  </div>
+
+                                  {/* Bottom iOS Home Indicator */}
+                                  <div className="w-28 h-1 rounded-full bg-[#111114]/35 mx-auto mt-1.5" />
+                                </div>
+                              </div>
                             </div>
                           </motion.div>
 
                           {/* Right: Floating Connected Telemetry Cards */}
-                          <div className="flex flex-col gap-2.5 w-full md:w-[220px] shrink-0">
+                          <div className="flex flex-col gap-3 w-full md:w-[235px] shrink-0">
                             <motion.div
                               initial={{ opacity: 0, x: 16 }}
                               animate={{ opacity: 1, x: 0 }}
                               transition={{ delay: 0.08, duration: 0.36 }}
-                              className="rounded-xl bg-[#18181D] border border-white/10 p-3 shadow-lg"
+                              className="rounded-xl bg-[#18181D] border border-white/10 p-3.5 shadow-lg"
                             >
-                              <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-white/60 mb-1.5">
+                              <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-white/60 mb-2">
                                 <ThumbsUp className="w-3 h-3 text-[#60A5FA]" />
                                 <span>GUEST TAPS</span>
                               </div>
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex flex-wrap gap-1.5">
                                 <span className="px-2 py-0.5 rounded-full bg-[#FF3D8B] text-[#111114] text-[9px] font-bold">
                                   Balayage
                                 </span>
@@ -571,13 +679,13 @@ export function InteractivePipelineSection({
                                 initial={{ opacity: 0, x: 18, y: 8 }}
                                 animate={{ opacity: 1, x: 0, y: 0 }}
                                 transition={{ delay: 0.18, duration: 0.38 }}
-                                className="rounded-xl bg-[#18181D] border border-white/10 p-3 shadow-lg"
+                                className="rounded-xl bg-[#18181D] border border-white/10 p-3.5 shadow-lg"
                               >
-                                <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[#FACC15] mb-1">
+                                <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[#FACC15] mb-1.5">
                                   <Zap className="w-3 h-3" />
                                   <span>MULTILINGUAL · SHORT</span>
                                 </div>
-                                <p className="text-[10px] text-white/70 leading-snug">
+                                <p className="text-[11px] text-white/75 leading-snug">
                                   English, Hindi, Marathi &amp; Hinglish drafts built strictly from
                                   guest selections.
                                 </p>
@@ -589,7 +697,7 @@ export function InteractivePipelineSection({
                                 initial={{ opacity: 0, x: 20, scale: 0.92 }}
                                 animate={{ opacity: 1, x: 0, scale: 1 }}
                                 transition={{ delay: 0.3, duration: 0.4 }}
-                                className="rounded-xl bg-[#F5F3EE] text-[#111114] p-2.5 rf-shadow-pink border border-black/10"
+                                className="rounded-xl bg-[#F5F3EE] text-[#111114] p-3 rf-shadow-pink border border-black/10"
                               >
                                 <div className="flex items-center justify-between gap-2 mb-1">
                                   <div className="flex items-center gap-1.5">
@@ -612,8 +720,8 @@ export function InteractivePipelineSection({
                                     />
                                   ))}
                                 </div>
-                                <p className="text-[9px] font-mono text-[#111114]/65">
-                                  Posted on Google · 18–24 s
+                                <p className="text-[9.5px] font-mono text-[#111114]/65">
+                                  Posted on Google · In seconds
                                 </p>
                               </motion.div>
                             )}

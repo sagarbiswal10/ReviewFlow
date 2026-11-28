@@ -35,6 +35,7 @@ export interface LocalizedFormUiStrings {
   instantHeaderTitle: string;
   instantReadySubtitle: string;
   instantFooterHint: string;
+  instantReviewCardLabel: (index: number) => string;
   instantOptionLabels: [string, string, string, string, string];
   instantRefreshButton: string;
   instantCopyAndOpenButton: string;
@@ -1004,6 +1005,7 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     instantHeaderTitle: 'Choose & Post Your Review',
     instantReadySubtitle: 'Tap Copy & Post to share directly on Google.',
     instantFooterHint: "Tap Copy & Post on any card — we'll copy the review and open Google Reviews for you.",
+    instantReviewCardLabel: (index: number) => `Review ${index}`,
     instantOptionLabels: ['Short', 'Professional', 'Detailed', 'Average', 'Poor'],
     instantRefreshButton: 'Refresh',
     instantCopyAndOpenButton: 'Copy & Post on Google',
@@ -1039,6 +1041,7 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     instantHeaderTitle: 'तुमचा रिव्ह्यू निवडा आणि पोस्ट करा',
     instantReadySubtitle: 'कॉपी करून थेट Google वर पोस्ट करा.',
     instantFooterHint: 'कोणत्याही कार्डवर कॉपी व पोस्ट दाबा — आम्ही रिव्ह्यू कॉपी करून Google उघडू.',
+    instantReviewCardLabel: (index: number) => `रिव्ह्यू ${index}`,
     instantOptionLabels: ['संक्षिप्त', 'व्यावसायिक', 'सविस्तर', 'सामान्य', 'सुधारणा आवश्यक'],
     instantRefreshButton: 'रिफ्रेश करा',
     instantCopyAndOpenButton: 'कॉपी करून Google वर पोस्ट करा',
@@ -1074,6 +1077,7 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     instantHeaderTitle: 'अपना रिव्यू चुनें और पोस्ट करें',
     instantReadySubtitle: 'कॉपी करें और सीधे Google पर पोस्ट करें।',
     instantFooterHint: 'किसी भी कार्ड पर कॉपी व पोस्ट दबाएं — रिव्यू कॉपी होकर Google खुल जाएगा।',
+    instantReviewCardLabel: (index: number) => `रिव्यू ${index}`,
     instantOptionLabels: ['संक्षिप्त', 'प्रोफेशनल', 'विस्तृत', 'औसत', 'कमज़ोर / सुधार ज़रूरी'],
     instantRefreshButton: 'रिफ्रेश करें',
     instantCopyAndOpenButton: 'कॉपी और Google पर पोस्ट करें',
@@ -1109,6 +1113,7 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     instantHeaderTitle: 'Apna Review Chunein aur Post Karein',
     instantReadySubtitle: 'Copy karein aur seedha Google par post karein.',
     instantFooterHint: 'Kisi bhi card par dabaiye — review copy hokar seedha Google khul jayega.',
+    instantReviewCardLabel: (index: number) => `Review ${index}`,
     instantOptionLabels: ['Chhota', 'Sahi & Seedha', 'Lamba (Detailed)', 'Theek-Thak', 'Kamzor (Poor)'],
     instantRefreshButton: 'Refresh',
     instantCopyAndOpenButton: 'Copy & Google Par Post Karein',
