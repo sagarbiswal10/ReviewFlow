@@ -172,8 +172,8 @@ export function InteractivePipelineSection({
           {/* 2-Column Interactive 3D Stage */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
             {/* Left: 4 Step Cards + Scroll-Synced Progress Bar */}
-            <div className="lg:col-span-4 flex flex-col justify-between gap-2.5">
-              <div className="flex flex-col gap-2.5">
+            <div className="lg:col-span-4 flex flex-col gap-3">
+              <div className="flex-1 flex flex-col gap-3">
                 {PIPELINE_STEPS.map((step, idx) => {
                   const isActive = idx === activeStep;
                   const isCompleted = idx < activeStep;
@@ -182,7 +182,7 @@ export function InteractivePipelineSection({
                       key={step.num}
                       type="button"
                       onClick={() => onJumpToStep(idx, trackRef.current)}
-                      className={`group text-left w-full rounded-2xl p-4 sm:p-4.5 transition-all duration-300 cursor-pointer border ${
+                      className={`group flex-1 flex flex-col justify-center text-left w-full rounded-2xl p-4 sm:p-5 transition-all duration-300 cursor-pointer border ${
                         isActive
                           ? 'bg-white border-[#FF3D8B] rf-shadow-pink -translate-y-0.5'
                           : isCompleted
@@ -548,12 +548,30 @@ export function InteractivePipelineSection({
                                     ))}
                                   </div>
 
+                                  {/* Quick Experience Rating Row */}
+                                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/85 border border-black/10 mb-3">
+                                    <span className="text-[10.5px] font-semibold text-[#111114]/75">
+                                      Visit Rating
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {[1, 2, 3, 4, 5].map((s) => (
+                                        <Star
+                                          key={s}
+                                          className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]"
+                                        />
+                                      ))}
+                                      <span className="text-[10px] font-bold text-[#111114] ml-1">
+                                        Great
+                                      </span>
+                                    </div>
+                                  </div>
+
                                   {/* Prompt + Flush 2x2 Selection Chips */}
                                   <p className="font-display text-[13.5px] font-bold text-[#111114] mb-2">
                                     How was your visit today?
                                   </p>
 
-                                  <div className="grid grid-cols-2 gap-1.5 mb-3.5">
+                                  <div className="grid grid-cols-2 gap-1.5 mb-3">
                                     <span className="px-2.5 py-1.5 rounded-xl bg-[#111114] text-white text-[10px] font-semibold text-center">
                                       Balayage
                                     </span>
@@ -574,27 +592,25 @@ export function InteractivePipelineSection({
                                     </span>
                                   </div>
 
-                                  {/* Draft Card (fills clean mid height with crisp header & footer divider) */}
-                                  <div className="flex-1 rounded-2xl bg-white p-3.5 border border-black/10 flex flex-col justify-between shadow-xs mb-3">
-                                    <div>
-                                      <div className="flex items-center justify-between font-mono text-[8.5px] font-bold uppercase tracking-wider mb-2">
-                                        <span className="text-[#FF3D8B]">PERSONALIZED GOOGLE DRAFT</span>
-                                        <span className="text-[#111114]/45">EDITABLE</span>
-                                      </div>
-                                      {activeStep === 3 ? (
-                                        <p className="text-[11px] text-[#111114]/85 leading-relaxed">
-                                          {fullDraft.slice(0, typedChars)}
-                                          {typedChars < fullDraft.length && (
-                                            <span className="inline-block w-1 h-3.5 bg-[#FF3D8B] ml-0.5 animate-pulse align-middle" />
-                                          )}
-                                        </p>
-                                      ) : (
-                                        <p className="text-[11px] text-[#111114]/45 italic leading-relaxed">
-                                          Generating a natural review directly from your tapped selections...
-                                        </p>
-                                      )}
+                                  {/* Draft Card (tight natural height — zero empty blank gap inside) */}
+                                  <div className="rounded-2xl bg-white p-3.5 border border-black/10 shadow-xs">
+                                    <div className="flex items-center justify-between font-mono text-[8.5px] font-bold uppercase tracking-wider mb-1.5">
+                                      <span className="text-[#FF3D8B]">PERSONALIZED GOOGLE DRAFT</span>
+                                      <span className="text-[#111114]/45">EDITABLE</span>
                                     </div>
-                                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-black/8 font-mono text-[9px] text-[#111114]/50 tabular-nums">
+                                    {activeStep === 3 ? (
+                                      <p className="text-[11.5px] text-[#111114]/85 leading-[1.55]">
+                                        {fullDraft.slice(0, typedChars)}
+                                        {typedChars < fullDraft.length && (
+                                          <span className="inline-block w-1 h-3.5 bg-[#FF3D8B] ml-0.5 animate-pulse align-middle" />
+                                        )}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[11.5px] text-[#111114]/45 italic leading-[1.55]">
+                                        Generating a natural review directly from your tapped selections...
+                                      </p>
+                                    )}
+                                    <div className="flex items-center justify-between pt-2 mt-2.5 border-t border-black/8 font-mono text-[9px] text-[#111114]/50 tabular-nums">
                                       <span>
                                         {activeStep === 3
                                           ? `${Math.min(185, typedChars)} characters`
@@ -606,7 +622,7 @@ export function InteractivePipelineSection({
                                 </div>
 
                                 {/* Bottom Action Dock */}
-                                <div className="space-y-2">
+                                <div className="space-y-2 pt-3">
                                   <div className="grid grid-cols-2 gap-1.5">
                                     <div className="py-1.5 rounded-xl border border-black/12 bg-white text-center text-[10px] font-semibold text-[#111114]/75">
                                       Edit Review
