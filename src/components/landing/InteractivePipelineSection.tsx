@@ -122,9 +122,6 @@ export function InteractivePipelineSection({
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6 lg:mb-6">
             <div className="max-w-xl">
               <div className="flex items-center gap-3 mb-2.5">
-                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#111114]/60">
-                  01 — THE FRICTIONLESS PIPELINE
-                </p>
                 <span className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/80 border border-black/10 font-mono text-[10px] font-semibold text-[#111114]/70">
                   {activeStep === 3 ? (
                     <>
@@ -374,16 +371,16 @@ export function InteractivePipelineSection({
                               <div className="rounded-[43px] bg-[#040406] p-[6px]">
                                 <div className="rounded-[37px] bg-gradient-to-b from-[#0E131E] via-[#0B0F17] to-[#080A10] px-4 pt-3 pb-3 flex flex-col justify-between min-h-[470px] sm:min-h-[490px] border border-white/10 overflow-hidden relative">
                                   {/* Status bar + Dynamic Island */}
-                                  <div className="flex items-center justify-between gap-2 px-1">
-                                    <span className="text-[11px] font-semibold text-white/90 tabular-nums">
+                                  <div className="grid grid-cols-3 items-center px-1">
+                                    <span className="text-[11px] font-semibold text-white/90 tabular-nums text-left">
                                       9:41
                                     </span>
-                                    <div className="w-[78px] h-[20px] rounded-full bg-black border border-white/15 flex items-center justify-end pr-2 shadow-inner">
+                                    <div className="mx-auto w-[78px] h-[20px] rounded-full bg-black border border-white/15 flex items-center justify-end pr-2 shadow-inner">
                                       <span className="w-2.5 h-2.5 rounded-full bg-[#111827] ring-1 ring-blue-400/25 flex items-center justify-center">
                                         <span className="w-1 h-1 rounded-full bg-indigo-400/50" />
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center justify-end gap-1.5">
                                       <span className="text-[9px] font-bold text-white/80">5G</span>
                                       <div className="w-4 h-2.5 rounded-[3px] border border-white/55 p-[1px]">
                                         <div className="w-full h-full bg-[#4ADE80] rounded-[1px]" />
@@ -486,22 +483,22 @@ export function InteractivePipelineSection({
                             {/* Razor-thin Black OLED Display Bezel */}
                             <div className="rounded-[46.5px] bg-[#040406] p-[6.5px]">
                               {/* Tall 6.9-inch Edge-to-Edge OLED Screen */}
-                              <div className="relative rounded-[40px] bg-[#F5F2EA] px-4 pt-3 pb-2.5 text-[#111114] min-h-[545px] sm:min-h-[565px] flex flex-col justify-between border border-black/15 overflow-hidden">
+                              <div className="relative rounded-[40px] bg-[#F5F2EA] px-4 pt-3 pb-3 text-[#111114] min-h-[545px] sm:min-h-[565px] flex flex-col justify-between border border-black/15 overflow-hidden">
                                 {/* Top Micro Speaker Slit */}
                                 <div className="w-12 h-[2px] rounded-full bg-black/15 mx-auto -mt-1.5 mb-1.5" />
 
-                                <div>
-                                  {/* Phone Status Bar + Dynamic Island */}
-                                  <div className="flex items-center justify-between gap-2 px-1 pb-3">
-                                    <span className="text-[11px] font-bold text-[#111114] tabular-nums">
+                                <div className="flex-1 flex flex-col">
+                                  {/* Phone Status Bar + Centered Dynamic Island */}
+                                  <div className="grid grid-cols-3 items-center px-0.5 pb-3">
+                                    <span className="text-[11px] font-bold text-[#111114] tabular-nums text-left">
                                       9:41
                                     </span>
-                                    <div className="w-[96px] h-[22px] rounded-full bg-[#09090C] flex items-center justify-end pr-2 shadow-inner ring-1 ring-black/20">
+                                    <div className="mx-auto w-[96px] h-[22px] rounded-full bg-[#09090C] flex items-center justify-end pr-2 shadow-inner ring-1 ring-black/20">
                                       <span className="w-3 h-3 rounded-full bg-[#111827] ring-1 ring-blue-400/25 flex items-center justify-center">
                                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/45" />
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center justify-end gap-1.5">
                                       <div className="flex items-end gap-[1.5px]">
                                         <span className="w-[2px] h-1.5 rounded-full bg-[#111114]" />
                                         <span className="w-[2px] h-2 rounded-full bg-[#111114]" />
@@ -516,8 +513,8 @@ export function InteractivePipelineSection({
                                   </div>
 
                                   {/* App Header: ReviewFlow */}
-                                  <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-black/10">
-                                    <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-black/10">
+                                    <div className="flex items-center gap-2 min-w-0">
                                       <div className="w-7 h-7 rounded-lg bg-[#111114] text-white flex items-center justify-center font-display font-bold text-xs shrink-0">
                                         RF
                                       </div>
@@ -535,15 +532,15 @@ export function InteractivePipelineSection({
                                     </span>
                                   </div>
 
-                                  {/* Multilingual Language Pill Strip */}
-                                  <div className="flex items-center gap-1.5 mb-3">
+                                  {/* Full-Width 4-Language Pill Bar */}
+                                  <div className="grid grid-cols-4 gap-1.5 mb-3.5">
                                     {['EN', 'हिंदी', 'मराठी', 'Hinglish'].map((lang, lIdx) => (
                                       <span
                                         key={lang}
-                                        className={`px-2 py-0.5 rounded-md text-[9px] font-semibold ${
+                                        className={`py-1 rounded-lg text-[9.5px] font-semibold text-center ${
                                           lIdx === 0
-                                            ? 'bg-[#2454FF] text-white'
-                                            : 'bg-white/85 text-[#111114]/70 border border-black/10'
+                                            ? 'bg-[#2454FF] text-white shadow-xs'
+                                            : 'bg-white/90 text-[#111114]/70 border border-black/10'
                                         }`}
                                       >
                                         {lang}
@@ -551,36 +548,38 @@ export function InteractivePipelineSection({
                                     ))}
                                   </div>
 
-                                  <p className="font-display text-sm font-bold text-[#111114] mb-2.5">
+                                  {/* Prompt + Flush 2x2 Selection Chips */}
+                                  <p className="font-display text-[13.5px] font-bold text-[#111114] mb-2">
                                     How was your visit today?
                                   </p>
 
-                                  <div className="flex flex-wrap gap-1.5 mb-3.5">
-                                    <span className="px-2.5 py-1 rounded-full bg-[#111114] text-white text-[10px] font-semibold">
+                                  <div className="grid grid-cols-2 gap-1.5 mb-3.5">
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-[#111114] text-white text-[10px] font-semibold text-center">
                                       Balayage
                                     </span>
-                                    <span className="px-2.5 py-1 rounded-full bg-white text-[#111114]/70 border border-black/10 text-[10px] font-medium">
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-white text-[#111114]/75 border border-black/10 text-[10px] font-medium text-center">
                                       Haircut
                                     </span>
-                                    <span className="px-2.5 py-1 rounded-full bg-[#111114] text-white text-[10px] font-semibold">
+                                    <span className="px-2.5 py-1.5 rounded-xl bg-[#111114] text-white text-[10px] font-semibold text-center">
                                       Warm vibe
                                     </span>
                                     <span
-                                      className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors duration-300 ${
+                                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-semibold text-center transition-colors duration-300 ${
                                         activeStep === 3
                                           ? 'bg-[#111114] text-white'
-                                          : 'bg-white text-[#111114]/70 border border-black/10'
+                                          : 'bg-white text-[#111114]/75 border border-black/10'
                                       }`}
                                     >
                                       Attentive care
                                     </span>
                                   </div>
 
-                                  <div className="rounded-2xl bg-white p-3 border border-black/10 min-h-[156px] flex flex-col justify-between shadow-xs">
+                                  {/* Draft Card (fills clean mid height with crisp header & footer divider) */}
+                                  <div className="flex-1 rounded-2xl bg-white p-3.5 border border-black/10 flex flex-col justify-between shadow-xs mb-3">
                                     <div>
-                                      <div className="flex items-center justify-between font-mono text-[8.5px] font-bold uppercase tracking-wider mb-1.5">
+                                      <div className="flex items-center justify-between font-mono text-[8.5px] font-bold uppercase tracking-wider mb-2">
                                         <span className="text-[#FF3D8B]">PERSONALIZED GOOGLE DRAFT</span>
-                                        <span className="text-[#111114]/40">EDITABLE</span>
+                                        <span className="text-[#111114]/45">EDITABLE</span>
                                       </div>
                                       {activeStep === 3 ? (
                                         <p className="text-[11px] text-[#111114]/85 leading-relaxed">
@@ -590,20 +589,33 @@ export function InteractivePipelineSection({
                                           )}
                                         </p>
                                       ) : (
-                                        <p className="text-[11px] text-[#111114]/40 italic">
-                                          Generating from your taps...
+                                        <p className="text-[11px] text-[#111114]/45 italic leading-relaxed">
+                                          Generating a natural review directly from your tapped selections...
                                         </p>
                                       )}
                                     </div>
-                                    <p className="font-mono text-[9px] text-[#111114]/45 mt-2 tabular-nums">
-                                      {activeStep === 3
-                                        ? `${Math.min(185, typedChars)} characters`
-                                        : '0 characters'}
-                                    </p>
+                                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-black/8 font-mono text-[9px] text-[#111114]/50 tabular-nums">
+                                      <span>
+                                        {activeStep === 3
+                                          ? `${Math.min(185, typedChars)} characters`
+                                          : '0 characters'}
+                                      </span>
+                                      <span>Ready for Google</span>
+                                    </div>
                                   </div>
                                 </div>
 
-                                <div className="pt-3">
+                                {/* Bottom Action Dock */}
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div className="py-1.5 rounded-xl border border-black/12 bg-white text-center text-[10px] font-semibold text-[#111114]/75">
+                                      Edit Review
+                                    </div>
+                                    <div className="py-1.5 rounded-xl border border-black/12 bg-white text-center text-[10px] font-semibold text-[#111114]/75">
+                                      Regenerate
+                                    </div>
+                                  </div>
+
                                   <div
                                     className={`w-full py-2.5 rounded-full text-center text-[11px] font-bold transition-colors duration-300 ${
                                       activeStep === 3
@@ -615,7 +627,7 @@ export function InteractivePipelineSection({
                                   </div>
 
                                   {/* Bottom iOS Home Indicator */}
-                                  <div className="w-28 h-1 rounded-full bg-[#111114]/35 mx-auto mt-3" />
+                                  <div className="w-28 h-1 rounded-full bg-[#111114]/35 mx-auto mt-1.5" />
                                 </div>
                               </div>
                             </div>

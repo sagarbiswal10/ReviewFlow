@@ -940,9 +940,6 @@ export function LandingPage({
               transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-2xl mb-14"
             >
-              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45 mb-3">
-                03 — ENGINEERED PRECISION
-              </p>
               <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-white leading-[1.04] mb-5">
                 Built for multi-location operators and{' '}
                 <span className="font-editorial text-[#FF3D8B] text-[1.08em] font-normal">
@@ -1257,7 +1254,7 @@ export function LandingPage({
                 className="lg:col-span-5"
               >
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#111114]/55 mb-3">
-                  04 — PLUG-AND-PLAY ONBOARDING
+                  PLUG-AND-PLAY ONBOARDING
                 </p>
                 <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-[#111114] leading-[1.03] mb-5">
                   Pre-configured forms across{' '}
@@ -1365,7 +1362,7 @@ export function LandingPage({
                 className="lg:col-span-6"
               >
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70 mb-3">
-                  05 — POLICY
+                  POLICY
                 </p>
                 <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-white leading-[1.05] mb-6">
                   Strict adherence to{' '}
