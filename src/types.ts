@@ -7,6 +7,9 @@ export const BUSINESS_CATEGORIES = [
   'Gyms',
   'Healthcare',
   'Retail Stores',
+  'Clothing & Apparel',
+  'Jewelry & Gold Shops',
+  'Local Shops & Stores',
   'Automobile Services',
   'Other Businesses',
 ] as const;
@@ -90,6 +93,12 @@ export interface EnabledFeatures {
   brandingSettings?: boolean;
 }
 
+export interface LocalizedQuestionContent {
+  prompt: string;
+  options: string[];
+  placeholder?: string;
+}
+
 export interface FeedbackQuestion {
   id: string;
   prompt: string;
@@ -97,11 +106,14 @@ export interface FeedbackQuestion {
   options: string[];
   required: boolean;
   placeholder?: string;
+  translations?: Partial<Record<ReviewLanguage, LocalizedQuestionContent>>;
 }
 
 export interface BusinessBranding {
   primaryColor: string;
   secondaryColor: string;
+  questionColor?: string;
+  backgroundColor?: string;
   welcomeMessage: string;
   thankYouMessage: string;
   defaultReviewStyle: ReviewStyle;
@@ -211,6 +223,7 @@ export interface PublicProfile {
   enabledFeatures: EnabledFeatures;
   branding: BusinessBranding;
   qrConfig: QrConfig;
+  pausedStandIds?: string[];
   questions: FeedbackQuestion[];
   formTemplate?: FormTemplateId;
   seoKeywords?: string[];

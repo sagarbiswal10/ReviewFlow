@@ -127,11 +127,50 @@ export const INDIA_SALON_REAL_REVIEW_DATASET: ReferenceReviewItem[] = [
   },
 ];
 
+export const INDIA_SHOP_RETAIL_DATASET: ReferenceReviewItem[] = [
+  {
+    id: 'shop-en-01',
+    language: 'en',
+    sentiment: 'positive',
+    text: 'Great collection and reasonable pricing. The staff helped us patiently compare options without any pressure and billing was quick.',
+    source: 'Publicly indexed Indian retail review style',
+  },
+  {
+    id: 'shop-hg-01',
+    language: 'hinglish',
+    sentiment: 'positive',
+    text: 'Yahan par samaan aur quality dono badhiya milte hain. Staff ka bartaav bahut achha hai aur daam bhi bilkul sahi lagte hain.',
+    source: 'Publicly indexed Indian retail dataset (Roman Hindi)',
+  },
+  {
+    id: 'shop-mr-01',
+    language: 'mr',
+    sentiment: 'positive',
+    text: 'इथे वस्तूंची गुणवत्ता चांगली आहे आणि दरही योग्य आहेत. दुकानदार व कर्मचारी खूप मदतशील आहेत.',
+    source: 'Publicly indexed Marathi shop dataset',
+  },
+  {
+    id: 'shop-hi-01',
+    language: 'hi',
+    sentiment: 'positive',
+    text: 'यहाँ क्वालिटी और वैरायटी दोनों बहुत अच्छी हैं। स्टाफ ने आराम से हर चीज़ दिखाई और कीमत भी उचित लगी।',
+    source: 'Verified Hindi retail customer review dataset',
+  },
+];
+
 export function getStarterReferenceReviewsForCategory(
   category: BusinessCategory,
 ): ReferenceReviewItem[] {
   if (category === 'Hair Salons' || category === 'Beauty Salons' || category === 'Spas') {
     return INDIA_SALON_REAL_REVIEW_DATASET.map((item) => ({ ...item }));
+  }
+  if (
+    category === 'Clothing & Apparel' ||
+    category === 'Jewelry & Gold Shops' ||
+    category === 'Local Shops & Stores' ||
+    category === 'Retail Stores'
+  ) {
+    return INDIA_SHOP_RETAIL_DATASET.map((item) => ({ ...item }));
   }
   return [];
 }

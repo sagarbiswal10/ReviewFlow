@@ -4,6 +4,7 @@ import {
   checkRateLimit,
   processGoogleReviewsWebhook,
   readSafeJsonBody,
+  resolveTrustedRequestHost,
   sanitizeLogError,
   verifyGoogleReviewsWebhookAuth,
   type GoogleReviewsWebhookBody,
@@ -35,13 +36,11 @@ function extractQueryToken(rawUrl?: string): string {
 
 function resolveWebhookAudienceUrl(req: NodeReq): string {
   const rawProto =
-    typeof req.headers['x-forwarded-proto'] === 'string'
-      ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+    typeof req.headers['x-forwarded-proto'] === 'string' &&
+    req.headers['x-forwarded-proto'].split(',')[0].trim() === 'http'
+      ? 'http'
       : 'https';
-  const rawHost =
-    (typeof req.headers['x-forwarded-host'] === 'string' &&
-      req.headers['x-forwarded-host'].split(',')[0].trim()) ||
-    (typeof req.headers.host === 'string' ? req.headers.host.split(',')[0].trim() : '');
+  const rawHost = resolveTrustedRequestHost(req.headers);
   if (!rawHost) return '';
   let pathname = '/api/webhooks/google-reviews';
   if (req.url) {

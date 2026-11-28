@@ -30,6 +30,7 @@ import {
   subscribeToBusinessQrStands,
   subscribeToBusinessWeeklyReports,
 } from '../services/platformFeaturesService';
+import { copyToClipboard } from '../utils/clipboard';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 
 interface WeeklyReportsTabProps {
@@ -61,6 +62,7 @@ export function WeeklyReportsTab({
     (business.weeklyReportConfig?.recipients || [business.clientEmail]).filter(Boolean).join(', '),
   );
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const [pendingOverwriteChoice, setPendingOverwriteChoice] = useState<'previous' | 'current' | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isRecipientsDirtyRef = useRef(false);
@@ -153,10 +155,14 @@ export function WeeklyReportsTab({
 
   const mondayToday = isMondayToday();
 
-  const handleGenerateReport = async (choice: 'previous' | 'current') => {
+  const handleGenerateReport = async (
+    choice: 'previous' | 'current',
+    overwriteConfirmed = false,
+  ) => {
     setIsGenerating(true);
     setErrorMessage(null);
     setStatusMessage(null);
+    setPendingOverwriteChoice(null);
     try {
       const win = getMondaySundayWindow(choice === 'previous' ? -1 : 0);
       const existing = reports.find((r) => r.weekStart === win.weekStart);
@@ -172,6 +178,7 @@ export function WeeklyReportsTab({
         startMs: win.startMs,
         endMs: win.endMs,
         existingReport: existing,
+        overwriteConfirmed,
       });
       setSelectedReportId(saved.id);
       setStatusMessage(
@@ -181,7 +188,13 @@ export function WeeklyReportsTab({
         if (mountedRef.current) setStatusMessage(null);
       }, 4000);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Unable to generate weekly report.');
+      const rawMsg = err instanceof Error ? err.message : 'Unable to generate weekly report.';
+      if (rawMsg.startsWith('DISPATCHED_REPORT_EXISTS:')) {
+        setPendingOverwriteChoice(choice);
+        setErrorMessage(rawMsg.replace('DISPATCHED_REPORT_EXISTS:', ''));
+      } else {
+        setErrorMessage(rawMsg);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -233,6 +246,7 @@ export function WeeklyReportsTab({
 
   const handleCopyPlainSummary = async () => {
     if (!activeReport) return;
+    setErrorMessage(null);
     const rg = activeReport.reviewGenMetrics;
     const ar = activeReport.autoReplyMetrics;
     const ai = activeReport.aiUsageMetrics;
@@ -262,14 +276,14 @@ export function WeeklyReportsTab({
       `- Total Tokens: ${ai.totalTokens.toLocaleString()}`,
       `- Estimated Cost: $${ai.estimatedCostUsd.toFixed(4)}`,
     ].join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopiedSummary(true);
       setTimeout(() => {
         if (mountedRef.current) setCopiedSummary(false);
       }, 2500);
-    } catch {
-      // Ignore
+    } else {
+      setErrorMessage('Unable to copy summary to clipboard in this browser context.');
     }
   };
 
@@ -337,8 +351,29 @@ export function WeeklyReportsTab({
         </div>
 
         {errorMessage && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-            {errorMessage}
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
+            <span>{errorMessage}</span>
+            {pendingOverwriteChoice && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleGenerateReport(pendingOverwriteChoice, true)}
+                  className="px-3 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold cursor-pointer"
+                >
+                  Confirm Overwrite &amp; Regenerate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingOverwriteChoice(null);
+                    setErrorMessage(null);
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-red-300 bg-white text-red-700 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         )}
         {statusMessage && (
@@ -352,8 +387,11 @@ export function WeeklyReportsTab({
           <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Calendar className="w-4 h-4 text-[#005c55]" />
-              <span className="text-xs font-semibold text-slate-700">Stored Weekly Snapshots:</span>
+              <label htmlFor="weekly-report-snapshot-select" className="text-xs font-semibold text-slate-700">
+                Stored Weekly Snapshots:
+              </label>
               <select
+                id="weekly-report-snapshot-select"
                 value={activeReport?.id || ''}
                 onChange={(e) => setSelectedReportId(e.target.value)}
                 className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-900"

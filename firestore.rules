@@ -22,7 +22,6 @@ service cloud.firestore {
 
     function isAdmin() {
       return isVerifiedUser() && (
-        userEmailLower() == 'harkiratcourse36@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
         (userEmailLower().size() > 0 && exists(/databases/$(database)/documents/adminEmails/$(userEmailLower())))
       );
@@ -62,6 +61,9 @@ service cloud.firestore {
         'Gyms',
         'Healthcare',
         'Retail Stores',
+        'Clothing & Apparel',
+        'Jewelry & Gold Shops',
+        'Local Shops & Stores',
         'Automobile Services',
         'Other Businesses'
       ];
@@ -121,7 +123,10 @@ service cloud.firestore {
 
     function canClientEditFeatureFields(bizData, changedKeys) {
       return (!changedKeys.hasAny(['formTemplate']) || !('formTemplates' in bizData.enabledFeatures) || bizData.enabledFeatures.formTemplates == true) &&
-        (!changedKeys.hasAny(['reviewFlowMode']) || !('allowClientFlowModeSwitch' in bizData) || bizData.allowClientFlowModeSwitch == true) &&
+        (!changedKeys.hasAny(['reviewFlowMode']) || (
+          (!('packageTier' in bizData) || bizData.packageTier == 'standard_plus') &&
+          (!('allowClientFlowModeSwitch' in bizData) || bizData.allowClientFlowModeSwitch == true)
+        )) &&
         (!changedKeys.hasAny(['questions']) || bizData.enabledFeatures.customQuestions == true) &&
         (!changedKeys.hasAny(['qrConfig']) || !('qrStudio' in bizData.enabledFeatures) || bizData.enabledFeatures.qrStudio == true) &&
         (!changedKeys.hasAny([
@@ -135,9 +140,11 @@ service cloud.firestore {
     function isValidBranding(b) {
       return b is map &&
         b.keys().hasAll(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
-        b.keys().hasOnly(['primaryColor', 'secondaryColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
+        b.keys().hasOnly(['primaryColor', 'secondaryColor', 'questionColor', 'backgroundColor', 'welcomeMessage', 'thankYouMessage', 'defaultReviewStyle']) &&
         b.primaryColor is string && b.primaryColor.size() >= 4 && b.primaryColor.size() <= 20 &&
         b.secondaryColor is string && b.secondaryColor.size() >= 4 && b.secondaryColor.size() <= 20 &&
+        (!('questionColor' in b) || b.questionColor == null || (b.questionColor is string && b.questionColor.size() >= 4 && b.questionColor.size() <= 20)) &&
+        (!('backgroundColor' in b) || b.backgroundColor == null || (b.backgroundColor is string && b.backgroundColor.size() >= 4 && b.backgroundColor.size() <= 20)) &&
         b.welcomeMessage is string && b.welcomeMessage.size() <= 240 &&
         b.thankYouMessage is string && b.thankYouMessage.size() <= 240 &&
         b.defaultReviewStyle in ['short', 'detailed', 'professional'];
@@ -214,8 +221,21 @@ service cloud.firestore {
 
     function isAssignedClient(data) {
       return isVerifiedUser() && (
-        data.ownerId == request.auth.uid ||
-        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail.lower() == userEmailLower())
+        (data.clientEmail is string && data.clientEmail.size() > 0 && data.clientEmail.lower() == userEmailLower()) ||
+        (
+          (!('clientEmail' in data) || !(data.clientEmail is string) || data.clientEmail.size() == 0) &&
+          data.ownerId == request.auth.uid
+        )
+      );
+    }
+
+    function isSelfOwnedOrAssignedClient(data) {
+      return isVerifiedUser() && (
+        (userEmailLower().size() > 0 && data.clientEmail is string && data.clientEmail.lower() == userEmailLower()) ||
+        (
+          (!('clientEmail' in data) || !(data.clientEmail is string) || data.clientEmail.size() == 0) &&
+          data.ownerId == request.auth.uid
+        )
       );
     }
 
@@ -224,6 +244,13 @@ service cloud.firestore {
         'qrStandLimit' in get(/databases/$(database)/documents/businesses/$(bizId)).data &&
         get(/databases/$(database)/documents/businesses/$(bizId)).data.qrStandLimit is int
       ) ? get(/databases/$(database)/documents/businesses/$(bizId)).data.qrStandLimit : 4;
+    }
+
+    function isStandAllowedOnPublicProfile(slug, standId) {
+      return !(standId is string && standId.size() > 0) ||
+        !('pausedStandIds' in get(/databases/$(database)/documents/publicProfiles/$(slug)).data) ||
+        get(/databases/$(database)/documents/publicProfiles/$(slug)).data.pausedStandIds == null ||
+        !(standId in get(/databases/$(database)/documents/publicProfiles/$(slug)).data.pausedStandIds);
     }
 
     function isValidBusiness(data) {
@@ -293,7 +320,7 @@ service cloud.firestore {
           'clientUid', 'slug', 'name', 'category',
           'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
           'googleReviewUrl', 'logoDataUrl', 'enabledFeatures', 'branding',
-          'qrConfig', 'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
+          'qrConfig', 'pausedStandIds', 'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
           'lifecycleStatus', 'tenantFirebase',
           'createdAt', 'updatedAt'
         ]) &&
@@ -318,6 +345,7 @@ service cloud.firestore {
         isValidEnabledFeatures(data.enabledFeatures) &&
         isValidBranding(data.branding) &&
         isValidQrConfig(data.qrConfig) &&
+        (!('pausedStandIds' in data) || data.pausedStandIds == null || (data.pausedStandIds is list && data.pausedStandIds.size() <= 100)) &&
         isValidQuestions(data.questions) &&
         (!('formTemplate' in data) || data.formTemplate == null || isValidFormTemplate(data.formTemplate)) &&
         (!('seoKeywords' in data) || data.seoKeywords == null || isValidSeoKeywords(data.seoKeywords)) &&
@@ -377,7 +405,7 @@ service cloud.firestore {
         (!('standId' in data) || (data.standId is string && data.standId.size() <= 128)) &&
         (!('standCode' in data) || (data.standCode is string && data.standCode.size() <= 64)) &&
         (!('standName' in data) || (data.standName is string && data.standName.size() <= 120)) &&
-        (!('sessionId' in data) || (data.sessionId is string && data.sessionId.size() <= 128)) &&
+        ('sessionId' in data && data.sessionId is string && data.sessionId.size() >= 8 && data.sessionId.size() <= 128) &&
         data.createdAt is timestamp;
     }
 
@@ -637,7 +665,19 @@ service cloud.firestore {
         data.totalTokens is int && data.totalTokens >= 0 &&
         data.estimatedCostUsd is number && data.estimatedCostUsd >= 0 &&
         (!('errorMessage' in data) || (data.errorMessage is string && data.errorMessage.size() <= 400)) &&
-        (!('publishedAt' in data) || (data.publishedAt is string && data.publishedAt.size() <= 64)) &&
+        (
+          (
+            data.replyStatus in ['auto_published', 'published'] &&
+            'publishedAt' in data &&
+            data.publishedAt is string &&
+            data.publishedAt.size() > 0 &&
+            data.publishedAt.size() <= 64
+          ) ||
+          (
+            !(data.replyStatus in ['auto_published', 'published']) &&
+            (!('publishedAt' in data) || data.publishedAt == '')
+          )
+        ) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -772,8 +812,7 @@ service cloud.firestore {
       allow get: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || (resource != null && isAssignedClient(existing())));
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data)
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -815,30 +854,40 @@ service cloud.firestore {
           // Action 2: Assigned Client with 'full' tier (cannot modify qrStandLimit, packageTier, or permissions)
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'full' &&
             incoming().clientEmail == existing().clientEmail &&
             incoming().clientAccessLevel == existing().clientAccessLevel &&
             incoming().enabledFeatures == existing().enabledFeatures &&
-            (!('qrStandLimit' in incoming()) || ('qrStandLimit' in existing() && incoming().qrStandLimit == existing().qrStandLimit)) &&
-            (!('packageTier' in incoming()) || ('packageTier' in existing() && incoming().packageTier == existing().packageTier)) &&
-            (!('allowClientFlowModeSwitch' in incoming()) || ('allowClientFlowModeSwitch' in existing() && incoming().allowClientFlowModeSwitch == existing().allowClientFlowModeSwitch)) &&
+            !incoming().diff(existing()).affectedKeys().hasAny([
+              'ownerId', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
+              'qrStandLimit', 'packageTier', 'allowClientFlowModeSwitch', 'googleReviewUrl', 'createdAt'
+            ]) &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'reviewFlowMode', 'name', 'category', 'address', 'locality', 'city',
               'servicesOffered', 'productsOffered', 'businessHighlights',
               'phone', 'contactEmail', 'website',
-              'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
+              'logoDataUrl', 'branding', 'qrConfig',
               'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'slug', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-            ])
+            ]) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['branding']) || isValidBranding(incoming().branding)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['category']) || isValidCategory(incoming().category)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['name']) || (incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 120)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['logoDataUrl']) || (incoming().logoDataUrl is string && incoming().logoDataUrl.size() <= 350000)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywords']) || incoming().seoKeywords == null || isValidSeoKeywords(incoming().seoKeywords)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywordsByLanguage']) || incoming().seoKeywordsByLanguage == null || isValidSeoKeywordsByLanguage(incoming().seoKeywordsByLanguage)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['referenceReviews']) || incoming().referenceReviews == null || isValidReferenceReviews(incoming().referenceReviews)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['reviewFlowMode']) || incoming().reviewFlowMode in ['ai_drafted_instant', 'guided_questions'])
           ) ||
           // Action 3: Assigned Client with 'qr_and_questions' tier
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             existing().clientAccessLevel == 'qr_and_questions' &&
             incoming().clientEmail == existing().clientEmail &&
@@ -847,12 +896,14 @@ service cloud.firestore {
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'qrConfig', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
-            ])
+            ]) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+            (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
           ) ||
           // Action 4: Assigned Client links verified clientUid for Portal event history
           (
             isAssignedClient(existing()) &&
-            isValidBusiness(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             incoming().clientUid == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -860,7 +911,7 @@ service cloud.firestore {
             ])
           )
         );
-      allow delete: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || existing().ownerId == request.auth.uid);
+      allow delete: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || isSelfOwnedOrAssignedClient(existing()));
     }
 
     // 3. Public Customer Form Profiles (Keyed by slug, zero PII)
@@ -870,14 +921,19 @@ service cloud.firestore {
         resource.data.qrConfig.isActive == true ||
         isAdmin() ||
         (isVerifiedUser() && (
-          resource.data.ownerId == request.auth.uid ||
           (
             exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
             isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
           )
         ))
       );
-      allow list: if isVerifiedUser() && (isAdmin() || resource.data.ownerId == request.auth.uid);
+      allow list: if isVerifiedUser() && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
+      );
       allow create: if isVerifiedUser() &&
         isValidSlug(slug) &&
         isValidPublicProfile(incoming()) &&
@@ -885,7 +941,11 @@ service cloud.firestore {
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
         existsAfter(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
-        (isAdmin() || incoming().ownerId == request.auth.uid);
+        (
+          isAdmin() ||
+          incoming().ownerId == request.auth.uid ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data)
+        );
       allow update: if isVerifiedUser() &&
         isValidSlug(slug) &&
         incoming().ownerId == existing().ownerId &&
@@ -900,7 +960,7 @@ service cloud.firestore {
               'name', 'category',
               'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
               'googleReviewUrl', 'logoDataUrl',
-              'enabledFeatures', 'branding', 'qrConfig', 'questions', 'formTemplate',
+              'enabledFeatures', 'branding', 'qrConfig', 'pausedStandIds', 'questions', 'formTemplate',
               'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
             ]) &&
@@ -909,7 +969,6 @@ service cloud.firestore {
             (!('allowClientFlowModeSwitch' in incoming()) || incoming().allowClientFlowModeSwitch == null || incoming().allowClientFlowModeSwitch is bool)
           ) ||
           (
-            isValidPublicProfile(incoming()) &&
             incoming().createdAt == existing().createdAt &&
             exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
             isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data) &&
@@ -924,11 +983,16 @@ service cloud.firestore {
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'ownerName', 'reviewFlowMode', 'name', 'category',
                   'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
-                  'googleReviewUrl', 'logoDataUrl',
-                  'branding', 'qrConfig', 'questions', 'formTemplate',
+                  'logoDataUrl',
+                  'branding', 'qrConfig', 'pausedStandIds', 'questions', 'formTemplate',
                   'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
                   'lifecycleStatus', 'tenantFirebase', 'updatedAt'
-                ])
+                ]) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['branding']) || isValidBranding(incoming().branding)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['category']) || isValidCategory(incoming().category)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
               ) ||
               (
                 get(/databases/$(database)/documents/businesses/$(existing().businessId)).data.clientAccessLevel == 'qr_and_questions' &&
@@ -938,8 +1002,11 @@ service cloud.firestore {
                   incoming().diff(existing()).affectedKeys()
                 ) &&
                 incoming().diff(existing()).affectedKeys().hasOnly([
-                  'qrConfig', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
-                ])
+                  'qrConfig', 'pausedStandIds', 'questions', 'formTemplate', 'reviewFlowMode', 'updatedAt'
+                ]) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['qrConfig']) || isValidQrConfig(incoming().qrConfig)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
+                (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate))
               ) ||
               (
                 incoming().clientUid == request.auth.uid &&
@@ -950,7 +1017,13 @@ service cloud.firestore {
             )
           )
         );
-      allow delete: if isVerifiedUser() && isValidSlug(slug) && (isAdmin() || existing().ownerId == request.auth.uid);
+      allow delete: if isVerifiedUser() && isValidSlug(slug) && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+        )
+      );
     }
 
     // 4. Per-Business Aggregate Stats
@@ -965,8 +1038,7 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data)
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -1008,14 +1080,42 @@ service cloud.firestore {
             incoming().styleDetailed >= existing().styleDetailed && incoming().styleDetailed <= existing().styleDetailed + 1 &&
             incoming().styleProfessional >= existing().styleProfessional && incoming().styleProfessional <= existing().styleProfessional + 1 &&
             (
-              (incoming().scans == existing().scans + 1 && incoming().generated == existing().generated && incoming().redirects == existing().redirects && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
-              (incoming().generated == existing().generated + 1 && incoming().scans == existing().scans && incoming().redirects == existing().redirects && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
-              (incoming().redirects == existing().redirects + 1 && incoming().scans == existing().scans && incoming().generated == existing().generated && (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)) ||
+              (
+                incoming().scans == existing().scans + 1 &&
+                incoming().generated == existing().generated &&
+                incoming().redirects == existing().redirects &&
+                incoming().styleShort == existing().styleShort &&
+                incoming().styleDetailed == existing().styleDetailed &&
+                incoming().styleProfessional == existing().styleProfessional &&
+                (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)
+              ) ||
+              (
+                incoming().generated == existing().generated + 1 &&
+                incoming().scans == existing().scans &&
+                incoming().redirects == existing().redirects &&
+                (
+                  (incoming().styleShort + incoming().styleDetailed + incoming().styleProfessional) ==
+                  (existing().styleShort + existing().styleDetailed + existing().styleProfessional + 1)
+                ) &&
+                (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)
+              ) ||
+              (
+                incoming().redirects == existing().redirects + 1 &&
+                incoming().scans == existing().scans &&
+                incoming().generated == existing().generated &&
+                incoming().styleShort == existing().styleShort &&
+                incoming().styleDetailed == existing().styleDetailed &&
+                incoming().styleProfessional == existing().styleProfessional &&
+                (!('formsStarted' in existing()) || incoming().formsStarted == existing().formsStarted)
+              ) ||
               (
                 ((!('formsStarted' in existing()) && incoming().formsStarted == 1) || ('formsStarted' in existing() && incoming().formsStarted == existing().formsStarted + 1)) &&
                 incoming().scans == existing().scans &&
                 incoming().generated == existing().generated &&
-                incoming().redirects == existing().redirects
+                incoming().redirects == existing().redirects &&
+                incoming().styleShort == existing().styleShort &&
+                incoming().styleDetailed == existing().styleDetailed &&
+                incoming().styleProfessional == existing().styleProfessional
               )
             ) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
@@ -1024,7 +1124,14 @@ service cloud.firestore {
             ])
           )
         );
-      allow delete: if isVerifiedUser() && isValidId(businessId) && (isAdmin() || existing().ownerId == request.auth.uid);
+      allow delete: if isVerifiedUser() && isValidId(businessId) && (
+        isAdmin() ||
+        isSelfOwnedOrAssignedClient(existing()) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(businessId)).data)
+        )
+      );
     }
 
     // 5. Immutable Review Analytics Events
@@ -1032,14 +1139,20 @@ service cloud.firestore {
       allow get: if isVerifiedUser() && isValidId(eventId) && (
         isAdmin() ||
         (resource != null && (
-          existing().ownerId == request.auth.uid ||
-          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
         ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isValidId(eventId) &&
         isValidReviewEvent(incoming()) &&
@@ -1048,6 +1161,7 @@ service cloud.firestore {
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+        (!('standId' in incoming()) || isStandAllowedOnPublicProfile(incoming().slug, incoming().standId)) &&
         (
           !('clientUid' in incoming()) ||
           incoming().clientUid == '' ||
@@ -1073,8 +1187,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(standId) &&
@@ -1142,8 +1259,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(requestId) &&
@@ -1184,8 +1304,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -1250,8 +1373,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(reviewId) &&
@@ -1314,8 +1440,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(reportId) &&
@@ -1370,8 +1499,11 @@ service cloud.firestore {
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isVerifiedUser() &&
         isValidId(businessId) &&
@@ -1401,25 +1533,36 @@ service cloud.firestore {
       allow delete: if isVerifiedUser() && isValidId(businessId) && isAdmin();
     }
 
-    // 12. Immutable AI Token Usage Logs Summary
+    // 12. Immutable AI Token Usage Logs Summary (Client writes require verified admin or assigned client; public AI logs written server-side)
     match /aiUsageLogs/{logId} {
       allow get: if isVerifiedUser() && isValidId(logId) && (
         isAdmin() ||
         (resource != null && (
-          existing().ownerId == request.auth.uid ||
-          (existing().clientEmail is string && existing().clientEmail.size() > 0 && existing().clientEmail.lower() == userEmailLower())
+          isAssignedClient(existing()) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
         ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (userEmailLower().size() > 0 && resource.data.clientEmail == userEmailLower())
+        isSelfOwnedOrAssignedClient(resource.data) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
-      allow create: if isValidId(logId) &&
+      allow create: if isVerifiedUser() &&
+        isValidId(logId) &&
         isValidAiUsageLog(incoming()) &&
         incoming().createdAt == request.time &&
         exists(/databases/$(database)/documents/businesses/$(incoming().businessId)) &&
-        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId;
+        incoming().ownerId == get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data.ownerId &&
+        (
+          isAdmin() ||
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(incoming().businessId)).data)
+        );
       allow update, delete: if false;
     }
 
@@ -1428,14 +1571,20 @@ service cloud.firestore {
       allow get: if isVerifiedUser() && isValidId(submissionId) && (
         isAdmin() ||
         (resource != null && (
-          existing().ownerId == request.auth.uid ||
-          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
         ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isValidId(submissionId) &&
         isValidFeedbackSubmission(incoming()) &&
@@ -1445,6 +1594,7 @@ service cloud.firestore {
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.qrConfig.isActive == true &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.ownerId == incoming().ownerId &&
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
+        (!('standId' in incoming()) || isStandAllowedOnPublicProfile(incoming().slug, incoming().standId)) &&
         (
           !('clientUid' in incoming()) ||
           incoming().clientUid == '' ||
@@ -1461,14 +1611,20 @@ service cloud.firestore {
       allow get: if isVerifiedUser() && isValidId(draftId) && (
         isAdmin() ||
         (resource != null && (
-          existing().ownerId == request.auth.uid ||
-          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
         ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isValidId(draftId) &&
         isValidReviewDraft(incoming()) &&
@@ -1483,6 +1639,10 @@ service cloud.firestore {
         get(/databases/$(database)/documents/publicProfiles/$(incoming().slug)).data.businessId == incoming().businessId &&
         exists(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)) &&
         get(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)).data.businessId == incoming().businessId &&
+        (
+          !('standId' in get(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)).data) ||
+          isStandAllowedOnPublicProfile(incoming().slug, get(/databases/$(database)/documents/feedbackSubmissions/$(incoming().feedbackSubmissionId)).data.standId)
+        ) &&
         (
           !('clientUid' in incoming()) ||
           incoming().clientUid == '' ||
@@ -1550,14 +1710,20 @@ service cloud.firestore {
       allow get: if isVerifiedUser() && isValidId(evalId) && (
         isAdmin() ||
         (resource != null && (
-          existing().ownerId == request.auth.uid ||
-          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid)
+          (existing().clientUid is string && existing().clientUid.size() > 0 && existing().clientUid == request.auth.uid) ||
+          (
+            exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+            isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+          )
         ))
       );
       allow list: if isVerifiedUser() && (
         isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid)
+        (resource.data.clientUid is string && resource.data.clientUid.size() > 0 && resource.data.clientUid == request.auth.uid) ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        )
       );
       allow create: if isValidId(evalId) &&
         isValidReviewEvaluation(incoming()) &&
@@ -1590,11 +1756,19 @@ service cloud.firestore {
       allow get: if isValidId(exampleId) && (
         isAdmin() ||
         (resource != null && resource.data.curationStatus == 'approved') ||
-        (isVerifiedUser() && resource != null && existing().ownerId == request.auth.uid)
+        (
+          isVerifiedUser() && resource != null &&
+          exists(/databases/$(database)/documents/businesses/$(existing().businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(existing().businessId)).data)
+        )
       );
       allow list: if isAdmin() ||
         resource.data.curationStatus == 'approved' ||
-        (isVerifiedUser() && resource.data.ownerId == request.auth.uid);
+        (
+          isVerifiedUser() &&
+          exists(/databases/$(database)/documents/businesses/$(resource.data.businessId)) &&
+          isAssignedClient(get(/databases/$(database)/documents/businesses/$(resource.data.businessId)).data)
+        );
       allow create: if isValidId(exampleId) &&
         isValidConsentedExample(incoming()) &&
         incoming().exampleId == exampleId &&

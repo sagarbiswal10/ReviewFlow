@@ -84,6 +84,7 @@ export function OnboardingModal({
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [keywordsTouched, setKeywordsTouched] = useState(false);
   const lastAutoKeyRef = useRef('');
+  const keywordRequestSeqRef = useRef(0);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -123,6 +124,8 @@ export function OnboardingModal({
   ) => {
     const cleanName = targetName.trim();
     if (cleanName.length < 2) return;
+    const requestSeq = keywordRequestSeqRef.current + 1;
+    keywordRequestSeqRef.current = requestSeq;
     setIsGeneratingKeywords(true);
     try {
       const result = await fetchContextualSeoKeywords({
@@ -133,12 +136,12 @@ export function OnboardingModal({
         city: targetCity,
         packageTier: sanitizePackageTier(targetTier),
       });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSeq !== keywordRequestSeqRef.current) return;
       setSeoKeywords(result.keywords);
       setSeoKeywordsByLanguage(result.keywordsByLanguage);
       lastAutoKeyRef.current = `${cleanName.toLowerCase()}|${targetCategory}|${targetAddress.trim().toLowerCase()}|${targetLocality.trim().toLowerCase()}|${targetCity.trim().toLowerCase()}|${targetTier}`;
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestSeq === keywordRequestSeqRef.current) {
         setIsGeneratingKeywords(false);
       }
     }
@@ -741,7 +744,14 @@ export function OnboardingModal({
                     <select
                       id="onboarding-package-tier"
                       value={packageTier}
-                      onChange={(e) => setPackageTier(e.target.value as PackageTier)}
+                      onChange={(e) => {
+                        const nextTier = e.target.value as PackageTier;
+                        setPackageTier(nextTier);
+                        if (nextTier === 'standard') {
+                          setReviewFlowMode('ai_drafted_instant');
+                          setAllowClientFlowModeSwitch(false);
+                        }
+                      }}
                       className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
                     >
                       <option value="standard">₹3,000 Plan · Standard (English 5+ AI Drafts)</option>
@@ -757,19 +767,25 @@ export function OnboardingModal({
                     </label>
                     <select
                       id="onboarding-flow-mode"
-                      value={reviewFlowMode}
+                      disabled={packageTier === 'standard'}
+                      value={packageTier === 'standard' ? 'ai_drafted_instant' : reviewFlowMode}
                       onChange={(e) => setReviewFlowMode(e.target.value as ReviewFlowMode)}
-                      className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
+                      className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                     >
                       <option value="ai_drafted_instant">5+ Ready AI Reviews → Direct Post to Google</option>
                       <option value="guided_questions">Guided Questions → Custom AI Draft</option>
                     </select>
                   </div>
-                  <label className="min-w-0 px-3 py-2 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs font-medium text-slate-700 cursor-pointer self-end h-10">
+                  <label
+                    className={`min-w-0 px-3 py-2 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs font-medium text-slate-700 self-end h-10 ${
+                      packageTier === 'standard' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  >
                     <span>Allow client to switch mode later</span>
                     <input
                       type="checkbox"
-                      checked={allowClientFlowModeSwitch}
+                      disabled={packageTier === 'standard'}
+                      checked={packageTier === 'standard' ? false : allowClientFlowModeSwitch}
                       onChange={(e) => setAllowClientFlowModeSwitch(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-300 text-teal-700"
                     />

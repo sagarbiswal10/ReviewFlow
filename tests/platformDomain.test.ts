@@ -21,8 +21,11 @@ import {
   sanitizeGbpSettings,
   sanitizePackageTier,
   sanitizeReviewFlowMode,
+  sanitizeReviewFlowModeForTier,
   sanitizeSlug,
   sanitizeWeeklyReportConfig,
+  resolvePersistedInstantSeed,
+  advancePersistedInstantSeed,
 } from '../src/utils/domainHelpers.ts';
 import {
   buildContextualSeoSuggestions,
@@ -42,7 +45,18 @@ import {
   isExperienceRatingQuestion,
   mapOptionsToFiveFaces,
 } from '../src/data/formTemplates.ts';
-import { createCategoryQuestions } from '../src/data/categoryPresets.ts';
+import {
+  DEFAULT_SEO_KEYWORDS_BY_CATEGORY,
+  createCategoryQuestions,
+} from '../src/data/categoryPresets.ts';
+import {
+  buildAutoTranslatedQuestionContent,
+  getLocalizedFormUiStrings,
+  localizeQuestion,
+  localizeWelcomeMessage,
+  transliterateRomanToDevanagari,
+} from '../src/data/localizedQuestions.ts';
+import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
   assert.equal(sanitizeSlug('  Bella Bistro & Cafe! '), 'bella-bistro-cafe');
@@ -137,10 +151,12 @@ test('TC-ARCH-01: GBP OAuth uses server-side flow and honors business-level perm
     'utf-8',
   );
 
-  // ClientPortalView gates OAuth connection behind full/admin access
-  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{canEditBranding \|\| isAdmin\}/);
-  // ManagementConsoleView explicitly enables allowOAuthConnection
+  // ClientPortalView removes GBP OAuth connection buttons (shows Connected/Not Connected only) and locks Google Review Link
+  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{false\}/);
+  assert.match(clientPortalSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit=\{false\}/);
+  // ManagementConsoleView explicitly enables allowOAuthConnection & Google link editing
   assert.match(adminConsoleSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection/);
+  assert.match(adminConsoleSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit/);
   // GbpAutoReplyTab defaults allowOAuthConnection to false and uses server-side OAuth (no browser GIS token client)
   assert.match(gbpTabSrc, /allowOAuthConnection\s*=\s*false/);
   assert.match(gbpTabSrc, /startServerGbpOAuth/);
@@ -359,3 +375,284 @@ test('TC-LIB-02: Backend training bank has 50-60+ reviews per language and gener
     );
   }
 });
+
+test('TC-DOM-13: Standard tier locks review flow to ai_drafted_instant while Standard Plus allows guided_questions', () => {
+  assert.equal(sanitizeReviewFlowModeForTier('guided_questions', 'standard'), 'ai_drafted_instant');
+  assert.equal(sanitizeReviewFlowModeForTier('ai_drafted_instant', 'standard'), 'ai_drafted_instant');
+  assert.equal(sanitizeReviewFlowModeForTier('guided_questions', 'standard_plus'), 'guided_questions');
+  assert.equal(sanitizeReviewFlowModeForTier('ai_drafted_instant', 'standard_plus'), 'ai_drafted_instant');
+});
+
+test('TC-DOM-14: Instant AI draft seed stays identical across reloads and advances only on explicit Refresh', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  // First load initializes to 1
+  const load1 = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(load1, 1);
+
+  // Page reload returns the exact same seed without rotating drafts
+  const reloadSame = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(reloadSame, 1);
+
+  // Explicit Refresh button advances seed cleanly
+  const afterRefresh = advancePersistedInstantSeed(mockStorage, 'rohan-salon', reloadSame);
+  assert.equal(afterRefresh, 2);
+
+  // Subsequent reload after Refresh stays on 2
+  const reloadAfterRefresh = resolvePersistedInstantSeed(mockStorage, 'rohan-salon');
+  assert.equal(reloadAfterRefresh, 2);
+});
+
+test('TC-CAT-01: Clothing & Apparel, Jewelry & Gold Shops, and Local Shops & Stores are supported across presets & SEO defaults', () => {
+  for (const cat of [
+    'Clothing & Apparel',
+    'Jewelry & Gold Shops',
+    'Local Shops & Stores',
+  ] as const) {
+    assert.ok(BUSINESS_CATEGORIES.includes(cat), `Missing ${cat} in BUSINESS_CATEGORIES`);
+    const questions = createCategoryQuestions(cat);
+    assert.ok(questions.length >= 4, `Expected >=4 starter questions for ${cat}`);
+    assert.ok(
+      DEFAULT_SEO_KEYWORDS_BY_CATEGORY[cat].length >= 5,
+      `Expected >=5 default SEO keywords for ${cat}`,
+    );
+  }
+});
+
+test('TC-SEO-02: Hinglish SEO keyword generator outputs Roman Hindi search phrases rather than plain English filler', () => {
+  const result = buildContextualSeoSuggestions({
+    businessName: 'Shree Suvarna Jewellers',
+    category: 'Jewelry & Gold Shops',
+    locality: 'Thane West',
+    city: 'Thane',
+    servicesOffered: ['Hallmark Gold', 'Bridal Designs'],
+    packageTier: 'standard_plus',
+  });
+
+  const hinglishTerms = result.hinglish || [];
+  assert.ok(hinglishTerms.length >= 5, 'Expected >= 5 Hinglish SEO keywords');
+  const romanHindiPattern = /\b(mein|ki|ka|se|accha|bharosemand|dukaan|sone|chandi|gehne|sewa|kaam|daam|kapde|samaan|jagah)\b/i;
+  for (const phrase of hinglishTerms) {
+    assert.ok(
+      romanHindiPattern.test(phrase),
+      `Expected Roman Hindi words in Hinglish SEO phrase "${phrase}"`,
+    );
+  }
+});
+
+test('TC-UI-BOUNDARY-01: Client Portal hides delete/SEO/writing-library/slug/download-QR controls & public landing demo calls no live AI', () => {
+  const landingPath = path.join(process.cwd(), 'src/components/LandingPage.tsx');
+  const showcasePath = path.join(process.cwd(), 'src/components/landing/InteractiveShowcaseSection.tsx');
+  const brandingPath = path.join(process.cwd(), 'src/components/BrandingTab.tsx');
+  const qrStudioPath = path.join(process.cwd(), 'src/components/QrStudioTab.tsx');
+
+  const landingSrc = fs.readFileSync(landingPath, 'utf8');
+  const showcaseSrc = fs.readFileSync(showcasePath, 'utf8');
+  const brandingSrc = fs.readFileSync(brandingPath, 'utf8');
+  const qrStudioSrc = fs.readFileSync(qrStudioPath, 'utf8');
+
+  assert.equal(landingSrc.includes('onClick={onTryDemo}'), false);
+  assert.equal(showcaseSrc.includes('onClick={onTryDemo}'), false);
+  assert.ok(brandingSrc.includes('requiredKeyword="DELETE"'));
+  assert.ok(qrStudioSrc.includes('requiredKeyword="REGENERATE"'));
+  assert.ok(qrStudioSrc.includes("requiredKeyword={isActive ? 'PAUSE' : 'ACTIVATE'}"));
+});
+
+test('TC-LOC-01: localizeQuestion translates prompts, options, and UI strings to Marathi/Hindi/Hinglish and preserves custom owner translations', () => {
+  const salonQuestions = createCategoryQuestions('Hair Salons');
+  const serviceQ = salonQuestions[0];
+  const mrLocalized = localizeQuestion(serviceQ, 'mr');
+  assert.match(mrLocalized.prompt, /[\u0900-\u097F]/, 'Expected Devanagari prompt in Marathi');
+  assert.equal(mrLocalized.options[0].canonicalValue, 'Haircut');
+  assert.equal(mrLocalized.options[0].displayLabel, 'हेअरकट');
+
+  const hiUi = getLocalizedFormUiStrings('hi');
+  assert.equal(hiUi.generateReviewButton, 'रिव्यू तैयार करें');
+
+  const customQ = {
+    ...serviceQ,
+    translations: {
+      mr: {
+        prompt: 'आमची विशेष हेअर ट्रीटमेंट कशी वाटली?',
+        options: ['खूप उत्तम हेअरकट'],
+      },
+    },
+  };
+  const customMr = localizeQuestion(customQ, 'mr');
+  assert.equal(customMr.prompt, 'आमची विशेष हेअर ट्रीटमेंट कशी वाटली?');
+  assert.equal(customMr.options[0].canonicalValue, 'Haircut');
+  assert.equal(customMr.options[0].displayLabel, 'खूप उत्तम हेअरकट');
+
+  const autoFilled = buildAutoTranslatedQuestionContent(serviceQ, 'hinglish');
+  assert.ok(autoFilled.prompt.length > 5);
+});
+
+test('TC-LOC-02: transliterateRomanToDevanagari converts phonetic Roman input to Devanagari cleanly', () => {
+  const out = transliterateRomanToDevanagari('tumhala aajchi seva kashi vatli?');
+  assert.equal(out, 'तुम्हाला आजची सेवा कशी वाटली?');
+  assert.equal(transliterateRomanToDevanagari('khup chhan'), 'खूप छान');
+});
+
+test('TC-PREV-01: CustomerReviewFlow keeps preview buttons visible while blocking generation, refresh, copy, and Google redirects', () => {
+  const flowSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf8',
+  );
+  assert.ok(flowSrc.includes('const handleGenerateSubmit = async (e: React.FormEvent) => {\n    e.preventDefault();\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleRefreshInstantAiDrafts = async () => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleCopyAndOpenInstantReview = async (idx: number, textToCopy: string) => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('const handleOpenGoogleReview = () => {\n    if (isPreview) return;'));
+  assert.ok(flowSrc.includes('disabled={isPreview || isGenerating'));
+  assert.ok(flowSrc.includes('disabled={isPreview || !draft.trim()}'));
+});
+
+test('TC-PORTAL-01: Client Portal & Business Management show one-page Analytics with See Full Activity + dedicated FullActivityPage', () => {
+  const portalSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
+    'utf8',
+  );
+  const adminSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ManagementConsoleView.tsx'),
+    'utf8',
+  );
+  const overviewSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/OverviewTab.tsx'),
+    'utf8',
+  );
+  const fullActivitySrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/FullActivityPage.tsx'),
+    'utf8',
+  );
+  const cssSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/index.css'),
+    'utf8',
+  );
+
+  assert.ok(portalSrc.includes('isStandardPlan'));
+  assert.ok(portalSrc.includes('isGuidedQuestionsAllowed'));
+  assert.ok(portalSrc.includes('destinationStats'));
+  assert.ok(portalSrc.includes('Ready AI Drafts'));
+  assert.ok(portalSrc.includes('FullActivityPage'));
+  assert.ok(portalSrc.includes('See Full Activity'));
+  assert.ok(portalSrc.includes("id: 'full_activity'"));
+
+  assert.ok(adminSrc.includes('FullActivityPage'));
+  assert.ok(adminSrc.includes("id: 'full_activity'"));
+  assert.ok(adminSrc.includes('See Full Activity'));
+  assert.ok(adminSrc.includes('<span>Full Activity</span>'));
+  assert.ok(overviewSrc.includes('See Full Activity'));
+
+  assert.ok(fullActivitySrc.includes('rf-scrollbar-hidden'));
+  assert.ok(fullActivitySrc.includes('AI Drafted & Generated'));
+  assert.ok(cssSrc.includes('.rf-scrollbar-hidden'));
+});
+
+test('TC-LOC-03: Legacy Hotel prompts/options, welcome messages, and card headers translate completely across Marathi, Hindi, and Hinglish', () => {
+  const legacyStayQ = {
+    id: 'hotel-legacy-1',
+    prompt: 'Which parts of your stay stood out?',
+    type: 'multiple' as const,
+    options: [
+      'Clean & Comfortable Room',
+      'Convenient Location',
+      'Smooth Check-In',
+      'Breakfast & Dining',
+      'Quiet & Restful',
+    ],
+    required: true,
+  };
+
+  for (const lang of ['mr', 'hi', 'hinglish'] as const) {
+    const loc = localizeQuestion(legacyStayQ, lang);
+    assert.notEqual(loc.prompt, legacyStayQ.prompt, `Prompt stayed raw English in ${lang}`);
+    if (lang === 'mr' || lang === 'hi') {
+      assert.match(loc.prompt, /[\u0900-\u097F]/);
+    } else {
+      assert.ok(!/[\u0900-\u097F]/.test(loc.prompt));
+    }
+    for (let i = 0; i < legacyStayQ.options.length; i += 1) {
+      assert.notEqual(
+        loc.options[i].displayLabel,
+        legacyStayQ.options[i],
+        `Option "${legacyStayQ.options[i]}" stayed raw English in ${lang}`,
+      );
+    }
+
+    const welcome = localizeWelcomeMessage(
+      'Thanks for visiting Rohan! Tap a few quick options to share your honest experience.',
+      'Rohan',
+      lang,
+    );
+    assert.ok(welcome.includes('Rohan'));
+    assert.ok(!welcome.toLowerCase().includes('thanks for visiting'));
+
+    const ui = getLocalizedFormUiStrings(lang);
+    assert.notEqual(ui.shareFeedbackHeading, 'Share your feedback');
+    assert.equal(ui.instantOptionLabels.length, 5);
+  }
+});
+
+test('TC-PATTERN-01: Instant AI drafts output exact 5-slot pattern (Short+SEO, Professional+SEO, Detailed+SEO, Average, Poor) & Guided rotates styles', () => {
+  const seoByLang = {
+    en: ['Luxury stay in Pune', 'Clean hotel rooms Pune'],
+    hi: ['पुणे में आरामदायक होटल कमरा', 'साफ-सुथरा परिवार होटल'],
+    mr: ['पुण्यात आरामदायी हॉटेल रूम', 'स्वच्छ कौटुंबिक मुक्काम'],
+    hinglish: ['Pune mein aaramdayak hotel kamra', 'Saaf aur shaant stay'],
+  };
+
+  for (const lang of ['en', 'hi', 'mr', 'hinglish'] as const) {
+    const drafts = selectContextualReadyDrafts({
+      businessName: 'Rohan Residency',
+      category: 'Hotels',
+      locality: 'Baner',
+      city: 'Pune',
+      servicesOffered: ['AC Rooms'],
+      seoKeywords: seoByLang[lang],
+      language: lang,
+      seed: 1,
+    });
+    assert.equal(drafts.length, 5, `Expected exactly 5 drafts in ${lang}`);
+    assert.ok(drafts[2].length > drafts[0].length, `Expected Detailed slot > Short slot in ${lang}`);
+    assert.ok(
+      seoByLang[lang].some((kw) => drafts[0].includes(kw) || drafts[1].includes(kw) || drafts[2].includes(kw)),
+      `Expected SEO keyword in positive slots for ${lang}`,
+    );
+    if (lang === 'en') {
+      assert.match(drafts[3].toLowerCase(), /okay|decent|average|fair|fine|acceptable/);
+      assert.match(drafts[4].toLowerCase(), /disappointed|below|not satisfied|frustrated|would not recommend/);
+    } else if (lang === 'hi' || lang === 'mr') {
+      assert.match(drafts[4], /[\u0900-\u097F]/);
+    } else {
+      assert.ok(!/[\u0900-\u097F]/.test(drafts[4]));
+    }
+    for (const d of drafts) {
+      assert.equal(/\bbest\b/i.test(d), false, `Disallowed superlative "best" in: ${d}`);
+    }
+
+    const refreshed = selectContextualReadyDrafts({
+      businessName: 'Rohan Residency',
+      category: 'Hotels',
+      seoKeywords: seoByLang[lang],
+      language: lang,
+      seed: 2,
+    });
+    assert.equal(refreshed.length, 5);
+    assert.notEqual(refreshed[0], drafts[0]);
+  }
+
+  const flowSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf8',
+  );
+  assert.ok(flowSrc.includes("const STYLE_ROTATION: ReviewStyle[] = ['short', 'detailed', 'professional'];"));
+  assert.ok(flowSrc.includes('getNextReviewStyle(selectedStyle, 1)'));
+});
+
+
+

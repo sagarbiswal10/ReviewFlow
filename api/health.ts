@@ -1,5 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getHealthPayload, isOriginAllowed, sanitizeLogError } from './_lib/apiCore.js';
+import {
+  getHealthPayload,
+  isOriginAllowed,
+  resolveTrustedRequestHost,
+  sanitizeLogError,
+} from './_lib/apiCore.js';
 
 type NodeReq = IncomingMessage & { method?: string };
 
@@ -14,11 +19,7 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
 export default async function handler(req: NodeReq, res: ServerResponse) {
   try {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-    const forwardedHost =
-      typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : '';
-    const host = [forwardedHost, typeof req.headers.host === 'string' ? req.headers.host : '']
-      .filter(Boolean)
-      .join(',');
+    const host = resolveTrustedRequestHost(req.headers);
 
     if (origin && !isOriginAllowed(origin, host)) {
       if (req.method === 'OPTIONS') {

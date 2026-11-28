@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
-  fetchSignInMethodsForEmail,
   linkWithCredential,
   onAuthStateChanged,
   reauthenticateWithPopup,
@@ -30,11 +29,22 @@ import {
   getProviderSignature,
   type AuthActionableError,
 } from './utils/urlAndAuth';
-import { LandingPage } from './components/LandingPage';
-import { ManagementConsoleView } from './components/ManagementConsoleView';
-import { ClientPortalView } from './components/ClientPortalView';
-import { OnboardingModal } from './components/OnboardingModal';
-import { CustomerReviewFlow } from './components/CustomerReviewFlow';
+
+const LandingPage = lazy(() =>
+  import('./components/LandingPage').then((m) => ({ default: m.LandingPage })),
+);
+const ManagementConsoleView = lazy(() =>
+  import('./components/ManagementConsoleView').then((m) => ({ default: m.ManagementConsoleView })),
+);
+const ClientPortalView = lazy(() =>
+  import('./components/ClientPortalView').then((m) => ({ default: m.ClientPortalView })),
+);
+const OnboardingModal = lazy(() =>
+  import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal })),
+);
+const CustomerReviewFlow = lazy(() =>
+  import('./components/CustomerReviewFlow').then((m) => ({ default: m.CustomerReviewFlow })),
+);
 
 type AppRoute =
   | { kind: 'home' }
@@ -476,6 +486,7 @@ export default function App() {
       setRedirectAfterLogin(false);
       const classified = classifyAuthError(err, {
         mode: 'signin',
+        provider: 'google',
         projectId: auth.app.options.projectId,
       });
       setAuthActionError(classified);
@@ -496,11 +507,10 @@ export default function App() {
       await signInWithEmailAndPassword(auth, cleanEmail, password);
     } catch (err) {
       setRedirectAfterLogin(false);
-      const methods = await fetchSignInMethodsForEmail(auth, cleanEmail).catch(() => []);
       const classified = classifyAuthError(err, {
         mode: 'signin',
+        provider: 'password',
         email: cleanEmail,
-        methods,
       });
       setAuthActionError(classified);
       setAuthError(classified.message);
@@ -522,11 +532,10 @@ export default function App() {
       setVerificationNotice(`Verification email sent to ${cleanEmail}.`);
     } catch (err) {
       setRedirectAfterLogin(false);
-      const methods = await fetchSignInMethodsForEmail(auth, cleanEmail).catch(() => []);
       const classified = classifyAuthError(err, {
         mode: 'signup',
+        provider: 'password',
         email: cleanEmail,
-        methods,
       });
       setAuthActionError(classified);
       setAuthError(classified.message);
@@ -707,23 +716,32 @@ export default function App() {
       !publicState.isBuiltinDemo &&
       route.tokenParam !== publicState.profile.qrConfig.token;
 
+    const routeSuspenseFallback = (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-600 gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+        <p className="text-sm font-medium">Loading...</p>
+      </div>
+    );
+
     return (
-      <CustomerReviewFlow
-        profile={publicState.profile}
-        isPreview={publicState.isBuiltinDemo}
-        tokenMismatch={tokenMismatch}
-        onExit={
-          publicState.isBuiltinDemo || navigatedInternally
-            ? () => {
-                if (navigatedInternally && window.history.length > 1) {
-                  window.history.back();
-                } else {
-                  navigateTo('/');
+      <Suspense fallback={routeSuspenseFallback}>
+        <CustomerReviewFlow
+          profile={publicState.profile}
+          isPreview={publicState.isBuiltinDemo}
+          tokenMismatch={tokenMismatch}
+          onExit={
+            publicState.isBuiltinDemo || navigatedInternally
+              ? () => {
+                  if (navigatedInternally && window.history.length > 1) {
+                    window.history.back();
+                  } else {
+                    navigateTo('/');
+                  }
                 }
-              }
-            : undefined
-        }
-      />
+              : undefined
+          }
+        />
+      </Suspense>
     );
   }
 
@@ -739,17 +757,25 @@ export default function App() {
   // 3. Signed-out Landing Page (for /, /admin, /portal, /signin when unauthenticated)
   if (!user) {
     return (
-      <LandingPage
-        onGoogleSignIn={handleGoogleSignIn}
-        onEmailSignIn={handleEmailSignIn}
-        onEmailSignUp={handleEmailSignUp}
-        onResetPassword={handleResetPassword}
-        onTryDemo={() => navigateTo(`/review/${BUILTIN_DEMO_PROFILE.slug}`)}
-        initialAuthModalOpen={openAuthFromRoute}
-        isSigningIn={isSigningIn}
-        authError={authError}
-        authActionError={authActionError}
-      />
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+          </div>
+        }
+      >
+        <LandingPage
+          onGoogleSignIn={handleGoogleSignIn}
+          onEmailSignIn={handleEmailSignIn}
+          onEmailSignUp={handleEmailSignUp}
+          onResetPassword={handleResetPassword}
+          onTryDemo={() => navigateTo(`/review/${BUILTIN_DEMO_PROFILE.slug}`)}
+          initialAuthModalOpen={openAuthFromRoute}
+          isSigningIn={isSigningIn}
+          authError={authError}
+          authActionError={authActionError}
+        />
+      </Suspense>
     );
   }
 
@@ -852,8 +878,15 @@ export default function App() {
   const showingAdminConsole = isAdmin && route.kind === 'admin';
   const showingLandingPage = route.kind === 'home';
 
+  const appViewFallback = (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3 text-slate-600">
+      <Loader2 className="w-6 h-6 animate-spin text-teal-700" />
+      <p className="text-sm font-medium">Loading workspace...</p>
+    </div>
+  );
+
   return (
-    <>
+    <Suspense fallback={appViewFallback}>
       {showingAdminConsole ? (
         <ManagementConsoleView
           user={user}
@@ -910,6 +943,6 @@ export default function App() {
           }}
         />
       )}
-    </>
+    </Suspense>
   );
 }

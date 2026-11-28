@@ -35,6 +35,20 @@ export default defineConfig(() => {
     },
     build: {
       sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('firebase')) return 'vendor-firebase';
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('canvg') || id.includes('qrcode')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('/motion') || id.includes('framer-motion')) return 'vendor-motion';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            return 'vendor';
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

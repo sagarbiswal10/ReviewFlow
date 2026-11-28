@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
+  Activity,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
@@ -48,9 +49,14 @@ import {
   subscribeToBusinessReviewDrafts,
   subscribeToBusinessStats,
 } from '../services/businessService';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
-import { getPortalTimeGreeting } from '../utils/domainHelpers';
+import {
+  getPortalTimeGreeting,
+  sanitizePackageTier,
+  sanitizeReviewFlowModeForTier,
+} from '../utils/domainHelpers';
 import { hasPasswordProvider, sanitizeExternalUrl } from '../utils/urlAndAuth';
 import { getFormTemplateById } from '../data/formTemplates';
 import { AccountSecurityModal } from './AccountSecurityModal';
@@ -63,10 +69,12 @@ import { QrStandsTab } from './QrStandsTab';
 import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
 import { TemplatesTab } from './TemplatesTab';
+import { FullActivityPage } from './FullActivityPage';
 
 type PortalTab =
   | 'qr_features'
   | 'analytics'
+  | 'full_activity'
   | 'qr_stands'
   | 'gbp_reply'
   | 'weekly_reports'
@@ -215,8 +223,14 @@ export function ClientPortalView({
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const bizParam = params.get('businessId');
-    if (bizParam && businesses.some((b) => b.id === bizParam) && activeBusiness?.id !== bizParam) {
-      onSelectBusiness(bizParam);
+    if (bizParam && businesses.some((b) => b.id === bizParam)) {
+      if (activeBusiness?.id !== bizParam) {
+        onSelectBusiness(bizParam);
+      }
+      params.delete('businessId');
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
     }
   }, [businesses, activeBusiness?.id, onSelectBusiness]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -368,14 +382,26 @@ export function ClientPortalView({
     };
   }, [activeBizId, activeBizOwnerId, isClientUidLinked, user.uid, isAdmin]);
 
+  const effectivePackageTier = sanitizePackageTier(activeBusiness?.packageTier);
+  const effectiveFlowMode = sanitizeReviewFlowModeForTier(
+    activeBusiness?.reviewFlowMode,
+    effectivePackageTier,
+  );
+  const isStandardPlan = effectivePackageTier === 'standard';
+  const isGuidedQuestionsAllowed =
+    !isStandardPlan &&
+    (effectiveFlowMode === 'guided_questions' ||
+      activeBusiness?.allowClientFlowModeSwitch !== false ||
+      isAdmin);
+
   useEffect(() => {
     if (!activeBusiness) return;
     const f = activeBusiness.enabledFeatures;
     const isTabDisabledByFeature =
-      (activeTab === 'analytics' && !f.analyticsView) ||
+      ((activeTab === 'analytics' || activeTab === 'full_activity') && !f.analyticsView) ||
       (activeTab === 'templates' && f.formTemplates === false) ||
       (activeTab === 'qr_editor' && f.qrStudio === false) ||
-      (activeTab === 'questions' && !f.customQuestions) ||
+      (activeTab === 'questions' && (!f.customQuestions || !isGuidedQuestionsAllowed)) ||
       (activeTab === 'branding' && f.brandingSettings === false) ||
       (activeTab === 'qr_stands' && f.inStoreQrStands === false) ||
       (activeTab === 'gbp_reply' && f.gbpAutoReply === false) ||
@@ -390,6 +416,7 @@ export function ClientPortalView({
     const allowedReadOnly: PortalTab[] = [
       'qr_features',
       'analytics',
+      'full_activity',
       'qr_stands',
       'gbp_reply',
       'weekly_reports',
@@ -411,6 +438,7 @@ export function ClientPortalView({
     activeBusiness?.id,
     activeBusiness?.clientAccessLevel,
     activeBusiness?.enabledFeatures,
+    isGuidedQuestionsAllowed,
     activeTab,
     isAdmin,
   ]);
@@ -455,12 +483,13 @@ export function ClientPortalView({
 
   const handleCopyLink = async () => {
     if (!reviewUrl) return;
-    try {
-      await navigator.clipboard.writeText(reviewUrl);
+    setPdfExportError(null);
+    const ok = await copyToClipboard(reviewUrl);
+    if (ok) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-    } catch {
-      // ignore
+    } else {
+      setPdfExportError('Unable to copy QR link automatically. Please copy it manually.');
     }
   };
 
@@ -692,34 +721,99 @@ export function ClientPortalView({
     });
   }, [periodEvents, searchQuery]);
 
+  const destinationStats = useMemo(() => {
+    const isInstantEvent = (highlights?: string[]) =>
+      Array.isArray(highlights) &&
+      (highlights.includes('instant-ai-draft') || highlights.includes('Mode: Ready AI Drafts'));
+
+    let readyAiDrafted = 0;
+    let readyAiRedirects = 0;
+    let guidedDrafted = 0;
+    let guidedRedirects = 0;
+
+    const langBuckets: Record<'en' | 'hi' | 'mr' | 'hinglish', { label: string; drafted: number; redirects: number }> = {
+      en: { label: 'English', drafted: 0, redirects: 0 },
+      hi: { label: 'हिंदी (Hindi)', drafted: 0, redirects: 0 },
+      mr: { label: 'मराठी (Marathi)', drafted: 0, redirects: 0 },
+      hinglish: { label: 'Hinglish', drafted: 0, redirects: 0 },
+    };
+
+    const standMap = new Map<
+      string,
+      { label: string; scans: number; drafted: number; redirects: number }
+    >();
+
+    for (const ev of filteredPeriodEvents) {
+      const instant = isInstantEvent(ev.selectedHighlights);
+      if (ev.eventType === 'generate') {
+        if (instant) readyAiDrafted += 1;
+        else guidedDrafted += 1;
+      } else if (ev.eventType === 'copy_redirect') {
+        if (instant) readyAiRedirects += 1;
+        else guidedRedirects += 1;
+      }
+
+      const rawLang = ev.language;
+      if (rawLang === 'en' || rawLang === 'hi' || rawLang === 'mr' || rawLang === 'hinglish') {
+        if (ev.eventType === 'generate') langBuckets[rawLang].drafted += 1;
+        if (ev.eventType === 'copy_redirect') langBuckets[rawLang].redirects += 1;
+      }
+
+      const standLabel = ev.standName || ev.standCode || 'Direct / Main QR';
+      const entry = standMap.get(standLabel) ?? {
+        label: standLabel,
+        scans: 0,
+        drafted: 0,
+        redirects: 0,
+      };
+      if (ev.eventType === 'scan') entry.scans += 1;
+      if (ev.eventType === 'generate') entry.drafted += 1;
+      if (ev.eventType === 'copy_redirect') entry.redirects += 1;
+      standMap.set(standLabel, entry);
+    }
+
+    const stands = Array.from(standMap.values())
+      .sort((a, b) => b.redirects + b.drafted + b.scans - (a.redirects + a.drafted + a.scans))
+      .slice(0, 6);
+
+    return {
+      readyAiDrafted,
+      readyAiRedirects,
+      guidedDrafted,
+      guidedRedirects,
+      languages: Object.entries(langBuckets),
+      stands,
+    };
+  }, [filteredPeriodEvents]);
+
   const funnelColumns = useMemo(
     () => [
       {
         id: 'scan' as const,
         title: 'QR Scanned',
         badgeClass: isDark ? 'bg-[#818CF8]/20 text-[#A5B4FC]' : 'bg-indigo-50 text-indigo-700',
-        items: filteredPeriodEvents.filter((e) => e.eventType === 'scan').slice(0, 6),
+        items: filteredPeriodEvents.filter((e) => e.eventType === 'scan').slice(0, 25),
         total: filteredPeriodEvents.filter((e) => e.eventType === 'scan').length,
       },
       {
         id: 'form_start' as const,
         title: 'Form Started',
         badgeClass: isDark ? 'bg-[#FBBF24]/20 text-[#FDE68A]' : 'bg-amber-50 text-amber-700',
-        items: filteredPeriodEvents.filter((e) => e.eventType === 'form_start').slice(0, 6),
+        items: filteredPeriodEvents.filter((e) => e.eventType === 'form_start').slice(0, 25),
         total: filteredPeriodEvents.filter((e) => e.eventType === 'form_start').length,
       },
       {
         id: 'generate' as const,
         title: 'AI Drafted',
         badgeClass: isDark ? 'bg-[#F472B6]/20 text-[#F9A8D4]' : 'bg-pink-50 text-pink-700',
-        items: filteredPeriodEvents.filter((e) => e.eventType === 'generate').slice(0, 6),
+        items: filteredPeriodEvents.filter((e) => e.eventType === 'generate').slice(0, 25),
         total: filteredPeriodEvents.filter((e) => e.eventType === 'generate').length,
       },
       {
         id: 'copy_redirect' as const,
         title: 'Google Redirect',
         badgeClass: isDark ? 'bg-[#34D399]/20 text-[#6EE7B7]' : 'bg-emerald-50 text-emerald-700',
-        items: filteredPeriodEvents.filter((e) => e.eventType === 'copy_redirect').slice(0, 6),
+        items: filteredPeriodEvents.filter((e) => e.eventType === 'copy_redirect').slice(0, 25),
         total: filteredPeriodEvents.filter((e) => e.eventType === 'copy_redirect').length,
       },
     ],
@@ -778,8 +872,14 @@ export function ClientPortalView({
     { id: 'qr_features', label: 'Overview', icon: LayoutDashboard, visible: true },
     {
       id: 'analytics',
-      label: 'Analytics & Activity',
+      label: 'Analytics',
       icon: BarChart3,
+      visible: activeBusiness?.enabledFeatures.analyticsView !== false,
+    },
+    {
+      id: 'full_activity',
+      label: 'Full Activity',
+      icon: Activity,
       visible: activeBusiness?.enabledFeatures.analyticsView !== false,
     },
     {
@@ -812,7 +912,10 @@ export function ClientPortalView({
       id: 'questions',
       label: 'Question Builder',
       icon: FileText,
-      visible: canEditQrOrQuestions && (activeBusiness?.enabledFeatures.customQuestions ?? true),
+      visible:
+        canEditQrOrQuestions &&
+        (activeBusiness?.enabledFeatures.customQuestions ?? true) &&
+        isGuidedQuestionsAllowed,
     },
     {
       id: 'gbp_reply',
@@ -1138,6 +1241,7 @@ export function ClientPortalView({
               />
               <input
                 type="text"
+                aria-label="Search customer activity, stands, or tone"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1538,7 +1642,7 @@ export function ClientPortalView({
                       </div>
                     </div>
 
-                    {/* Column 2: Featured Standee Kit (Warm Sunset Gradient Highlight Card) */}
+                    {/* Column 2: Business QR Stand Card (No Downloads in Client Portal) */}
                     <div
                       className="rounded-2xl p-5 text-[#101015] flex flex-col justify-between gap-4 shadow-md overflow-hidden"
                       style={{
@@ -1551,7 +1655,7 @@ export function ClientPortalView({
                           Standee Kit
                         </span>
                         <span className="font-mono text-[10px] font-semibold text-[#101015]/75">
-                          PDF &amp; PNG
+                          Live QR
                         </span>
                       </div>
 
@@ -1567,7 +1671,7 @@ export function ClientPortalView({
                             Business QR Stand
                           </h2>
                           <p className="text-[11px] text-[#101015]/80 mt-1 leading-snug">
-                            Print-ready tabletop posters or up to 4 placement stands.
+                            Active customer scan link. Poster downloads are managed by Business Management.
                           </p>
                         </div>
                       </div>
@@ -1575,28 +1679,25 @@ export function ClientPortalView({
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={handleDownloadPng}
+                          onClick={handleCopyLink}
                           className="py-2 px-2.5 rounded-xl bg-white/90 hover:bg-white text-[#101015] text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>PNG</span>
+                          {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
                         </button>
 
-                        {activeBusiness.enabledFeatures.pdfPosterExport && (
-                          <button
-                            type="button"
-                            disabled={isExportingPdf}
-                            onClick={handleDownloadPdf}
-                            className="py-2 px-2.5 rounded-xl bg-[#101015] hover:bg-black/85 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 transition-colors"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>{isExportingPdf ? 'Exporting' : 'A4 PDF'}</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => selectTab('preview')}
+                          className="py-2 px-2.5 rounded-xl bg-[#101015] hover:bg-black/85 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Preview</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Column 3: Google Destination & Keywords */}
+                    {/* Column 3: Google Destination */}
                     <div className={`${surfaceCard} rounded-2xl p-5 flex flex-col justify-between gap-4`}>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -1626,21 +1727,6 @@ export function ClientPortalView({
                         <p className={`font-mono text-[11px] truncate ${surfaceMuted}`}>
                           {sanitizeGoogleDest.replace(/^https?:\/\//, '')}
                         </p>
-
-                        {activeBusiness.seoKeywords && activeBusiness.seoKeywords.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {activeBusiness.seoKeywords.slice(0, 4).map((kw) => (
-                              <span
-                                key={kw}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
-                                  isDark ? 'bg-white/[0.06] text-[#C4C4D4]' : 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                {kw}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
 
                       {canEditBranding && activeBusiness.enabledFeatures.brandingSettings !== false && (
@@ -1695,7 +1781,9 @@ export function ClientPortalView({
                             <ArrowRight className="w-3 h-3" />
                           </button>
                         )}
-                        {canEditQrOrQuestions && activeBusiness.enabledFeatures.customQuestions && (
+                        {canEditQrOrQuestions &&
+                          activeBusiness.enabledFeatures.customQuestions &&
+                          isGuidedQuestionsAllowed && (
                           <button
                             type="button"
                             onClick={() => selectTab('questions')}
@@ -1714,11 +1802,11 @@ export function ClientPortalView({
               )}
 
               {/* ==========================================
-                  PAGE 2: DEDICATED ANALYTICS & ACTIVITY BOARD
+                  PAGE 2: ONE-PAGE ANALYTICS SUMMARY
                  ========================================== */}
               {activeTab === 'analytics' && activeBusiness.enabledFeatures.analyticsView && (
-                <div className="space-y-6">
-                  {/* Period Filter Bar + CSV Export */}
+                <div className="space-y-4">
+                  {/* Period Filter Bar + See Full Activity + CSV Export */}
                   <div className={`${surfaceCard} rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3`}>
                     <div className="flex items-center gap-2.5 min-w-0">
                       <Calendar className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#A5B4FC]' : 'text-indigo-600'}`} />
@@ -1727,7 +1815,7 @@ export function ClientPortalView({
                           {reportWindowMeta.label}
                         </h1>
                         <p className={`text-xs truncate ${surfaceMuted}`}>
-                          Review funnel events, tone mix, multilingual drafts, and customer highlights
+                          Single-page summary of scans, Ready AI drafts, tone mix, and Google redirects
                         </p>
                       </div>
                     </div>
@@ -1789,14 +1877,23 @@ export function ClientPortalView({
                         <Download className="w-3.5 h-3.5" />
                         <span>Export CSV</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => selectTab('full_activity')}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <span>See Full Activity</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
                   {/* 4 KPI Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>QR Scans</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {scansCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1804,9 +1901,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>AI Drafts Generated</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {generatedCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1814,9 +1911,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>Draft Tone Mix</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {styleTotal}
                       </p>
                       <p className={`mt-1 text-[11px] font-mono ${surfaceMuted}`}>
@@ -1824,9 +1921,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>Google Redirects</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {redirectsCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1835,89 +1932,7 @@ export function ClientPortalView({
                     </div>
                   </div>
 
-                  {/* Highlights + Multilingual Draft Breakdown */}
-                  {(topHighlights.length > 0 || reviewDrafts.length > 0) && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                      {topHighlights.length > 0 && (
-                        <div className={`lg:col-span-7 ${surfaceCard} rounded-2xl p-5 space-y-3`}>
-                          <h2 className={`text-sm font-semibold ${textPrimary}`}>
-                            Top Customer-Selected Highlights ({reportWindowMeta.shortLabel})
-                          </h2>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {topHighlights.map(([label, count]) => {
-                              const maxCount = topHighlights[0][1] || 1;
-                              const pct = Math.max(14, Math.round((count / maxCount) * 100));
-                              return (
-                                <div
-                                  key={label}
-                                  className={`p-3 rounded-xl border ${borderHairline} space-y-1.5 ${
-                                    isDark ? 'bg-[#121218]' : 'bg-slate-50'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className={`font-medium truncate ${textPrimary}`}>
-                                      {label}
-                                    </span>
-                                    <span className={`font-mono ${surfaceMuted}`}>{count}x</span>
-                                  </div>
-                                  <div
-                                    className={`h-1.5 rounded-full overflow-hidden ${
-                                      isDark ? 'bg-white/10' : 'bg-slate-200'
-                                    }`}
-                                  >
-                                    <div
-                                      className="h-full rounded-full bg-[#818CF8]"
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {reviewDrafts.length > 0 && (
-                        <div className={`lg:col-span-5 ${surfaceCard} rounded-2xl p-5 space-y-3`}>
-                          <h2 className={`text-sm font-semibold ${textPrimary}`}>
-                            Multilingual Drafts &amp; Statuses
-                          </h2>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span className={surfaceMuted}>English</span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'en').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span lang="hi" className={surfaceMuted}>
-                                हिंदी (Hindi)
-                              </span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'hi').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span lang="mr" className={surfaceMuted}>
-                                मराठी (Marathi)
-                              </span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'mr').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span className={surfaceMuted}>Hinglish</span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'hinglish').length}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 4-Column Funnel Activity Board (FlowDesk column layout with real ReviewFlow events) */}
+                  {/* AI Drafts & Redirect Destination Visibility + Top Highlights (Compact One-Screen Layout) */}
                   {eventsAccessError ? (
                     <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-sm text-amber-300 flex items-start gap-3">
                       <Shield className="w-5 h-5 shrink-0 mt-0.5" />
@@ -1932,92 +1947,190 @@ export function ClientPortalView({
                       </div>
                     </div>
                   ) : !canReadEventHistory ? (
-                    <div className={`${surfaceCard} rounded-2xl p-6 text-sm ${surfaceMuted} flex items-center gap-3`}>
+                    <div className={`${surfaceCard} rounded-2xl p-5 text-sm ${surfaceMuted} flex items-center gap-3`}>
                       <Store className="w-5 h-5 text-emerald-400 shrink-0" />
                       <span>
                         Linking detailed Customer Review Flow Activity for your client account.
                       </span>
                     </div>
                   ) : (
-                    <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 border-t ${borderHairline} pt-5 gap-4`}>
-                      {funnelColumns.map((col) => (
-                        <div key={col.id} className="space-y-3">
-                          <div className="flex items-center justify-between px-1">
-                            <h3 className={`font-display text-base font-semibold ${textPrimary}`}>
-                              {col.title}
-                            </h3>
+                    <>
+                      <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5 space-y-4`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h2 className={`text-sm font-semibold ${textPrimary}`}>
+                              AI Drafts &amp; Google Redirect Breakdown ({reportWindowMeta.shortLabel})
+                            </h2>
+                            <p className={`text-xs mt-0.5 ${surfaceMuted}`}>
+                              Ready AI Drafts &amp; Guided Form counts by language and QR stand source.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold ${col.badgeClass}`}
+                              className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
+                                isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
+                              }`}
                             >
-                              {col.total}
+                              Ready AI Drafts: <strong>{destinationStats.readyAiDrafted}</strong> drafted →{' '}
+                              <strong className="text-emerald-400">{destinationStats.readyAiRedirects}</strong> Google
+                            </span>
+                            <span
+                              className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
+                                isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              Guided Questions: <strong>{destinationStats.guidedDrafted}</strong> drafted →{' '}
+                              <strong className="text-emerald-400">{destinationStats.guidedRedirects}</strong> Google
                             </span>
                           </div>
+                        </div>
 
-                          {col.items.length === 0 ? (
-                            <div
-                              className={`${surfaceCard} rounded-2xl p-5 text-center text-xs ${surfaceMuted}`}
-                            >
-                              <Clock className="w-5 h-5 mx-auto mb-1.5 opacity-60" />
-                              <span>No events in {reportWindowMeta.shortLabel}</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {col.items.map((ev) => (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
+                              By Language (AI Drafted → Google Redirect)
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              {destinationStats.languages.map(([langKey, bucket]) => (
                                 <div
-                                  key={ev.id}
-                                  className={`${surfaceCard} rounded-2xl p-4 space-y-2.5`}
+                                  key={langKey}
+                                  className={`p-2 rounded-lg border ${borderHairline} ${
+                                    isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                                  }`}
                                 >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${col.badgeClass}`}
-                                    >
-                                      {ev.language
-                                        ? ev.language === 'hi'
-                                          ? 'हिंदी'
-                                          : ev.language === 'mr'
-                                          ? 'मराठी'
-                                          : ev.language === 'hinglish'
-                                          ? 'Hinglish'
-                                          : 'English'
-                                        : col.title}
+                                  <span lang={langKey} className={`block truncate text-[11px] ${surfaceMuted}`}>
+                                    {bucket.label}
+                                  </span>
+                                  <p className={`font-display text-sm font-bold mt-0.5 ${textPrimary}`}>
+                                    {bucket.drafted}{' '}
+                                    <span className="text-xs font-normal text-emerald-400">
+                                      → {bucket.redirects}
                                     </span>
-                                    <span className={`text-[11px] font-mono ${surfaceMuted}`}>
-                                      {formatRelativeTime(ev.createdAt)}
-                                    </span>
-                                  </div>
-
-                                  <div>
-                                    <p className={`text-xs font-semibold ${textPrimary}`}>
-                                      {ev.standName || ev.standCode || `/${ev.slug}`}
-                                    </p>
-                                    {ev.reviewStyle && (
-                                      <p className={`text-[11px] capitalize mt-0.5 ${surfaceMuted}`}>
-                                        Tone: {ev.reviewStyle}
-                                        {ev.sentiment ? ` · ${ev.sentiment}` : ''}
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {Array.isArray(ev.selectedHighlights) &&
-                                    ev.selectedHighlights.length > 0 && (
-                                      <p className={`text-[11px] leading-snug ${surfaceMuted}`}>
-                                        {ev.selectedHighlights.slice(0, 3).join(' · ')}
-                                      </p>
-                                    )}
-
-                                  <div className={`pt-2 border-t ${borderHairline} flex items-center justify-between text-[10px] font-mono ${surfaceMuted}`}>
-                                    <span>{formatEventDateTime(ev.createdAt)}</span>
-                                    <span className="text-emerald-400">✓ Recorded</span>
-                                  </div>
+                                  </p>
                                 </div>
                               ))}
                             </div>
-                          )}
+                          </div>
+
+                          <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
+                              By QR Stand / Source (Scan · Draft · Google)
+                            </p>
+                            {destinationStats.stands.length === 0 ? (
+                              <p className={`text-xs ${surfaceMuted}`}>
+                                No stand or direct QR activity recorded in {reportWindowMeta.shortLabel}.
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                {destinationStats.stands.map((stand) => (
+                                  <div
+                                    key={stand.label}
+                                    className={`p-2 rounded-lg border ${borderHairline} flex items-center justify-between gap-2 ${
+                                      isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className={`font-medium truncate ${textPrimary}`}>
+                                      {stand.label}
+                                    </span>
+                                    <span className="font-mono text-[11px] shrink-0 whitespace-nowrap">
+                                      <span className={surfaceMuted}>{stand.scans}s · {stand.drafted}d · </span>
+                                      <span className="text-emerald-400 font-semibold">{stand.redirects}g</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+
+                        {topHighlights.length > 0 && (
+                          <div className={`pt-3 border-t ${borderHairline} flex flex-wrap items-center gap-2`}>
+                            <span className={`text-[11px] font-semibold uppercase tracking-wider mr-1 ${surfaceMuted}`}>
+                              Top Highlights:
+                            </span>
+                            {topHighlights.slice(0, 6).map(([label, count]) => (
+                              <span
+                                key={label}
+                                className={`px-2.5 py-1 rounded-lg border ${borderHairline} text-xs ${
+                                  isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-700'
+                                }`}
+                              >
+                                {label} <strong className="font-mono opacity-80">{count}×</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Compact Funnel Activity Totals + Direct Full Activity Link */}
+                      <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          {funnelColumns.map((col) => (
+                            <div
+                              key={col.id}
+                              className={`px-3 py-2 rounded-xl border ${borderHairline} flex items-center gap-2 ${
+                                isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                              }`}
+                            >
+                              <span className={`text-xs font-medium ${textPrimary}`}>{col.title}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold ${col.badgeClass}`}>
+                                {col.total}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => selectTab('full_activity')}
+                          className="px-4 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <Activity className="w-4 h-4" />
+                          <span>See Full Activity &amp; Generated Drafts</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
+              )}
+
+              {/* ==========================================
+                  PAGE 2B: DEDICATED FULL ACTIVITY PAGE
+                 ========================================== */}
+              {activeTab === 'full_activity' && activeBusiness.enabledFeatures.analyticsView && (
+                eventsAccessError ? (
+                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-sm text-amber-300 flex items-start gap-3">
+                    <Shield className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">
+                        Customer Review Flow Activity is blocked by Firestore Rules
+                      </p>
+                      <p className="text-xs opacity-85 mt-1">
+                        Publish the latest <span className="font-mono">firestore.rules</span> so
+                        client accounts can read <span className="font-mono">reviewEvents</span>.
+                      </p>
+                    </div>
+                  </div>
+                ) : !canReadEventHistory ? (
+                  <div className={`${surfaceCard} rounded-2xl p-6 text-sm ${surfaceMuted} flex items-center gap-3`}>
+                    <Store className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span>
+                      Linking detailed Customer Review Flow Activity for your client account.
+                    </span>
+                  </div>
+                ) : (
+                  <FullActivityPage
+                    title={`${activeBusiness.name} · Full Activity`}
+                    subtitle="All AI drafted reviews, generated draft text, Google redirects, and QR scan events"
+                    events={events}
+                    reviewDrafts={reviewDrafts}
+                    isDark={isDark}
+                    initialPeriod={reportPeriod}
+                    onBack={() => selectTab('analytics')}
+                    backLabel="Back to Analytics"
+                  />
+                )
               )}
 
               {/* ==========================================
@@ -2044,7 +2157,7 @@ export function ClientPortalView({
                       userEmail={user.email || ''}
                       isAdmin={isAdmin}
                       canEdit={canEditBranding || isAdmin}
-                      allowOAuthConnection={canEditBranding || isAdmin}
+                      allowOAuthConnection={false}
                     />
                   )}
 
@@ -2078,7 +2191,8 @@ export function ClientPortalView({
 
                 {activeTab === 'questions' &&
                   canEditQrOrQuestions &&
-                  activeBusiness.enabledFeatures.customQuestions && (
+                  activeBusiness.enabledFeatures.customQuestions &&
+                  isGuidedQuestionsAllowed && (
                     <QuestionBuilderTab
                       business={activeBusiness}
                       isAdmin={isAdmin}
@@ -2093,14 +2207,38 @@ export function ClientPortalView({
                     <BrandingTab
                       business={activeBusiness}
                       isAdmin={isAdmin}
+                      allowGoogleLinkEdit={false}
                       onDeleted={() => selectTab('qr_features')}
                     />
                   )}
               </div>
 
               {activeTab === 'preview' && previewProfile && (
-                <div className={`rounded-2xl border ${borderHairline} overflow-hidden bg-white`}>
-                  <CustomerReviewFlow profile={previewProfile} isPreview />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => selectTab('qr_features')}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                        isDark
+                          ? 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-xs'
+                      }`}
+                    >
+                      <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                      <span>Back to Portal</span>
+                    </button>
+                    <span className={`text-xs font-medium ${surfaceMuted}`}>
+                      Live Customer Form Preview
+                    </span>
+                  </div>
+                  <div className={`rounded-2xl border ${borderHairline} overflow-hidden bg-white`}>
+                    <CustomerReviewFlow
+                      profile={previewProfile}
+                      isPreview
+                      onExit={() => selectTab('qr_features')}
+                    />
+                  </div>
                 </div>
               )}
             </>
