@@ -35,6 +35,7 @@ import { sanitizePackageTier } from '../utils/domainHelpers';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { compressLogoFile } from '../utils/qrAndPdf';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { BusinessLogo } from './BusinessLogo';
 
 interface OnboardingModalProps {
@@ -95,6 +96,7 @@ export function OnboardingModal({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useAutoDismiss(error, () => setError(null));
 
   const previewQuestions = useMemo(() => createCategoryQuestions(category), [category]);
   const previewSlug = useMemo(() => {

@@ -43,6 +43,7 @@ import {
   type ServerGbpAccount,
   type ServerGbpLocation,
 } from '../services/platformFeaturesService';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { copyToClipboard } from '../utils/clipboard';
 import { resolveSanitizedGbpError } from '../utils/urlAndAuth';
 
@@ -106,6 +107,11 @@ export function GbpAutoReplyTab({
   const [busyReviewId, setBusyReviewId] = useState<string | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [queueNotice, setQueueNotice] = useState<string | null>(null);
+  useAutoDismiss(connError, () => setConnError(null));
+  useAutoDismiss(connNotice, () => setConnNotice(null));
+  useAutoDismiss(settingsNotice, () => setSettingsNotice(null));
+  useAutoDismiss(queueError, () => setQueueError(null));
+  useAutoDismiss(queueNotice, () => setQueueNotice(null));
 
   const [showWebhookModal, setShowWebhookModal] = useState(false);
   const [incomingReviewer, setIncomingReviewer] = useState('');
@@ -525,7 +531,6 @@ export function GbpAutoReplyTab({
           ? `AI reply generated & auto-published (${created.starRating}★ policy) via ${created.aiModelId}.`
           : `AI reply generated & queued for mandatory review (${created.starRating}★ policy) via ${created.aiModelId}.`,
       );
-      setTimeout(() => setQueueNotice(null), 4500);
     } catch (err) {
       setQueueError(err instanceof Error ? err.message : 'Failed to process review.');
     } finally {
@@ -549,7 +554,6 @@ export function GbpAutoReplyTab({
         locationName: connection?.locationName || undefined,
       });
       setQueueNotice(`Regenerated AI response for ${rev.reviewerName}.`);
-      setTimeout(() => setQueueNotice(null), 3000);
     } catch (err) {
       setQueueError(err instanceof Error ? err.message : 'Failed to regenerate AI reply.');
     } finally {
@@ -578,7 +582,6 @@ export function GbpAutoReplyTab({
       }
       setEditingReviewId(null);
       setQueueNotice(`Reply approved & published for ${rev.reviewerName}.`);
-      setTimeout(() => setQueueNotice(null), 3000);
     } catch (err) {
       setQueueError(err instanceof Error ? err.message : 'Unable to publish reply.');
     } finally {
@@ -593,7 +596,6 @@ export function GbpAutoReplyTab({
       await updateGbpReviewReplyText(rev.id, editDraftText);
       setEditingReviewId(null);
       setQueueNotice(`Updated AI draft reply for ${rev.reviewerName}.`);
-      setTimeout(() => setQueueNotice(null), 3000);
     } catch (err) {
       setQueueError(err instanceof Error ? err.message : 'Unable to save reply text.');
     } finally {
@@ -1031,7 +1033,6 @@ export function GbpAutoReplyTab({
                       ?.writeText(`${currentOrigin}/api/webhooks/google-reviews`)
                       .then(() => {
                         setQueueNotice('Copied webhook endpoint URL.');
-                        setTimeout(() => setQueueNotice(null), 2500);
                       })
                       .catch(() => null);
                   }}

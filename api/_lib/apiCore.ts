@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import nodemailer from 'nodemailer';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { composeGroundedFallbackReview } from './fallbackReviewComposer.js';
 import { validateReviewQuality, type QualityReviewLanguage, type ReviewQualityReport } from './reviewQualityCore.js';
@@ -3757,6 +3758,454 @@ export async function processGoogleReviewsWebhook(
               'Reply generated cleanly. To auto-save incoming webhook reviews directly into Firestore without the browser open, add FIREBASE_SERVICE_ACCOUNT_JSON to your server environment variables.',
           }
         : {}),
+    },
+  };
+}
+
+export interface DispatchWeeklyReportBody {
+  businessId: string;
+  recipients: string[];
+  includeAiUsage?: boolean;
+  report: {
+    id?: string;
+    businessName: string;
+    weekStart: string;
+    weekEnd: string;
+    reviewGenMetrics?: {
+      totalScans?: number;
+      uniqueSessions?: number;
+      formsStarted?: number;
+      draftsGenerated?: number;
+      googleRedirects?: number;
+      confirmedGoogleReviews?: number;
+      averageGoogleRating?: number;
+      bestStandName?: string;
+      bestStandScans?: number;
+      lowestStandName?: string;
+      lowestStandScans?: number;
+    };
+    autoReplyMetrics?: {
+      totalNewReviews?: number;
+      aiRepliesGenerated?: number;
+      autoPublished?: number;
+      manuallyApproved?: number;
+      waitingApproval?: number;
+      failedReplies?: number;
+      ignoredReviews?: number;
+    };
+    aiUsageMetrics?: {
+      totalRequests?: number;
+      successfulRequests?: number;
+      failedRequests?: number;
+      totalTokens?: number;
+      estimatedCostUsd?: number;
+      byModel?: Array<{
+        provider: string;
+        modelId: string;
+        count: number;
+        successCount: number;
+        failedCount: number;
+        totalTokens: number;
+        estimatedCostUsd: number;
+      }>;
+    };
+  };
+}
+
+function escapeReportHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function stripEmailHeaderBreaks(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+export function buildWeeklyReportEmailContent(input: {
+  report: DispatchWeeklyReportBody['report'];
+  includeAiUsage: boolean;
+}): { subject: string; text: string; html: string } {
+  const bizName = stripEmailHeaderBreaks(String(input.report.businessName || 'Business')).slice(0, 120);
+  const weekStart = stripEmailHeaderBreaks(String(input.report.weekStart || '')).slice(0, 32);
+  const weekEnd = stripEmailHeaderBreaks(String(input.report.weekEnd || '')).slice(0, 32);
+
+  const rg = input.report.reviewGenMetrics || {};
+  const ar = input.report.autoReplyMetrics || {};
+  const ai = input.report.aiUsageMetrics || {};
+
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
+  const dec = (v: unknown, digits = 1) => (Number.isFinite(Number(v)) ? Number(v).toFixed(digits) : '0.0');
+
+  const bestStand = stripEmailHeaderBreaks(String(rg.bestStandName || 'N/A')).slice(0, 80);
+  const lowestStand = stripEmailHeaderBreaks(String(rg.lowestStandName || 'N/A')).slice(0, 80);
+
+  const subject = `ReviewFlow Weekly Report — ${bizName} (${weekStart} to ${weekEnd})`;
+
+  const textLines = [
+    `ReviewFlow Weekly Performance Report — ${bizName}`,
+    `Week (Mon–Sun): ${weekStart} to ${weekEnd}`,
+    '',
+    '1. Review Generation & QR Stand Performance:',
+    `- Total QR Scans: ${num(rg.totalScans)} (Unique Sessions: ${num(rg.uniqueSessions)})`,
+    `- Review Forms Started: ${num(rg.formsStarted)}`,
+    `- AI Drafts Generated: ${num(rg.draftsGenerated)}`,
+    `- Google Review Link Clicks: ${num(rg.googleRedirects)}`,
+    `- Confirmed Google Reviews: ${num(rg.confirmedGoogleReviews)} (Avg Rating: ${dec(rg.averageGoogleRating, 1)})`,
+    `- Best QR Stand: ${bestStand} (${num(rg.bestStandScans)} scans)`,
+    `- Lowest QR Stand: ${lowestStand} (${num(rg.lowestStandScans)} scans)`,
+    '',
+    '2. Google Business Profile AI Auto-Reply:',
+    `- New Google Reviews: ${num(ar.totalNewReviews)}`,
+    `- AI Replies Generated: ${num(ar.aiRepliesGenerated)}`,
+    `- Auto-Published (5★): ${num(ar.autoPublished)}`,
+    `- Manually Approved: ${num(ar.manuallyApproved)}`,
+    `- Awaiting Approval: ${num(ar.waitingApproval)}`,
+    `- Failed / Ignored: ${num(ar.failedReplies)} failed, ${num(ar.ignoredReviews)} ignored`,
+  ];
+
+  if (input.includeAiUsage) {
+    textLines.push(
+      '',
+      '3. AI Model Usage & Estimated Cost:',
+      `- Requests: ${num(ai.totalRequests)} (${num(ai.successfulRequests)} ok / ${num(ai.failedRequests)} failed)`,
+      `- Total Tokens: ${num(ai.totalTokens).toLocaleString()}`,
+      `- Estimated Cost: $${dec(ai.estimatedCostUsd, 4)}`,
+    );
+  }
+
+  const aiHtmlSection = input.includeAiUsage
+    ? `
+      <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+        <h3 style="margin:0 0 10px;font-size:15px;color:#0f172a;">3. AI Model Usage &amp; Estimated Cost</h3>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Requests: <strong>${num(ai.totalRequests)}</strong> (${num(ai.successfulRequests)} ok / ${num(ai.failedRequests)} failed)</p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Total Tokens: <strong>${num(ai.totalTokens).toLocaleString()}</strong></p>
+        <p style="margin:4px 0;font-size:13px;color:#0f766e;">Estimated Cost: <strong>$${escapeReportHtml(dec(ai.estimatedCostUsd, 4))}</strong></p>
+      </div>
+    `
+    : '';
+
+  const html = `
+    <div style="font-family:Inter,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;background:#f8fafc;color:#0f172a;">
+      <div style="background:#0f766e;color:#ffffff;padding:20px 24px;border-radius:14px;">
+        <h2 style="margin:0;font-size:20px;">ReviewFlow Weekly Performance Report</h2>
+        <p style="margin:6px 0 0;font-size:13px;opacity:0.95;">${escapeReportHtml(bizName)} &middot; ${escapeReportHtml(weekStart)} to ${escapeReportHtml(weekEnd)}</p>
+      </div>
+
+      <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+        <h3 style="margin:0 0 10px;font-size:15px;color:#0f172a;">1. Review Generation &amp; QR Stand Performance</h3>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Total QR Scans: <strong>${num(rg.totalScans)}</strong> (Unique Sessions: ${num(rg.uniqueSessions)})</p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Forms Started: <strong>${num(rg.formsStarted)}</strong> &middot; AI Drafts Generated: <strong>${num(rg.draftsGenerated)}</strong></p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Google Link Clicks: <strong>${num(rg.googleRedirects)}</strong> &middot; Confirmed GBP Reviews: <strong>${num(rg.confirmedGoogleReviews)}</strong> (${escapeReportHtml(dec(rg.averageGoogleRating, 1))} &#9733;)</p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Best Stand: <strong>${escapeReportHtml(bestStand)}</strong> (${num(rg.bestStandScans)}) &middot; Lowest Stand: <strong>${escapeReportHtml(lowestStand)}</strong> (${num(rg.lowestStandScans)})</p>
+      </div>
+
+      <div style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+        <h3 style="margin:0 0 10px;font-size:15px;color:#0f172a;">2. Google Business Profile AI Auto-Reply</h3>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">New Reviews: <strong>${num(ar.totalNewReviews)}</strong> &middot; AI Replies Generated: <strong>${num(ar.aiRepliesGenerated)}</strong></p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Auto-Published (5&#9733;): <strong>${num(ar.autoPublished)}</strong> &middot; Manually Approved: <strong>${num(ar.manuallyApproved)}</strong> &middot; Awaiting Approval: <strong>${num(ar.waitingApproval)}</strong></p>
+        <p style="margin:4px 0;font-size:13px;color:#334155;">Failed: <strong>${num(ar.failedReplies)}</strong> &middot; Ignored: <strong>${num(ar.ignoredReviews)}</strong></p>
+      </div>
+
+      ${aiHtmlSection}
+
+      <p style="margin:18px 0 0;font-size:11px;color:#64748b;text-align:center;">
+        Generated by ReviewFlow &middot; Monday&ndash;Sunday Automated Snapshot
+      </p>
+    </div>
+  `.trim();
+
+  return {
+    subject,
+    text: textLines.join('\n'),
+    html,
+  };
+}
+
+export async function verifyWeeklyReportCallerAccess(input: {
+  businessId: string;
+  caller?: { uid: string; email: string };
+  rawToken?: string;
+}): Promise<{ ok: true; isAdmin: boolean } | { ok: false; status: number; error: string }> {
+  const cleanBizId = (input.businessId || '').trim();
+  if (!cleanBizId || !/^[a-zA-Z0-9_-]{1,128}$/.test(cleanBizId)) {
+    return { ok: false, status: 400, error: 'A valid ReviewFlow businessId is required.' };
+  }
+
+  // Only reached when API_AUTH_REQUIRED is explicitly disabled in local dev
+  if (!input.caller || !input.rawToken) {
+    return { ok: true, isAdmin: true };
+  }
+
+  const fsBase = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_PROJECT_ID)}/databases/${encodeURIComponent(FIREBASE_DATABASE_ID)}/documents`;
+  const headers = { Authorization: `Bearer ${input.rawToken}` };
+
+  const bizRes = await fetchWithTimeout(
+    `${fsBase}/businesses/${encodeURIComponent(cleanBizId)}`,
+    { headers },
+    7000,
+  ).catch(() => null);
+
+  if (!bizRes) {
+    return { ok: false, status: 503, error: 'Unable to verify business permissions right now.' };
+  }
+  if (bizRes.status === 401 || bizRes.status === 403) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Permission denied: your account does not have access to dispatch reports for this business.',
+    };
+  }
+  if (bizRes.status === 404) {
+    return { ok: false, status: 404, error: 'Business profile not found.' };
+  }
+  if (!bizRes.ok) {
+    return { ok: false, status: 502, error: 'Failed to verify business authorization.' };
+  }
+
+  const callerEmail = (input.caller.email || '').trim().toLowerCase();
+  const envAdmins = new Set(
+    cleanSecretEnv(process.env.SUPER_ADMIN_EMAILS || process.env.ADMIN_EMAILS)
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (callerEmail && envAdmins.has(callerEmail)) {
+    return { ok: true, isAdmin: true };
+  }
+
+  const [adminUidRes, adminEmailRes] = await Promise.all([
+    fetchWithTimeout(`${fsBase}/admins/${encodeURIComponent(input.caller.uid)}`, { headers }, 5000).catch(() => null),
+    callerEmail
+      ? fetchWithTimeout(`${fsBase}/adminEmails/${encodeURIComponent(callerEmail)}`, { headers }, 5000).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const isAdmin = Boolean(adminUidRes?.ok || adminEmailRes?.ok);
+  return { ok: true, isAdmin };
+}
+
+export async function processDispatchWeeklyReportEmail(
+  body: Partial<DispatchWeeklyReportBody>,
+  options: { allowAiUsageSection: boolean },
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const cleanBusinessId = typeof body.businessId === 'string' ? body.businessId.trim() : '';
+  if (!cleanBusinessId) {
+    return { status: 400, data: { error: 'businessId is required to dispatch a weekly report.' } };
+  }
+
+  const rawRecipients = Array.isArray(body.recipients) ? body.recipients : [];
+  const typoDomainFixes: Record<string, string> = {
+    'gmail.co': 'gmail.com',
+    'gmail.con': 'gmail.com',
+    'gmail.cm': 'gmail.com',
+    'gmail.om': 'gmail.com',
+    'gmail.cmo': 'gmail.com',
+    'gmai.com': 'gmail.com',
+    'gamil.com': 'gmail.com',
+    'gmial.com': 'gmail.com',
+    'gnail.com': 'gmail.com',
+    'yahoo.co': 'yahoo.com',
+    'yahoo.con': 'yahoo.com',
+    'outlook.co': 'outlook.com',
+    'outlook.con': 'outlook.com',
+    'hotmail.co': 'hotmail.com',
+    'hotmail.con': 'hotmail.com',
+    'icloud.co': 'icloud.com',
+    'icloud.con': 'icloud.com',
+  };
+  const recipients: string[] = [];
+  const seenRecipients = new Set<string>();
+  for (const item of rawRecipients) {
+    if (typeof item !== 'string') continue;
+    const clean = stripEmailHeaderBreaks(item).toLowerCase();
+    if (!clean) continue;
+    if (clean.length > 160 || /\s/.test(clean) || clean.includes('..') || !/^[^\s@]+@[^\s@]+\.[a-z]{2,24}$/i.test(clean)) {
+      return { status: 400, data: { error: `Invalid recipient email address "${clean}".` } };
+    }
+    const domainPart = clean.slice(clean.indexOf('@') + 1);
+    const localPart = clean.slice(0, clean.indexOf('@'));
+    if (typoDomainFixes[domainPart]) {
+      return {
+        status: 400,
+        data: {
+          error: `Invalid email "${clean}" — did you mean "${localPart}@${typoDomainFixes[domainPart]}"?`,
+        },
+      };
+    }
+    if (/\.(con|cmo|cpm|vom)$/i.test(domainPart)) {
+      return {
+        status: 400,
+        data: {
+          error: `Invalid email domain "${clean}" — did you mean "${localPart}@${domainPart.replace(/\.(con|cmo|cpm|vom)$/i, '.com')}"?`,
+        },
+      };
+    }
+    if (!seenRecipients.has(clean)) {
+      seenRecipients.add(clean);
+      recipients.push(clean);
+      if (recipients.length >= 15) break;
+    }
+  }
+
+  if (recipients.length === 0) {
+    return { status: 400, data: { error: 'Provide at least one valid recipient email address.' } };
+  }
+
+  if (!body.report || typeof body.report !== 'object') {
+    return { status: 400, data: { error: 'Weekly report snapshot payload is required.' } };
+  }
+
+  const includeAiUsage = Boolean(body.includeAiUsage) && options.allowAiUsageSection;
+  const emailContent = buildWeeklyReportEmailContent({
+    report: body.report,
+    includeAiUsage,
+  });
+
+  const resendApiKey = cleanSecretEnv(process.env.RESEND_API_KEY);
+  const smtpHost = cleanSecretEnv(process.env.SMTP_HOST);
+  const smtpUser = cleanSecretEnv(process.env.SMTP_USER);
+  const smtpPass = cleanSecretEnv(process.env.SMTP_PASS);
+  const gmailUser = cleanSecretEnv(process.env.GMAIL_SMTP_USER);
+  const gmailAppPass = cleanSecretEnv(process.env.GMAIL_SMTP_APP_PASSWORD);
+
+  const configuredFrom =
+    cleanSecretEnv(process.env.REPORT_FROM_EMAIL) ||
+    cleanSecretEnv(process.env.EMAIL_FROM) ||
+    cleanSecretEnv(process.env.RESEND_FROM_EMAIL);
+
+  if (resendApiKey) {
+    const fromHeader = configuredFrom || 'ReviewFlow Reports <onboarding@resend.dev>';
+    try {
+      const resendRes = await fetchWithTimeout(
+        'https://api.resend.com/emails',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromHeader,
+            to: recipients,
+            subject: emailContent.subject,
+            text: emailContent.text,
+            html: emailContent.html,
+          }),
+        },
+        10000,
+      );
+      const resendJson = (await resendRes.json().catch(() => ({}))) as {
+        id?: string;
+        message?: string;
+      };
+      if (!resendRes.ok) {
+        return {
+          status: 502,
+          data: {
+            ok: false,
+            emailSent: false,
+            configured: true,
+            provider: 'resend',
+            error: sanitizeApiErrorDetail(
+              resendJson.message ||
+                `Resend email API failed (HTTP ${resendRes.status}). If using onboarding@resend.dev, verify your domain in Resend first.`,
+            ),
+          },
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          ok: true,
+          emailSent: true,
+          configured: true,
+          provider: 'resend',
+          messageId: resendJson.id || undefined,
+          recipients,
+          dispatchedAt: new Date().toISOString(),
+        },
+      };
+    } catch (err) {
+      return {
+        status: 502,
+        data: {
+          ok: false,
+          emailSent: false,
+          configured: true,
+          provider: 'resend',
+          error: sanitizeLogError(err),
+        },
+      };
+    }
+  }
+
+  const effectiveSmtpHost = smtpHost || (gmailUser && gmailAppPass ? 'smtp.gmail.com' : '');
+  const effectiveSmtpUser = smtpUser || gmailUser;
+  const effectiveSmtpPass = smtpPass || gmailAppPass;
+  const smtpPort = Number(cleanSecretEnv(process.env.SMTP_PORT)) || (effectiveSmtpHost === 'smtp.gmail.com' ? 465 : 587);
+
+  if (effectiveSmtpHost && effectiveSmtpUser && effectiveSmtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: effectiveSmtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: effectiveSmtpUser,
+          pass: effectiveSmtpPass,
+        },
+      });
+      const info = await transporter.sendMail({
+        from: configuredFrom || `ReviewFlow Reports <${effectiveSmtpUser}>`,
+        to: recipients.join(', '),
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+      });
+      return {
+        status: 200,
+        data: {
+          ok: true,
+          emailSent: true,
+          configured: true,
+          provider: 'smtp',
+          messageId: info.messageId || undefined,
+          recipients,
+          dispatchedAt: new Date().toISOString(),
+        },
+      };
+    } catch (err) {
+      return {
+        status: 502,
+        data: {
+          ok: false,
+          emailSent: false,
+          configured: true,
+          provider: 'smtp',
+          error: sanitizeApiErrorDetail(
+            err instanceof Error
+              ? err.message
+              : 'SMTP server failed to deliver the weekly report email.',
+          ),
+        },
+      };
+    }
+  }
+
+  return {
+    status: 200,
+    data: {
+      ok: false,
+      emailSent: false,
+      configured: false,
+      reason: 'email_provider_not_configured',
+      recipients,
+      message:
+        'Live email delivery is not configured on the server yet. Add RESEND_API_KEY (recommended on Vercel) or GMAIL_SMTP_USER + GMAIL_SMTP_APP_PASSWORD (or SMTP_HOST / SMTP_USER / SMTP_PASS) in your Vercel Environment Variables so reports arrive in any inbox.',
     },
   };
 }

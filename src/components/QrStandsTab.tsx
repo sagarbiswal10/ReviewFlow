@@ -29,6 +29,7 @@ import {
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { TypedConfirmModal } from './TypedConfirmModal';
 
 interface QrStandsTabProps {
@@ -105,6 +106,10 @@ export function QrStandsTab({
   const [isSubmittingReq, setIsSubmittingReq] = useState(false);
   const [reqError, setReqError] = useState<string | null>(null);
   const [reqNotice, setReqNotice] = useState<string | null>(null);
+  useAutoDismiss(standError, () => setStandError(null));
+  useAutoDismiss(standNotice, () => setStandNotice(null));
+  useAutoDismiss(reqError, () => setReqError(null));
+  useAutoDismiss(reqNotice, () => setReqNotice(null));
 
   const canvasMapRef = useRef<Record<string, HTMLCanvasElement | null>>({});
   const mountedRef = useRef(true);

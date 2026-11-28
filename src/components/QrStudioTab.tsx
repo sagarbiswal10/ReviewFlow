@@ -15,6 +15,7 @@ import { generateRandomToken, updateBusiness } from '../services/businessService
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { downloadQrPdf, downloadQrPng, renderQrToCanvas } from '../utils/qrAndPdf';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { TypedConfirmModal } from './TypedConfirmModal';
 
 interface QrStudioTabProps {
@@ -35,6 +36,8 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
   const [pendingAction, setPendingAction] = useState<'toggle_pause' | 'regenerate' | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useAutoDismiss(statusMessage, () => setStatusMessage(null));
+  useAutoDismiss(error, () => setError(null));
   const isDirtyRef = useRef(false);
   const lastSyncedRef = useRef<{ id: string; sig: string }>({
     id: business.id,
@@ -119,7 +122,6 @@ export function QrStudioTab({ business, isAdmin = false }: QrStudioTabProps) {
       };
       setStatusMessage(feedbackText);
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = setTimeout(() => setStatusMessage(null), 3000);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save QR styling.');

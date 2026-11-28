@@ -32,6 +32,7 @@ import {
 import { compressLogoFile } from '../utils/qrAndPdf';
 import { sanitizeSeoKeywordPhrase } from '../utils/seoKeywordEngine';
 import { sanitizeExternalUrl } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { BusinessLogo } from './BusinessLogo';
 import { TypedConfirmModal } from './TypedConfirmModal';
 
@@ -128,6 +129,9 @@ export function BrandingTab({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useAutoDismiss(seoNotice, () => setSeoNotice(null));
+  useAutoDismiss(savedNotice, () => setSavedNotice(null));
+  useAutoDismiss(error, () => setError(null));
   const isDirtyRef = useRef(false);
   const lastBusinessIdRef = useRef(business.id);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -296,7 +300,6 @@ export function BrandingTab({
           : 'Business profile and Customer Form Branding & Messaging saved.',
       );
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes.');
     } finally {
@@ -327,7 +330,6 @@ export function BrandingTab({
       isDirtyRef.current = false;
       setSavedNotice('Customer Form Branding & Messaging saved!');
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save branding settings.');
     } finally {

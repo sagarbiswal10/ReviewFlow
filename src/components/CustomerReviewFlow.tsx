@@ -56,6 +56,7 @@ import {
   localizeQuestion,
   localizeWelcomeMessage,
 } from '../data/localizedQuestions';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { BusinessLogo } from './BusinessLogo';
 import { SpatialTilt } from './ui/spatial-tilt';
 
@@ -350,6 +351,8 @@ export function CustomerReviewFlow({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  useAutoDismiss(generateError, () => setGenerateError(null));
+  useAutoDismiss(validationError, () => setValidationError(null));
   const [copied, setCopied] = useState(Boolean(persistedInitial?.copied));
   const [openedGoogle, setOpenedGoogle] = useState(Boolean(persistedInitial?.openedGoogle));
   const [variationSeed, setVariationSeed] = useState(persistedInitial?.variationSeed || 1);
