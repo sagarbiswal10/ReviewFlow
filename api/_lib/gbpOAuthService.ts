@@ -270,6 +270,7 @@ export interface AuthorizedBusinessRecord {
   slug: string;
   name: string;
   category: string;
+  isCallerAdmin?: boolean;
   gbpSettings: {
     fiveStarMode: 'auto_publish' | 'approval_required';
     midStarMode: 'auto_publish' | 'approval_required';
@@ -378,6 +379,7 @@ export async function assertAuthorizedForBusiness(
       slug,
       name: readFsStr(bf, 'name') || 'Business',
       category: readFsStr(bf, 'category'),
+      isCallerAdmin: isAdmin,
       gbpSettings: {
         fiveStarMode:
           readFsStr(gbpMap, 'fiveStarMode') === 'approval_required'

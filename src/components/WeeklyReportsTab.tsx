@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Calendar,
   Check,
   CheckCircle2,
   Copy,
   Download,
+  ExternalLink,
   FileBarChart2,
   Loader2,
   Mail,
@@ -30,6 +32,7 @@ import {
   subscribeToBusinessQrStands,
   subscribeToBusinessWeeklyReports,
 } from '../services/platformFeaturesService';
+import { apiFetch, formatApiError } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 
@@ -38,6 +41,7 @@ interface WeeklyReportsTabProps {
   userUid: string;
   userEmail: string;
   isAdmin?: boolean;
+  showTokenUsage?: boolean;
   events: ReviewEvent[];
   canEdit: boolean;
 }
@@ -47,6 +51,7 @@ export function WeeklyReportsTab({
   userUid,
   userEmail,
   isAdmin = false,
+  showTokenUsage = false,
   events,
   canEdit,
 }: WeeklyReportsTabProps) {
@@ -65,6 +70,7 @@ export function WeeklyReportsTab({
   const [pendingOverwriteChoice, setPendingOverwriteChoice] = useState<'previous' | 'current' | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emailNotConfiguredHint, setEmailNotConfiguredHint] = useState<string | null>(null);
   const isRecipientsDirtyRef = useRef(false);
   const lastRecipientsSigRef = useRef<string>(
     JSON.stringify({
@@ -200,11 +206,62 @@ export function WeeklyReportsTab({
     }
   };
 
+  const buildPlainSummaryText = (report: WeeklyReport, includeTokens: boolean) => {
+    const rg = report.reviewGenMetrics;
+    const ar = report.autoReplyMetrics;
+    const ai = report.aiUsageMetrics;
+    const lines = [
+      `ReviewFlow Weekly Report — ${report.businessName}`,
+      `Week (Mon–Sun): ${report.weekStart} to ${report.weekEnd}`,
+      '',
+      '1. Review Generation Metrics:',
+      `- Total QR Scans: ${rg.totalScans} (Unique Sessions: ${rg.uniqueSessions})`,
+      `- Review Forms Started: ${rg.formsStarted}`,
+      `- AI Drafts Generated: ${rg.draftsGenerated}`,
+      `- Google Review Link Clicks: ${rg.googleRedirects}`,
+      `- Confirmed Google Reviews: ${rg.confirmedGoogleReviews} (Avg Rating: ${rg.averageGoogleRating})`,
+      `- Best QR Stand: ${rg.bestStandName} (${rg.bestStandScans} scans)`,
+      `- Lowest QR Stand: ${rg.lowestStandName} (${rg.lowestStandScans} scans)`,
+      '',
+      '2. Google Business Profile AI Auto-Reply:',
+      `- New Reviews: ${ar.totalNewReviews}`,
+      `- AI Replies Generated: ${ar.aiRepliesGenerated}`,
+      `- Auto-Published (5★): ${ar.autoPublished}`,
+      `- Manually Approved: ${ar.manuallyApproved}`,
+      `- Waiting Approval: ${ar.waitingApproval}`,
+      `- Failed / Ignored: ${ar.failedReplies} failed, ${ar.ignoredReviews} ignored`,
+    ];
+    if (includeTokens) {
+      lines.push(
+        '',
+        '3. AI Model Usage & Cost:',
+        `- Requests: ${ai.totalRequests} (${ai.successfulRequests} ok / ${ai.failedRequests} failed)`,
+        `- Total Tokens: ${ai.totalTokens.toLocaleString()}`,
+        `- Estimated Cost: $${ai.estimatedCostUsd.toFixed(4)}`,
+      );
+    }
+    return lines.join('\n');
+  };
+
+  const buildMailtoHref = (report: WeeklyReport, rawRecipients: string) => {
+    const parsed = rawRecipients
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+    const to = parsed.join(',');
+    const subject = encodeURIComponent(
+      `ReviewFlow Weekly Report — ${report.businessName} (${report.weekStart} to ${report.weekEnd})`,
+    );
+    const body = encodeURIComponent(buildPlainSummaryText(report, showTokenUsage));
+    return `mailto:${to}?subject=${subject}&body=${body}`;
+  };
+
   const handleSaveRecipientsAndDispatch = async () => {
     if (!activeReport) return;
     setIsDispatching(true);
     setErrorMessage(null);
     setStatusMessage(null);
+    setEmailNotConfiguredHint(null);
     try {
       const parsed = recipientInput
         .split(',')
@@ -227,18 +284,53 @@ export function WeeklyReportsTab({
           { isAdmin },
         );
       }
-      await markWeeklyReportDispatched(activeReport, parsed);
+
+      const dispatchRes = await apiFetch('/api/weekly-report-dispatch', {
+        method: 'POST',
+        body: JSON.stringify({
+          businessId: business.id,
+          recipients: parsed,
+          includeAiUsage: showTokenUsage,
+          report: activeReport,
+        }),
+      });
+      const dispatchData = (await dispatchRes.json().catch(() => ({}))) as {
+        emailSent?: boolean;
+        configured?: boolean;
+        provider?: string;
+        message?: string;
+        error?: string;
+      };
+
+      if (!dispatchRes.ok) {
+        throw new Error(
+          dispatchData.error ||
+            formatApiError(null, `Failed to send weekly report email (HTTP ${dispatchRes.status}).`),
+        );
+      }
+
       isRecipientsDirtyRef.current = false;
       lastRecipientsSigRef.current = JSON.stringify({
         id: business.id,
         val: parsed.join(', '),
       });
-      setStatusMessage(`Weekly report archived & dispatched to: ${parsed.join(', ')}`);
-      setTimeout(() => {
-        if (mountedRef.current) setStatusMessage(null);
-      }, 4500);
+
+      if (dispatchData.emailSent) {
+        await markWeeklyReportDispatched(activeReport, parsed);
+        setStatusMessage(
+          `Weekly report emailed successfully to ${parsed.join(', ')}${dispatchData.provider ? ` via ${dispatchData.provider.toUpperCase()}` : ''}.`,
+        );
+        setTimeout(() => {
+          if (mountedRef.current) setStatusMessage(null);
+        }, 5000);
+      } else {
+        setEmailNotConfiguredHint(
+          dispatchData.message ||
+            'Recipient list saved, but no email provider (RESEND_API_KEY or SMTP) is configured on the server yet.',
+        );
+      }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Unable to dispatch report.');
+      setErrorMessage(err instanceof Error ? err.message : 'Unable to send report email.');
     } finally {
       setIsDispatching(false);
     }
@@ -247,35 +339,7 @@ export function WeeklyReportsTab({
   const handleCopyPlainSummary = async () => {
     if (!activeReport) return;
     setErrorMessage(null);
-    const rg = activeReport.reviewGenMetrics;
-    const ar = activeReport.autoReplyMetrics;
-    const ai = activeReport.aiUsageMetrics;
-    const text = [
-      `ReviewFlow Weekly Report — ${activeReport.businessName}`,
-      `Week (Mon–Sun): ${activeReport.weekStart} to ${activeReport.weekEnd}`,
-      '',
-      '1. Review Generation Metrics:',
-      `- Total QR Scans: ${rg.totalScans} (Unique Sessions: ${rg.uniqueSessions})`,
-      `- Review Forms Started: ${rg.formsStarted}`,
-      `- AI Drafts Generated: ${rg.draftsGenerated}`,
-      `- Google Review Link Clicks: ${rg.googleRedirects}`,
-      `- Confirmed Google Reviews: ${rg.confirmedGoogleReviews} (Avg Rating: ${rg.averageGoogleRating})`,
-      `- Best QR Stand: ${rg.bestStandName} (${rg.bestStandScans} scans)`,
-      `- Lowest QR Stand: ${rg.lowestStandName} (${rg.lowestStandScans} scans)`,
-      '',
-      '2. Google Business Profile AI Auto-Reply:',
-      `- New Reviews: ${ar.totalNewReviews}`,
-      `- AI Replies Generated: ${ar.aiRepliesGenerated}`,
-      `- Auto-Published (5★): ${ar.autoPublished}`,
-      `- Manually Approved: ${ar.manuallyApproved}`,
-      `- Waiting Approval: ${ar.waitingApproval}`,
-      `- Failed / Ignored: ${ar.failedReplies} failed, ${ar.ignoredReviews} ignored`,
-      '',
-      '3. AI Model Usage & Cost:',
-      `- Requests: ${ai.totalRequests} (${ai.successfulRequests} ok / ${ai.failedRequests} failed)`,
-      `- Total Tokens: ${ai.totalTokens.toLocaleString()}`,
-      `- Estimated Cost: $${ai.estimatedCostUsd.toFixed(4)}`,
-    ].join('\n');
+    const text = buildPlainSummaryText(activeReport, showTokenUsage);
     const ok = await copyToClipboard(text);
     if (ok) {
       setCopiedSummary(true);
@@ -304,7 +368,9 @@ export function WeeklyReportsTab({
               )}
             </div>
             <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-              Generates stored Monday–Sunday snapshots covering QR stand funnel analytics, GBP AI replies, and exact AI token &amp; cost totals with PDF download.
+              {showTokenUsage
+                ? 'Generates stored Monday–Sunday snapshots covering QR stand funnel analytics, GBP AI replies, and exact AI token & cost totals with PDF download.'
+                : 'Generates stored Monday–Sunday snapshots covering QR stand funnel analytics and Google Business Profile AI replies with PDF download.'}
             </p>
           </div>
 
@@ -428,7 +494,9 @@ export function WeeklyReportsTab({
                   onClick={() => {
                     setErrorMessage(null);
                     try {
-                      Promise.resolve(downloadWeeklyReportPdf(activeReport)).catch((err) =>
+                      Promise.resolve(
+                        downloadWeeklyReportPdf(activeReport, { includeAiUsage: showTokenUsage }),
+                      ).catch((err) =>
                         setErrorMessage(
                           err instanceof Error
                             ? err.message
@@ -461,7 +529,9 @@ export function WeeklyReportsTab({
             No Weekly Report Snapshots Stored Yet
           </h3>
           <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">
-            Click &ldquo;Generate Report Snapshot&rdquo; above to compile real scan, QR stand, GBP reply, and AI token cost analytics for {business.name}.
+            {showTokenUsage
+              ? `Click "Generate Report Snapshot" above to compile real scan, QR stand, GBP reply, and AI token cost analytics for ${business.name}.`
+              : `Click "Generate Report Snapshot" above to compile real scan, QR stand, and GBP reply analytics for ${business.name}.`}
           </p>
         </div>
       ) : (
@@ -543,61 +613,63 @@ export function WeeklyReportsTab({
             </div>
           </div>
 
-          {/* 7.3 AI Model Usage Report */}
-          <div className="liquid-glass spatial-card-3d rounded-2xl p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-              <h3 className="font-display text-base font-bold text-slate-900">
-                3. AI Model Usage &amp; Estimated Cost Report
-              </h3>
-              <span className="font-mono text-xs font-bold text-[#005c55] tabular-nums">
-                {activeReport.aiUsageMetrics.totalTokens.toLocaleString()} tokens · $
-                {activeReport.aiUsageMetrics.estimatedCostUsd.toFixed(4)}
-              </span>
-            </div>
-
-            {activeReport.aiUsageMetrics.byModel.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                No AI generation calls recorded within {activeReport.weekStart} – {activeReport.weekEnd}.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
-                      <th className="py-2.5 px-4">Provider</th>
-                      <th className="py-2.5 px-4">Exact Model ID</th>
-                      <th className="py-2.5 px-4 text-right">Requests</th>
-                      <th className="py-2.5 px-4 text-right">Succeeded / Failed</th>
-                      <th className="py-2.5 px-4 text-right">Tokens Used</th>
-                      <th className="py-2.5 px-4 text-right">Estimated Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {activeReport.aiUsageMetrics.byModel.map((row) => (
-                      <tr key={`${row.provider}-${row.modelId}`}>
-                        <td className="py-2.5 px-4 font-semibold uppercase text-slate-700">
-                          {row.provider}
-                        </td>
-                        <td className="py-2.5 px-4 font-mono text-slate-900">{row.modelId}</td>
-                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                          {row.count}
-                        </td>
-                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                          {row.successCount} / {row.failedCount}
-                        </td>
-                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                          {row.totalTokens.toLocaleString()}
-                        </td>
-                        <td className="py-2.5 px-4 text-right font-mono font-bold text-[#005c55] tabular-nums">
-                          ${row.estimatedCostUsd.toFixed(5)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          {/* 7.3 AI Model Usage Report (Business Management Portal Only) */}
+          {showTokenUsage && (
+            <div className="liquid-glass spatial-card-3d rounded-2xl p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <h3 className="font-display text-base font-bold text-slate-900">
+                  3. AI Model Usage &amp; Estimated Cost Report
+                </h3>
+                <span className="font-mono text-xs font-bold text-[#005c55] tabular-nums">
+                  {activeReport.aiUsageMetrics.totalTokens.toLocaleString()} tokens · $
+                  {activeReport.aiUsageMetrics.estimatedCostUsd.toFixed(4)}
+                </span>
               </div>
-            )}
-          </div>
+
+              {activeReport.aiUsageMetrics.byModel.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No AI generation calls recorded within {activeReport.weekStart} – {activeReport.weekEnd}.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
+                        <th className="py-2.5 px-4">Provider</th>
+                        <th className="py-2.5 px-4">Exact Model ID</th>
+                        <th className="py-2.5 px-4 text-right">Requests</th>
+                        <th className="py-2.5 px-4 text-right">Succeeded / Failed</th>
+                        <th className="py-2.5 px-4 text-right">Tokens Used</th>
+                        <th className="py-2.5 px-4 text-right">Estimated Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {activeReport.aiUsageMetrics.byModel.map((row) => (
+                        <tr key={`${row.provider}-${row.modelId}`}>
+                          <td className="py-2.5 px-4 font-semibold uppercase text-slate-700">
+                            {row.provider}
+                          </td>
+                          <td className="py-2.5 px-4 font-mono text-slate-900">{row.modelId}</td>
+                          <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                            {row.count}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                            {row.successCount} / {row.failedCount}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                            {row.totalTokens.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono font-bold text-[#005c55] tabular-nums">
+                            ${row.estimatedCostUsd.toFixed(5)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 7.4 Contact Dispatch Log */}
           <div className="liquid-glass rounded-2xl p-6 space-y-4">
@@ -608,7 +680,7 @@ export function WeeklyReportsTab({
                   <span>Send Report to Authorized Business Contacts</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Configure Monday recipient contacts and record weekly report delivery in Firestore.
+                  Send this weekly report directly to the specified email address(es) and save recipient settings.
                 </p>
               </div>
               {activeReport.dispatchedAt && (
@@ -621,10 +693,12 @@ export function WeeklyReportsTab({
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
+                aria-label="Report recipient email addresses"
                 value={recipientInput}
                 onChange={(e) => {
                   isRecipientsDirtyRef.current = true;
                   setRecipientInput(e.target.value);
+                  setEmailNotConfiguredHint(null);
                 }}
                 placeholder="owner@business.com, manager@business.com"
                 className="flex-1 h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900"
@@ -640,9 +714,27 @@ export function WeeklyReportsTab({
                 ) : (
                   <Send className="w-3.5 h-3.5" />
                 )}
-                <span>Record &amp; Dispatch Report</span>
+                <span>Send Report Email</span>
               </button>
             </div>
+
+            {emailNotConfiguredHint && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-950 space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">{emailNotConfiguredHint}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pl-6">
+                  <a
+                    href={buildMailtoHref(activeReport, recipientInput)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-800 text-white font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open in Email App</span>
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

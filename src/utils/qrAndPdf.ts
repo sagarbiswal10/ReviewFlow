@@ -215,7 +215,11 @@ export async function downloadQrPdf(options: {
   pdf.save(`reviewflow-poster-${options.slug}${standSuffix}.pdf`);
 }
 
-export async function downloadWeeklyReportPdf(report: WeeklyReport): Promise<void> {
+export async function downloadWeeklyReportPdf(
+  report: WeeklyReport,
+  options: { includeAiUsage?: boolean } = {},
+): Promise<void> {
+  const includeAiUsage = options.includeAiUsage !== false;
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({
     orientation: 'portrait',
@@ -337,55 +341,57 @@ export async function downloadWeeklyReportPdf(report: WeeklyReport): Promise<voi
     { label: 'Failed / Ignored', value: `${ar.failedReplies} failed · ${ar.ignoredReviews} ignored` },
   ]);
 
-  const ai = report.aiUsageMetrics;
-  drawSectionHeader(
-    '3. AI Model Usage & Estimated Cost',
-    'Exact provider, model breakdown, tokens processed, and estimated USD cost',
-  );
-  drawMetricGrid([
-    { label: 'Total AI Requests', value: String(ai.totalRequests) },
-    {
-      label: 'Success / Failed',
-      value: `${ai.successfulRequests} ok · ${ai.failedRequests} failed`,
-    },
-    {
-      label: 'Tokens & Est. Cost',
-      value: `${ai.totalTokens.toLocaleString()} tok · $${ai.estimatedCostUsd.toFixed(4)}`,
-    },
-  ]);
+  if (includeAiUsage) {
+    const ai = report.aiUsageMetrics;
+    drawSectionHeader(
+      '3. AI Model Usage & Estimated Cost',
+      'Exact provider, model breakdown, tokens processed, and estimated USD cost',
+    );
+    drawMetricGrid([
+      { label: 'Total AI Requests', value: String(ai.totalRequests) },
+      {
+        label: 'Success / Failed',
+        value: `${ai.successfulRequests} ok · ${ai.failedRequests} failed`,
+      },
+      {
+        label: 'Tokens & Est. Cost',
+        value: `${ai.totalTokens.toLocaleString()} tok · $${ai.estimatedCostUsd.toFixed(4)}`,
+      },
+    ]);
 
-  if (ai.byModel.length > 0) {
-    if (y > pageHeight - 36) {
-      pdf.addPage();
-      y = 18;
-    }
-    pdf.setFillColor(241, 245, 249);
-    pdf.rect(margin, y, contentWidth, 8, 'F');
-    pdf.setTextColor(71, 85, 105);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.5);
-    pdf.text('Provider', margin + 3, y + 5.5);
-    pdf.text('Model ID', margin + 34, y + 5.5);
-    pdf.text('Requests', margin + 96, y + 5.5);
-    pdf.text('Tokens', margin + 124, y + 5.5);
-    pdf.text('Est. Cost', margin + 154, y + 5.5);
-    y += 9;
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(15, 23, 42);
-    for (const row of ai.byModel) {
-      if (y > pageHeight - 20) {
+    if (ai.byModel.length > 0) {
+      if (y > pageHeight - 36) {
         pdf.addPage();
         y = 18;
       }
-      pdf.text(row.provider, margin + 3, y + 5);
-      pdf.text(row.modelId, margin + 34, y + 5, { maxWidth: 58 });
-      pdf.text(`${row.successCount}/${row.count}`, margin + 96, y + 5);
-      pdf.text(row.totalTokens.toLocaleString(), margin + 124, y + 5);
-      pdf.text(`$${row.estimatedCostUsd.toFixed(4)}`, margin + 154, y + 5);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.line(margin, y + 7.5, margin + contentWidth, y + 7.5);
-      y += 8;
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(margin, y, contentWidth, 8, 'F');
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.text('Provider', margin + 3, y + 5.5);
+      pdf.text('Model ID', margin + 34, y + 5.5);
+      pdf.text('Requests', margin + 96, y + 5.5);
+      pdf.text('Tokens', margin + 124, y + 5.5);
+      pdf.text('Est. Cost', margin + 154, y + 5.5);
+      y += 9;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(15, 23, 42);
+      for (const row of ai.byModel) {
+        if (y > pageHeight - 20) {
+          pdf.addPage();
+          y = 18;
+        }
+        pdf.text(row.provider, margin + 3, y + 5);
+        pdf.text(row.modelId, margin + 34, y + 5, { maxWidth: 58 });
+        pdf.text(`${row.successCount}/${row.count}`, margin + 96, y + 5);
+        pdf.text(row.totalTokens.toLocaleString(), margin + 124, y + 5);
+        pdf.text(`$${row.estimatedCostUsd.toFixed(4)}`, margin + 154, y + 5);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.line(margin, y + 7.5, margin + contentWidth, y + 7.5);
+        y += 8;
+      }
     }
   }
 

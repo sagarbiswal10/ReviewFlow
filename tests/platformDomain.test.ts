@@ -56,6 +56,10 @@ import {
   localizeWelcomeMessage,
   transliterateRomanToDevanagari,
 } from '../src/data/localizedQuestions.ts';
+import {
+  buildWeeklyReportEmailContent,
+  processDispatchWeeklyReportEmail,
+} from '../api/_lib/apiCore.ts';
 import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
@@ -652,6 +656,99 @@ test('TC-PATTERN-01: Instant AI drafts output exact 5-slot pattern (Short+SEO, P
   );
   assert.ok(flowSrc.includes("const STYLE_ROTATION: ReviewStyle[] = ['short', 'detailed', 'professional'];"));
   assert.ok(flowSrc.includes('getNextReviewStyle(selectedStyle, 1)'));
+});
+
+test('TC-REPORT-01: WeeklyReportsTab hides token consumption in Client Portal, shows it in Business Portal, and validates email dispatch payload', async () => {
+  const portalSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
+    'utf8',
+  );
+  const adminSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ManagementConsoleView.tsx'),
+    'utf8',
+  );
+  const reportsSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/WeeklyReportsTab.tsx'),
+    'utf8',
+  );
+
+  // Client Portal renders WeeklyReportsTab without showTokenUsage; Admin Console enables showTokenUsage
+  const portalTabSnippet = portalSrc.slice(
+    portalSrc.indexOf('<WeeklyReportsTab'),
+    portalSrc.indexOf('<WeeklyReportsTab') + 350,
+  );
+  assert.equal(portalTabSnippet.includes('showTokenUsage'), false);
+
+  const adminTabSnippet = adminSrc.slice(
+    adminSrc.indexOf('<WeeklyReportsTab'),
+    adminSrc.indexOf('<WeeklyReportsTab') + 350,
+  );
+  assert.ok(adminTabSnippet.includes('showTokenUsage'));
+  assert.ok(reportsSrc.includes('showTokenUsage = false'));
+  assert.ok(reportsSrc.includes('{showTokenUsage && ('));
+  assert.ok(reportsSrc.includes("apiFetch('/api/weekly-report-dispatch'"));
+
+  const sampleReport = {
+    businessName: 'Rohan Hotel',
+    weekStart: '2026-11-23',
+    weekEnd: '2026-11-29',
+    reviewGenMetrics: {
+      totalScans: 42,
+      uniqueSessions: 36,
+      formsStarted: 28,
+      draftsGenerated: 20,
+      googleRedirects: 15,
+      confirmedGoogleReviews: 8,
+      averageGoogleRating: 4.8,
+      bestStandName: 'Front Desk',
+      bestStandScans: 30,
+      lowestStandName: 'Lobby',
+      lowestStandScans: 12,
+    },
+    autoReplyMetrics: {
+      totalNewReviews: 8,
+      aiRepliesGenerated: 8,
+      autoPublished: 6,
+      manuallyApproved: 2,
+      waitingApproval: 0,
+      failedReplies: 0,
+      ignoredReviews: 0,
+    },
+    aiUsageMetrics: {
+      totalRequests: 28,
+      successfulRequests: 28,
+      failedRequests: 0,
+      totalTokens: 12500,
+      estimatedCostUsd: 0.0125,
+    },
+  };
+
+  const clientEmail = buildWeeklyReportEmailContent({
+    report: sampleReport,
+    includeAiUsage: false,
+  });
+  assert.equal(clientEmail.text.includes('Total Tokens'), false);
+  assert.equal(clientEmail.html.includes('Estimated Cost'), false);
+
+  const adminEmail = buildWeeklyReportEmailContent({
+    report: sampleReport,
+    includeAiUsage: true,
+  });
+  assert.ok(adminEmail.text.includes('12,500'));
+  assert.ok(adminEmail.html.includes('$0.0125'));
+
+  const dispatchRes = await processDispatchWeeklyReportEmail(
+    {
+      businessId: 'biz_test_1',
+      recipients: ['owner@rohanhotel.com'],
+      includeAiUsage: true,
+      report: sampleReport,
+    },
+    { allowAiUsageSection: false },
+  );
+  assert.equal(dispatchRes.status, 200);
+  assert.equal(dispatchRes.data.emailSent, false);
+  assert.equal(dispatchRes.data.configured, false);
 });
 
 

@@ -1602,7 +1602,7 @@ export async function updateBusiness(
   if (isAdmin && (updates.gbpSettings !== undefined || optionalRepairs?.gbpSettings)) {
     businessUpdates.gbpSettings = sanitizeGbpSettings(updates.gbpSettings ?? current.gbpSettings);
   }
-  if (isAdmin && (updates.weeklyReportConfig !== undefined || optionalRepairs?.weeklyReportConfig)) {
+  if (updates.weeklyReportConfig !== undefined || (isAdmin && optionalRepairs?.weeklyReportConfig)) {
     businessUpdates.weeklyReportConfig = sanitizeWeeklyReportConfig(
       updates.weeklyReportConfig ?? current.weeklyReportConfig,
       nextClientEmail,

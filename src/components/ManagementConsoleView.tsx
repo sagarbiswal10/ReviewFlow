@@ -1820,6 +1820,7 @@ export function ManagementConsoleView({
                   userUid={user.uid}
                   userEmail={user.email || ''}
                   isAdmin
+                  showTokenUsage
                   events={events}
                   canEdit
                 />

@@ -8,6 +8,7 @@ import {
   checkRateLimit,
   getHealthPayload,
   isOriginAllowed,
+  processDispatchWeeklyReportEmail,
   processGbpProxy,
   processGenerateReply,
   processGenerateReview,
@@ -16,6 +17,8 @@ import {
   processValidateQrStandSlot,
   sanitizeLogError,
   verifyGoogleReviewsWebhookAuth,
+  verifyWeeklyReportCallerAccess,
+  type DispatchWeeklyReportBody,
   type GbpProxyBody,
   type GenerateReplyBody,
   type GenerateReviewBody,
@@ -216,6 +219,33 @@ async function startServer() {
       } catch (err) {
         console.error('gbp-sync route error:', sanitizeLogError(err));
         res.status(500).json({ error: 'Internal server error while syncing Google Business Profile.' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/weekly-report-dispatch',
+    requireAuthenticatedUser,
+    authenticatedLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const body = (req.body || {}) as Partial<DispatchWeeklyReportBody>;
+        const accessCheck = await verifyWeeklyReportCallerAccess({
+          businessId: typeof body.businessId === 'string' ? body.businessId : '',
+          caller: req.authUser,
+          rawToken: req.rawBearerToken,
+        });
+        if (!accessCheck.ok) {
+          res.status(accessCheck.status).json({ error: accessCheck.error });
+          return;
+        }
+        const result = await processDispatchWeeklyReportEmail(body, {
+          allowAiUsageSection: accessCheck.isAdmin,
+        });
+        res.status(result.status).json(result.data);
+      } catch (err) {
+        console.error('weekly-report-dispatch route error:', sanitizeLogError(err));
+        res.status(500).json({ error: 'Internal server error while dispatching weekly report email.' });
       }
     },
   );
