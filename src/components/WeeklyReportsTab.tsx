@@ -287,6 +287,7 @@ export function WeeklyReportsTab({
 
       const dispatchRes = await apiFetch('/api/weekly-report-dispatch', {
         method: 'POST',
+        requireAuth: true,
         body: JSON.stringify({
           businessId: business.id,
           recipients: parsed,

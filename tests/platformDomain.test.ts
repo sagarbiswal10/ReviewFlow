@@ -687,6 +687,7 @@ test('TC-REPORT-01: WeeklyReportsTab hides token consumption in Client Portal, s
   assert.ok(reportsSrc.includes('showTokenUsage = false'));
   assert.ok(reportsSrc.includes('{showTokenUsage && ('));
   assert.ok(reportsSrc.includes("apiFetch('/api/weekly-report-dispatch'"));
+  assert.ok(reportsSrc.includes('requireAuth: true'));
 
   const sampleReport = {
     businessName: 'Rohan Hotel',
