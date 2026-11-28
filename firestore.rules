@@ -861,14 +861,14 @@ service cloud.firestore {
             incoming().enabledFeatures == existing().enabledFeatures &&
             !incoming().diff(existing()).affectedKeys().hasAny([
               'ownerId', 'clientEmail', 'clientUid', 'clientAccessLevel', 'enabledFeatures',
-              'qrStandLimit', 'packageTier', 'allowClientFlowModeSwitch', 'createdAt'
+              'qrStandLimit', 'packageTier', 'allowClientFlowModeSwitch', 'googleReviewUrl', 'createdAt'
             ]) &&
             canClientEditFeatureFields(existing(), incoming().diff(existing()).affectedKeys()) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerName', 'reviewFlowMode', 'name', 'category', 'address', 'locality', 'city',
               'servicesOffered', 'productsOffered', 'businessHighlights',
               'phone', 'contactEmail', 'website',
-              'googleReviewUrl', 'logoDataUrl', 'branding', 'qrConfig',
+              'logoDataUrl', 'branding', 'qrConfig',
               'questions', 'formTemplate', 'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
               'slug', 'gbpSettings', 'weeklyReportConfig',
               'lifecycleStatus', 'tenantFirebase', 'updatedAt'
@@ -879,7 +879,6 @@ service cloud.firestore {
             (!incoming().diff(existing()).affectedKeys().hasAny(['questions']) || isValidQuestions(incoming().questions)) &&
             (!incoming().diff(existing()).affectedKeys().hasAny(['formTemplate']) || incoming().formTemplate == null || isValidFormTemplate(incoming().formTemplate)) &&
             (!incoming().diff(existing()).affectedKeys().hasAny(['name']) || (incoming().name is string && incoming().name.size() >= 1 && incoming().name.size() <= 120)) &&
-            (!incoming().diff(existing()).affectedKeys().hasAny(['googleReviewUrl']) || (incoming().googleReviewUrl is string && incoming().googleReviewUrl.size() <= 500)) &&
             (!incoming().diff(existing()).affectedKeys().hasAny(['logoDataUrl']) || (incoming().logoDataUrl is string && incoming().logoDataUrl.size() <= 350000)) &&
             (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywords']) || incoming().seoKeywords == null || isValidSeoKeywords(incoming().seoKeywords)) &&
             (!incoming().diff(existing()).affectedKeys().hasAny(['seoKeywordsByLanguage']) || incoming().seoKeywordsByLanguage == null || isValidSeoKeywordsByLanguage(incoming().seoKeywordsByLanguage)) &&
@@ -984,7 +983,7 @@ service cloud.firestore {
                 incoming().diff(existing()).affectedKeys().hasOnly([
                   'ownerName', 'reviewFlowMode', 'name', 'category',
                   'address', 'locality', 'city', 'servicesOffered', 'productsOffered', 'businessHighlights',
-                  'googleReviewUrl', 'logoDataUrl',
+                  'logoDataUrl',
                   'branding', 'qrConfig', 'pausedStandIds', 'questions', 'formTemplate',
                   'seoKeywords', 'seoKeywordsByLanguage', 'referenceReviews',
                   'lifecycleStatus', 'tenantFirebase', 'updatedAt'

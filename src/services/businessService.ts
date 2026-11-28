@@ -1504,8 +1504,11 @@ export async function updateBusiness(
     );
   }
   if (
-    updates.googleReviewUrl !== undefined ||
-    (isAdmin && (rawNeedsCoreStringsRepair.has(current) || liveNeedsCoreRepair || publicNeedsCoreRepair))
+    isAdmin &&
+    (updates.googleReviewUrl !== undefined ||
+      rawNeedsCoreStringsRepair.has(current) ||
+      liveNeedsCoreRepair ||
+      publicNeedsCoreRepair)
   ) {
     businessUpdates.googleReviewUrl = nextGoogleUrl;
     publicUpdates.googleReviewUrl = nextGoogleUrl;

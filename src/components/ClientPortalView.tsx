@@ -2157,7 +2157,7 @@ export function ClientPortalView({
                       userEmail={user.email || ''}
                       isAdmin={isAdmin}
                       canEdit={canEditBranding || isAdmin}
-                      allowOAuthConnection={canEditBranding || isAdmin}
+                      allowOAuthConnection={false}
                     />
                   )}
 
@@ -2207,6 +2207,7 @@ export function ClientPortalView({
                     <BrandingTab
                       business={activeBusiness}
                       isAdmin={isAdmin}
+                      allowGoogleLinkEdit={false}
                       onDeleted={() => selectTab('qr_features')}
                     />
                   )}

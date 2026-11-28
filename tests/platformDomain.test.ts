@@ -150,10 +150,12 @@ test('TC-ARCH-01: GBP OAuth uses server-side flow and honors business-level perm
     'utf-8',
   );
 
-  // ClientPortalView gates OAuth connection behind full/admin access
-  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{canEditBranding \|\| isAdmin\}/);
-  // ManagementConsoleView explicitly enables allowOAuthConnection
+  // ClientPortalView removes GBP OAuth connection buttons (shows Connected/Not Connected only) and locks Google Review Link
+  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{false\}/);
+  assert.match(clientPortalSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit=\{false\}/);
+  // ManagementConsoleView explicitly enables allowOAuthConnection & Google link editing
   assert.match(adminConsoleSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection/);
+  assert.match(adminConsoleSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit/);
   // GbpAutoReplyTab defaults allowOAuthConnection to false and uses server-side OAuth (no browser GIS token client)
   assert.match(gbpTabSrc, /allowOAuthConnection\s*=\s*false/);
   assert.match(gbpTabSrc, /startServerGbpOAuth/);

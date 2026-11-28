@@ -38,6 +38,7 @@ import { TypedConfirmModal } from './TypedConfirmModal';
 interface BrandingTabProps {
   business: Business;
   isAdmin?: boolean;
+  allowGoogleLinkEdit?: boolean;
   sectionMode?: 'all' | 'seo_library';
   onDeleted: () => void;
 }
@@ -52,10 +53,12 @@ const LANGUAGE_TABS: { id: ReviewLanguage; label: string }[] = [
 export function BrandingTab({
   business,
   isAdmin = false,
+  allowGoogleLinkEdit = isAdmin,
   sectionMode = 'all',
   onDeleted,
 }: BrandingTabProps) {
   const packageTier = sanitizePackageTier(business.packageTier);
+  const canEditGoogleReviewUrl = Boolean(isAdmin && allowGoogleLinkEdit);
   const canSwitchFlowMode =
     isAdmin || (packageTier === 'standard_plus' && business.allowClientFlowModeSwitch !== false);
   const allowedLanguages = useMemo(
@@ -257,10 +260,14 @@ export function BrandingTab({
           businessHighlights: businessHighlights.trim(),
           phone: phone.trim(),
           contactEmail: contactEmail.trim(),
-          googleReviewUrl: sanitizeExternalUrl(
-            googleReviewUrl,
-            'https://www.google.com/maps',
-          ),
+          ...(canEditGoogleReviewUrl
+            ? {
+                googleReviewUrl: sanitizeExternalUrl(
+                  googleReviewUrl,
+                  'https://www.google.com/maps',
+                ),
+              }
+            : {}),
           logoDataUrl,
           ...(isAdmin
             ? {
@@ -628,19 +635,39 @@ export function BrandingTab({
           )}
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1.5">
-              Google Business Profile Review Link
-            </label>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label className="block text-xs font-medium text-slate-700">
+                Google Business Profile Review Link
+              </label>
+              {!canEditGoogleReviewUrl && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-semibold text-slate-600">
+                  <Lock className="w-3 h-3" />
+                  Locked · Business Management Only
+                </span>
+              )}
+            </div>
             <input
               type="url"
+              readOnly={!canEditGoogleReviewUrl}
+              disabled={!canEditGoogleReviewUrl}
               value={googleReviewUrl}
               onChange={(e) => {
+                if (!canEditGoogleReviewUrl) return;
                 isDirtyRef.current = true;
                 setGoogleReviewUrl(e.target.value);
               }}
               placeholder="https://g.page/r/YOUR_PLACE_ID/review"
-              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm"
+              className={`w-full h-10 px-3 rounded-lg border text-sm ${
+                canEditGoogleReviewUrl
+                  ? 'border-slate-200 bg-white text-slate-900'
+                  : 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
+              }`}
             />
+            {!canEditGoogleReviewUrl && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Only editable from the Business Management Portal.
+              </p>
+            )}
           </div>
 
           <div>

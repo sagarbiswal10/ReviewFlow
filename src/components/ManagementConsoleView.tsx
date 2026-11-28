@@ -1852,6 +1852,7 @@ export function ManagementConsoleView({
                 <BrandingTab
                   business={selectedBiz}
                   isAdmin
+                  allowGoogleLinkEdit
                   onDeleted={() => setSelectedBizId(null)}
                 />
               )}

@@ -272,7 +272,9 @@ export function GbpAutoReplyTab({
 
   // Detect return from Google OAuth callback (?gbp_oauth=connected|pending_api_approval|error)
   useEffect(() => {
-    if (typeof window === 'undefined' || oauthCallbackHandledRef.current) return;
+    if (!allowOAuthConnection || typeof window === 'undefined' || oauthCallbackHandledRef.current) {
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const oauthState = params.get('gbp_oauth');
     const bizParam = params.get('businessId');
@@ -308,7 +310,7 @@ export function GbpAutoReplyTab({
         resolveSanitizedGbpError(oauthErrCode, 'Google Business Profile OAuth did not complete.'),
       );
     }
-  }, [business.id]);
+  }, [allowOAuthConnection, business.id]);
 
   // Reset transient account/location picker state when switching between businesses
   useEffect(() => {
@@ -331,6 +333,7 @@ export function GbpAutoReplyTab({
   };
 
   const handleConnectGoogleOAuth = async () => {
+    if (!allowOAuthConnection) return;
     setConnError(null);
     setConnNotice(null);
     setTopicConflict(null);
@@ -653,7 +656,7 @@ export function GbpAutoReplyTab({
                   }`
                 : allowOAuthConnection
                   ? 'Connect your Google Business Profile account securely to select business locations, enable real-time review notifications, and sync/reply to reviews.'
-                  : 'Google Business Profile connection requires Full Self-Service portal access or Business Management admin authorization.'}
+                  : 'Connection status is view-only here (Connected or Not Connected). Connecting a Google Business Profile is managed exclusively in the Business Management Portal.'}
             </p>
           </div>
 
