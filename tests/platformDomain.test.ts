@@ -26,6 +26,7 @@ import {
   sanitizeWeeklyReportConfig,
   resolvePersistedInstantSeed,
   advancePersistedInstantSeed,
+  parseAndValidateRecipientEmails,
 } from '../src/utils/domainHelpers.ts';
 import {
   buildContextualSeoSuggestions,
@@ -750,6 +751,32 @@ test('TC-REPORT-01: WeeklyReportsTab hides token consumption in Client Portal, s
   assert.equal(dispatchRes.status, 200);
   assert.equal(dispatchRes.data.emailSent, false);
   assert.equal(dispatchRes.data.configured, false);
+
+  // Domain typo validation (e.g. gmail.co -> gmail.com) on both frontend and backend
+  const typoFrontend = parseAndValidateRecipientEmails('somnathbiswal2007@gmail.co');
+  assert.equal(typoFrontend.ok, false);
+  if (!typoFrontend.ok) {
+    assert.equal(typoFrontend.suggestion?.fixedEmail, 'somnathbiswal2007@gmail.com');
+  }
+  const mixedFrontend = parseAndValidateRecipientEmails('owner@rohanhotel.com, bad-email');
+  assert.equal(mixedFrontend.ok, false);
+  const validFrontend = parseAndValidateRecipientEmails('SomnathBiswal2007@gmail.com, owner@rohanhotel.com');
+  assert.equal(validFrontend.ok, true);
+  if (validFrontend.ok) {
+    assert.deepEqual(validFrontend.emails, ['somnathbiswal2007@gmail.com', 'owner@rohanhotel.com']);
+  }
+
+  const typoBackend = await processDispatchWeeklyReportEmail(
+    {
+      businessId: 'biz_test_1',
+      recipients: ['somnathbiswal2007@gmail.co'],
+      includeAiUsage: false,
+      report: sampleReport,
+    },
+    { allowAiUsageSection: false },
+  );
+  assert.equal(typoBackend.status, 400);
+  assert.match(String(typoBackend.data.error), /somnathbiswal2007@gmail\.com/);
 });
 
 

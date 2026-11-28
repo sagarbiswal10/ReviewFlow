@@ -348,3 +348,107 @@ export function advancePersistedInstantSeed(
   }
   return next;
 }
+
+const COMMON_EMAIL_DOMAIN_TYPOS: Record<string, string> = {
+  'gmail.co': 'gmail.com',
+  'gmail.con': 'gmail.com',
+  'gmail.cm': 'gmail.com',
+  'gmail.om': 'gmail.com',
+  'gmail.cmo': 'gmail.com',
+  'gmai.com': 'gmail.com',
+  'gamil.com': 'gmail.com',
+  'gmial.com': 'gmail.com',
+  'gnail.com': 'gmail.com',
+  'gmaill.com': 'gmail.com',
+  'yahoo.co': 'yahoo.com',
+  'yahoo.con': 'yahoo.com',
+  'yaho.com': 'yahoo.com',
+  'outlook.co': 'outlook.com',
+  'outlook.con': 'outlook.com',
+  'hotmail.co': 'hotmail.com',
+  'hotmail.con': 'hotmail.com',
+  'icloud.co': 'icloud.com',
+  'icloud.con': 'icloud.com',
+};
+
+export function validateRecipientEmail(
+  rawEmail: string,
+): { ok: true; email: string } | { ok: false; error: string; suggestion?: string } {
+  const email = String(rawEmail || '').trim().toLowerCase();
+  if (!email) {
+    return { ok: false, error: 'Email address cannot be empty.' };
+  }
+  if (email.length > 160 || /\s/.test(email) || email.includes('..')) {
+    return { ok: false, error: `Invalid email address "${rawEmail.trim()}".` };
+  }
+  const atIdx = email.indexOf('@');
+  if (atIdx <= 0 || atIdx !== email.lastIndexOf('@')) {
+    return { ok: false, error: `Invalid email address "${rawEmail.trim()}".` };
+  }
+  const localPart = email.slice(0, atIdx);
+  const domainPart = email.slice(atIdx + 1);
+  if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(localPart) || localPart.startsWith('.') || localPart.endsWith('.')) {
+    return { ok: false, error: `Invalid email address "${rawEmail.trim()}".` };
+  }
+  const domainLabels = domainPart.split('.');
+  const tld = domainLabels[domainLabels.length - 1] || '';
+  if (
+    domainLabels.length < 2 ||
+    domainLabels.some((lbl) => !/^[a-z0-9-]+$/i.test(lbl) || lbl.startsWith('-') || lbl.endsWith('-')) ||
+    !/^[a-z]{2,24}$/i.test(tld)
+  ) {
+    return { ok: false, error: `Invalid email domain in "${rawEmail.trim()}".` };
+  }
+  const typoFixDomain = COMMON_EMAIL_DOMAIN_TYPOS[domainPart];
+  if (typoFixDomain) {
+    const suggested = `${localPart}@${typoFixDomain}`;
+    return {
+      ok: false,
+      error: `Invalid email "${email}" — did you mean "${suggested}"?`,
+      suggestion: suggested,
+    };
+  }
+  if (/\.(con|cmo|cpm|vom)$/i.test(domainPart)) {
+    const suggested = `${localPart}@${domainPart.replace(/\.(con|cmo|cpm|vom)$/i, '.com')}`;
+    return {
+      ok: false,
+      error: `Invalid email domain "${email}" — did you mean "${suggested}"?`,
+      suggestion: suggested,
+    };
+  }
+  return { ok: true, email };
+}
+
+export function parseAndValidateRecipientEmails(
+  rawInput: string | string[],
+): { ok: true; emails: string[] } | { ok: false; error: string; suggestion?: { badEmail: string; fixedEmail: string } } {
+  const tokens = Array.isArray(rawInput)
+    ? rawInput.map((item) => String(item || '').trim()).filter(Boolean)
+    : String(rawInput || '')
+        .split(/[,;\n]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return { ok: false, error: 'Enter at least one valid contact email separated by commas.' };
+  }
+
+  const cleanList: string[] = [];
+  const seen = new Set<string>();
+  for (const token of tokens) {
+    const check = validateRecipientEmail(token);
+    if (!check.ok) {
+      return {
+        ok: false,
+        error: check.error,
+        ...(check.suggestion ? { suggestion: { badEmail: token.trim().toLowerCase(), fixedEmail: check.suggestion } } : {}),
+      };
+    }
+    if (!seen.has(check.email)) {
+      seen.add(check.email);
+      cleanList.push(check.email);
+    }
+  }
+
+  return { ok: true, emails: cleanList.slice(0, 15) };
+}

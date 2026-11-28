@@ -34,6 +34,7 @@ import {
 } from '../services/platformFeaturesService';
 import { apiFetch, formatApiError } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
+import { parseAndValidateRecipientEmails } from '../utils/domainHelpers';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 
 interface WeeklyReportsTabProps {
@@ -256,6 +257,11 @@ export function WeeklyReportsTab({
     return `mailto:${to}?subject=${subject}&body=${body}`;
   };
 
+  const recipientValidation = useMemo(
+    () => parseAndValidateRecipientEmails(recipientInput),
+    [recipientInput],
+  );
+
   const handleSaveRecipientsAndDispatch = async () => {
     if (!activeReport) return;
     setIsDispatching(true);
@@ -263,13 +269,10 @@ export function WeeklyReportsTab({
     setStatusMessage(null);
     setEmailNotConfiguredHint(null);
     try {
-      const parsed = recipientInput
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
-      if (parsed.length === 0) {
-        throw new Error('Enter at least one valid contact email separated by commas.');
+      if (!recipientValidation.ok) {
+        throw new Error(recipientValidation.error);
       }
+      const parsed = recipientValidation.emails;
       if (canEdit) {
         await updateBusiness(
           business,
@@ -686,7 +689,11 @@ export function WeeklyReportsTab({
               </div>
               {activeReport.dispatchedAt && (
                 <span className="text-xs font-semibold text-emerald-700">
-                  Last Dispatched: {new Date(activeReport.dispatchedAt).toLocaleString()}
+                  Last Dispatched
+                  {activeReport.dispatchedToEmails?.length
+                    ? ` (${activeReport.dispatchedToEmails.join(', ')})`
+                    : ''}
+                  : {new Date(activeReport.dispatchedAt).toLocaleString()}
                 </span>
               )}
             </div>
@@ -700,13 +707,18 @@ export function WeeklyReportsTab({
                   isRecipientsDirtyRef.current = true;
                   setRecipientInput(e.target.value);
                   setEmailNotConfiguredHint(null);
+                  setErrorMessage(null);
                 }}
                 placeholder="owner@business.com, manager@business.com"
-                className="flex-1 h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900"
+                className={`flex-1 h-10 px-3 rounded-xl border bg-white text-xs text-slate-900 ${
+                  recipientInput.trim() && !recipientValidation.ok
+                    ? 'border-red-300 focus:outline-red-500'
+                    : 'border-slate-200'
+                }`}
               />
               <button
                 type="button"
-                disabled={isDispatching}
+                disabled={isDispatching || !recipientValidation.ok}
                 onClick={handleSaveRecipientsAndDispatch}
                 className="h-10 px-5 rounded-xl bg-[#0f766e] hover:bg-[#005c55] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
               >
@@ -718,6 +730,31 @@ export function WeeklyReportsTab({
                 <span>Send Report Email</span>
               </button>
             </div>
+
+            {recipientInput.trim() && !recipientValidation.ok && (
+              <div className="rounded-xl border border-red-200 bg-red-50/90 px-3.5 py-2.5 text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
+                <span>{recipientValidation.error}</span>
+                {recipientValidation.suggestion && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { badEmail, fixedEmail } = recipientValidation.suggestion!;
+                      isRecipientsDirtyRef.current = true;
+                      setRecipientInput((prev) =>
+                        prev.replace(
+                          new RegExp(badEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+                          fixedEmail,
+                        ),
+                      );
+                      setErrorMessage(null);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold cursor-pointer"
+                  >
+                    Fix to {recipientValidation.suggestion.fixedEmail}
+                  </button>
+                )}
+              </div>
+            )}
 
             {emailNotConfiguredHint && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-950 space-y-2.5">

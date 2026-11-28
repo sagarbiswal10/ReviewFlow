@@ -3998,14 +3998,58 @@ export async function processDispatchWeeklyReportEmail(
   }
 
   const rawRecipients = Array.isArray(body.recipients) ? body.recipients : [];
-  const recipients = Array.from(
-    new Set(
-      rawRecipients
-        .filter((r): r is string => typeof r === 'string')
-        .map((r) => stripEmailHeaderBreaks(r).toLowerCase())
-        .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r) && r.length <= 160),
-    ),
-  ).slice(0, 15);
+  const typoDomainFixes: Record<string, string> = {
+    'gmail.co': 'gmail.com',
+    'gmail.con': 'gmail.com',
+    'gmail.cm': 'gmail.com',
+    'gmail.om': 'gmail.com',
+    'gmail.cmo': 'gmail.com',
+    'gmai.com': 'gmail.com',
+    'gamil.com': 'gmail.com',
+    'gmial.com': 'gmail.com',
+    'gnail.com': 'gmail.com',
+    'yahoo.co': 'yahoo.com',
+    'yahoo.con': 'yahoo.com',
+    'outlook.co': 'outlook.com',
+    'outlook.con': 'outlook.com',
+    'hotmail.co': 'hotmail.com',
+    'hotmail.con': 'hotmail.com',
+    'icloud.co': 'icloud.com',
+    'icloud.con': 'icloud.com',
+  };
+  const recipients: string[] = [];
+  const seenRecipients = new Set<string>();
+  for (const item of rawRecipients) {
+    if (typeof item !== 'string') continue;
+    const clean = stripEmailHeaderBreaks(item).toLowerCase();
+    if (!clean) continue;
+    if (clean.length > 160 || /\s/.test(clean) || clean.includes('..') || !/^[^\s@]+@[^\s@]+\.[a-z]{2,24}$/i.test(clean)) {
+      return { status: 400, data: { error: `Invalid recipient email address "${clean}".` } };
+    }
+    const domainPart = clean.slice(clean.indexOf('@') + 1);
+    const localPart = clean.slice(0, clean.indexOf('@'));
+    if (typoDomainFixes[domainPart]) {
+      return {
+        status: 400,
+        data: {
+          error: `Invalid email "${clean}" — did you mean "${localPart}@${typoDomainFixes[domainPart]}"?`,
+        },
+      };
+    }
+    if (/\.(con|cmo|cpm|vom)$/i.test(domainPart)) {
+      return {
+        status: 400,
+        data: {
+          error: `Invalid email domain "${clean}" — did you mean "${localPart}@${domainPart.replace(/\.(con|cmo|cpm|vom)$/i, '.com')}"?`,
+        },
+      };
+    }
+    if (!seenRecipients.has(clean)) {
+      seenRecipients.add(clean);
+      recipients.push(clean);
+      if (recipients.length >= 15) break;
+    }
+  }
 
   if (recipients.length === 0) {
     return { status: 400, data: { error: 'Provide at least one valid recipient email address.' } };
