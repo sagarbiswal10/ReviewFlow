@@ -157,12 +157,19 @@ test('TC-ARCH-01: GBP OAuth uses server-side flow and honors business-level perm
     'utf-8',
   );
 
-  // ClientPortalView removes GBP OAuth connection buttons (shows Connected/Not Connected only) and locks Google Review Link
-  assert.match(clientPortalSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection=\{false\}/);
+  // ClientPortalView locks GBP Auto Reply with "Coming Soon" badge and locks Google Review Link
+  assert.doesNotMatch(clientPortalSrc, /<GbpAutoReplyTab/);
+  assert.match(clientPortalSrc, /lockedComingSoon:\s*true/);
+  assert.match(clientPortalSrc, /Coming Soon/);
+  assert.match(clientPortalSrc, /if \(tab === 'gbp_reply'\) return;/);
   assert.match(clientPortalSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit=\{false\}/);
-  // ManagementConsoleView explicitly enables allowOAuthConnection & Google link editing
+  // ManagementConsoleView explicitly enables allowOAuthConnection & Google link editing, and keeps Top Businesses flush under its header
   assert.match(adminConsoleSrc, /<GbpAutoReplyTab[\s\S]*allowOAuthConnection/);
   assert.match(adminConsoleSrc, /<BrandingTab[\s\S]*allowGoogleLinkEdit/);
+  assert.doesNotMatch(
+    adminConsoleSrc,
+    /\{\/\* 4-Col Top Businesses List \*\/\}\s*<div[^>]*justify-between/,
+  );
   // GbpAutoReplyTab defaults allowOAuthConnection to false and uses server-side OAuth (no browser GIS token client)
   assert.match(gbpTabSrc, /allowOAuthConnection\s*=\s*false/);
   assert.match(gbpTabSrc, /startServerGbpOAuth/);

@@ -21,6 +21,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  Lock,
   LogOut,
   Menu,
   Moon,
@@ -67,7 +68,6 @@ import { QuestionBuilderTab } from './QuestionBuilderTab';
 import { BrandingTab } from './BrandingTab';
 import { CustomerReviewFlow } from './CustomerReviewFlow';
 import { QrStandsTab } from './QrStandsTab';
-import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
 import { TemplatesTab } from './TemplatesTab';
 import { FullActivityPage } from './FullActivityPage';
@@ -213,13 +213,7 @@ export function ClientPortalView({
       return 'dark';
     }
   });
-  const [activeTab, setActiveTab] = useState<PortalTab>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('gbp_oauth')) return 'gbp_reply';
-    }
-    return 'qr_features';
-  });
+  const [activeTab, setActiveTab] = useState<PortalTab>('qr_features');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -407,7 +401,7 @@ export function ClientPortalView({
       (activeTab === 'questions' && (!f.customQuestions || !isGuidedQuestionsAllowed)) ||
       (activeTab === 'branding' && f.brandingSettings === false) ||
       (activeTab === 'qr_stands' && f.inStoreQrStands === false) ||
-      (activeTab === 'gbp_reply' && f.gbpAutoReply === false) ||
+      activeTab === 'gbp_reply' ||
       (activeTab === 'weekly_reports' && f.weeklyReports === false);
 
     if (isTabDisabledByFeature) {
@@ -421,7 +415,6 @@ export function ClientPortalView({
       'analytics',
       'full_activity',
       'qr_stands',
-      'gbp_reply',
       'weekly_reports',
       'templates',
       'preview',
@@ -862,6 +855,7 @@ export function ClientPortalView({
   };
 
   const selectTab = (tab: PortalTab) => {
+    if (tab === 'gbp_reply') return;
     setActiveTab(tab);
     setMobileSidebarOpen(false);
   };
@@ -904,6 +898,7 @@ export function ClientPortalView({
     label: string;
     icon: typeof QrCode;
     visible: boolean;
+    lockedComingSoon?: boolean;
   }[] = [
     {
       id: 'qr_editor',
@@ -924,7 +919,8 @@ export function ClientPortalView({
       id: 'gbp_reply',
       label: 'GBP Auto Reply',
       icon: Bot,
-      visible: activeBusiness?.enabledFeatures.gbpAutoReply !== false,
+      visible: true,
+      lockedComingSoon: true,
     },
     {
       id: 'weekly_reports',
@@ -1092,6 +1088,35 @@ export function ClientPortalView({
               .map((item) => {
                 const Icon = item.icon;
                 const active = activeTab === item.id;
+                if (item.lockedComingSoon) {
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled
+                      aria-disabled="true"
+                      title="Coming Soon"
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[13px] opacity-65 cursor-not-allowed select-none ${
+                        isDark ? 'text-[#8E8EA0] bg-white/[0.02]' : 'text-slate-400 bg-slate-50/80'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide whitespace-nowrap shrink-0 ${
+                          isDark
+                            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        <Lock className="w-2.5 h-2.5 shrink-0" />
+                        <span>Coming Soon</span>
+                      </span>
+                    </button>
+                  );
+                }
                 return (
                   <button
                     key={item.id}
@@ -2149,18 +2174,6 @@ export function ClientPortalView({
                       isAdmin={isAdmin}
                       events={events}
                       canEdit={canEditQrOrQuestions}
-                    />
-                  )}
-
-                {activeTab === 'gbp_reply' &&
-                  activeBusiness.enabledFeatures.gbpAutoReply !== false && (
-                    <GbpAutoReplyTab
-                      business={activeBusiness}
-                      userUid={user.uid}
-                      userEmail={user.email || ''}
-                      isAdmin={isAdmin}
-                      canEdit={canEditBranding || isAdmin}
-                      allowOAuthConnection={false}
                     />
                   )}
 
