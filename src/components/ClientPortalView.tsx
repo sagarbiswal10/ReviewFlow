@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
+  Activity,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
@@ -68,10 +69,12 @@ import { QrStandsTab } from './QrStandsTab';
 import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
 import { TemplatesTab } from './TemplatesTab';
+import { FullActivityPage } from './FullActivityPage';
 
 type PortalTab =
   | 'qr_features'
   | 'analytics'
+  | 'full_activity'
   | 'qr_stands'
   | 'gbp_reply'
   | 'weekly_reports'
@@ -395,7 +398,7 @@ export function ClientPortalView({
     if (!activeBusiness) return;
     const f = activeBusiness.enabledFeatures;
     const isTabDisabledByFeature =
-      (activeTab === 'analytics' && !f.analyticsView) ||
+      ((activeTab === 'analytics' || activeTab === 'full_activity') && !f.analyticsView) ||
       (activeTab === 'templates' && f.formTemplates === false) ||
       (activeTab === 'qr_editor' && f.qrStudio === false) ||
       (activeTab === 'questions' && (!f.customQuestions || !isGuidedQuestionsAllowed)) ||
@@ -413,6 +416,7 @@ export function ClientPortalView({
     const allowedReadOnly: PortalTab[] = [
       'qr_features',
       'analytics',
+      'full_activity',
       'qr_stands',
       'gbp_reply',
       'weekly_reports',
@@ -868,8 +872,14 @@ export function ClientPortalView({
     { id: 'qr_features', label: 'Overview', icon: LayoutDashboard, visible: true },
     {
       id: 'analytics',
-      label: 'Analytics & Activity',
+      label: 'Analytics',
       icon: BarChart3,
+      visible: activeBusiness?.enabledFeatures.analyticsView !== false,
+    },
+    {
+      id: 'full_activity',
+      label: 'Full Activity',
+      icon: Activity,
       visible: activeBusiness?.enabledFeatures.analyticsView !== false,
     },
     {
@@ -1792,11 +1802,11 @@ export function ClientPortalView({
               )}
 
               {/* ==========================================
-                  PAGE 2: DEDICATED ANALYTICS & ACTIVITY BOARD
+                  PAGE 2: ONE-PAGE ANALYTICS SUMMARY
                  ========================================== */}
               {activeTab === 'analytics' && activeBusiness.enabledFeatures.analyticsView && (
-                <div className="space-y-6">
-                  {/* Period Filter Bar + CSV Export */}
+                <div className="space-y-4">
+                  {/* Period Filter Bar + See Full Activity + CSV Export */}
                   <div className={`${surfaceCard} rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3`}>
                     <div className="flex items-center gap-2.5 min-w-0">
                       <Calendar className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#A5B4FC]' : 'text-indigo-600'}`} />
@@ -1805,7 +1815,7 @@ export function ClientPortalView({
                           {reportWindowMeta.label}
                         </h1>
                         <p className={`text-xs truncate ${surfaceMuted}`}>
-                          Review funnel events, tone mix, multilingual drafts, and customer highlights
+                          Single-page summary of scans, Ready AI drafts, tone mix, and Google redirects
                         </p>
                       </div>
                     </div>
@@ -1867,14 +1877,23 @@ export function ClientPortalView({
                         <Download className="w-3.5 h-3.5" />
                         <span>Export CSV</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => selectTab('full_activity')}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <span>See Full Activity</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
                   {/* 4 KPI Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>QR Scans</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {scansCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1882,9 +1901,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>AI Drafts Generated</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {generatedCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1892,9 +1911,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>Draft Tone Mix</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {styleTotal}
                       </p>
                       <p className={`mt-1 text-[11px] font-mono ${surfaceMuted}`}>
@@ -1902,9 +1921,9 @@ export function ClientPortalView({
                       </p>
                     </div>
 
-                    <div className={`${surfaceCard} rounded-2xl p-5`}>
+                    <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5`}>
                       <p className={`text-xs font-medium ${surfaceMuted}`}>Google Redirects</p>
-                      <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
+                      <p className={`mt-1.5 font-display text-3xl font-bold tabular-nums ${textPrimary}`}>
                         {redirectsCount}
                       </p>
                       <p className={`mt-1 text-xs ${surfaceMuted}`}>
@@ -1913,181 +1932,7 @@ export function ClientPortalView({
                     </div>
                   </div>
 
-                  {/* Highlights + Multilingual Draft Breakdown */}
-                  {(topHighlights.length > 0 || reviewDrafts.length > 0) && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                      {topHighlights.length > 0 && (
-                        <div className={`lg:col-span-7 ${surfaceCard} rounded-2xl p-5 space-y-3`}>
-                          <h2 className={`text-sm font-semibold ${textPrimary}`}>
-                            Top Customer-Selected Highlights ({reportWindowMeta.shortLabel})
-                          </h2>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {topHighlights.map(([label, count]) => {
-                              const maxCount = topHighlights[0][1] || 1;
-                              const pct = Math.max(14, Math.round((count / maxCount) * 100));
-                              return (
-                                <div
-                                  key={label}
-                                  className={`p-3 rounded-xl border ${borderHairline} space-y-1.5 ${
-                                    isDark ? 'bg-[#121218]' : 'bg-slate-50'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className={`font-medium truncate ${textPrimary}`}>
-                                      {label}
-                                    </span>
-                                    <span className={`font-mono ${surfaceMuted}`}>{count}x</span>
-                                  </div>
-                                  <div
-                                    className={`h-1.5 rounded-full overflow-hidden ${
-                                      isDark ? 'bg-white/10' : 'bg-slate-200'
-                                    }`}
-                                  >
-                                    <div
-                                      className="h-full rounded-full bg-[#818CF8]"
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {reviewDrafts.length > 0 && (
-                        <div className={`lg:col-span-5 ${surfaceCard} rounded-2xl p-5 space-y-3`}>
-                          <h2 className={`text-sm font-semibold ${textPrimary}`}>
-                            Multilingual Drafts &amp; Statuses
-                          </h2>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span className={surfaceMuted}>English</span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'en').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span lang="hi" className={surfaceMuted}>
-                                हिंदी (Hindi)
-                              </span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'hi').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span lang="mr" className={surfaceMuted}>
-                                मराठी (Marathi)
-                              </span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'mr').length}
-                              </p>
-                            </div>
-                            <div className={`p-2.5 rounded-xl border ${borderHairline}`}>
-                              <span className={surfaceMuted}>Hinglish</span>
-                              <p className={`font-display text-lg font-bold ${textPrimary}`}>
-                                {reviewDrafts.filter((d) => d.language === 'hinglish').length}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* AI Drafts & Redirect Destination Visibility (covers both Ready AI Drafts and Guided Questions) */}
-                  {canReadEventHistory && !eventsAccessError && (
-                    <div className={`${surfaceCard} rounded-2xl p-5 space-y-4`}>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <h2 className={`text-sm font-semibold ${textPrimary}`}>
-                            AI Drafts &amp; Google Redirect Breakdown ({reportWindowMeta.shortLabel})
-                          </h2>
-                          <p className={`text-xs mt-0.5 ${surfaceMuted}`}>
-                            Shows exactly where Ready AI Drafts &amp; Guided Form customers came from and how many went to Google.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <span
-                            className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
-                              isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
-                            }`}
-                          >
-                            Ready AI Drafts: <strong>{destinationStats.readyAiDrafted}</strong> drafted →{' '}
-                            <strong className="text-emerald-400">{destinationStats.readyAiRedirects}</strong> Google
-                          </span>
-                          <span
-                            className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
-                              isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
-                            }`}
-                          >
-                            Guided Questions: <strong>{destinationStats.guidedDrafted}</strong> drafted →{' '}
-                            <strong className="text-emerald-400">{destinationStats.guidedRedirects}</strong> Google
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
-                          <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
-                            By Language (AI Drafted → Google Redirect)
-                          </p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                            {destinationStats.languages.map(([langKey, bucket]) => (
-                              <div
-                                key={langKey}
-                                className={`p-2 rounded-lg border ${borderHairline} ${
-                                  isDark ? 'bg-[#121218]' : 'bg-slate-50'
-                                }`}
-                              >
-                                <span lang={langKey} className={`block truncate text-[11px] ${surfaceMuted}`}>
-                                  {bucket.label}
-                                </span>
-                                <p className={`font-display text-sm font-bold mt-0.5 ${textPrimary}`}>
-                                  {bucket.drafted}{' '}
-                                  <span className="text-xs font-normal text-emerald-400">
-                                    → {bucket.redirects}
-                                  </span>
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
-                          <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
-                            By QR Stand / Source (Scan · Draft · Google)
-                          </p>
-                          {destinationStats.stands.length === 0 ? (
-                            <p className={`text-xs ${surfaceMuted}`}>
-                              No stand or direct QR activity recorded in {reportWindowMeta.shortLabel}.
-                            </p>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                              {destinationStats.stands.map((stand) => (
-                                <div
-                                  key={stand.label}
-                                  className={`p-2 rounded-lg border ${borderHairline} flex items-center justify-between gap-2 ${
-                                    isDark ? 'bg-[#121218]' : 'bg-slate-50'
-                                  }`}
-                                >
-                                  <span className={`font-medium truncate ${textPrimary}`}>
-                                    {stand.label}
-                                  </span>
-                                  <span className="font-mono text-[11px] shrink-0 whitespace-nowrap">
-                                    <span className={surfaceMuted}>{stand.scans}s · {stand.drafted}d · </span>
-                                    <span className="text-emerald-400 font-semibold">{stand.redirects}g</span>
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 4-Column Funnel Activity Board in a single scrollable container with hidden scrollbar */}
+                  {/* AI Drafts & Redirect Destination Visibility + Top Highlights (Compact One-Screen Layout) */}
                   {eventsAccessError ? (
                     <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-sm text-amber-300 flex items-start gap-3">
                       <Shield className="w-5 h-5 shrink-0 mt-0.5" />
@@ -2102,102 +1947,190 @@ export function ClientPortalView({
                       </div>
                     </div>
                   ) : !canReadEventHistory ? (
-                    <div className={`${surfaceCard} rounded-2xl p-6 text-sm ${surfaceMuted} flex items-center gap-3`}>
+                    <div className={`${surfaceCard} rounded-2xl p-5 text-sm ${surfaceMuted} flex items-center gap-3`}>
                       <Store className="w-5 h-5 text-emerald-400 shrink-0" />
                       <span>
                         Linking detailed Customer Review Flow Activity for your client account.
                       </span>
                     </div>
                   ) : (
-                    <div className={`border-t ${borderHairline} pt-4`}>
-                      <div className="h-[460px] overflow-y-auto overflow-x-hidden rf-scrollbar-hidden">
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-                          {funnelColumns.map((col) => (
-                            <div key={col.id} className="space-y-3 min-w-0">
-                              <div
-                                className={`sticky top-0 z-10 flex items-center justify-between px-2 py-2 rounded-xl backdrop-blur-md ${
-                                  isDark
-                                    ? 'bg-[#101015]/95 border border-white/[0.06]'
-                                    : 'bg-[#f4f5f9]/95 border border-slate-200/80'
+                    <>
+                      <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5 space-y-4`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h2 className={`text-sm font-semibold ${textPrimary}`}>
+                              AI Drafts &amp; Google Redirect Breakdown ({reportWindowMeta.shortLabel})
+                            </h2>
+                            <p className={`text-xs mt-0.5 ${surfaceMuted}`}>
+                              Ready AI Drafts &amp; Guided Form counts by language and QR stand source.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span
+                              className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
+                                isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              Ready AI Drafts: <strong>{destinationStats.readyAiDrafted}</strong> drafted →{' '}
+                              <strong className="text-emerald-400">{destinationStats.readyAiRedirects}</strong> Google
+                            </span>
+                            <span
+                              className={`px-2.5 py-1 rounded-lg font-medium border ${borderHairline} ${
+                                isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              Guided Questions: <strong>{destinationStats.guidedDrafted}</strong> drafted →{' '}
+                              <strong className="text-emerald-400">{destinationStats.guidedRedirects}</strong> Google
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
+                              By Language (AI Drafted → Google Redirect)
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              {destinationStats.languages.map(([langKey, bucket]) => (
+                                <div
+                                  key={langKey}
+                                  className={`p-2 rounded-lg border ${borderHairline} ${
+                                    isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                                  }`}
+                                >
+                                  <span lang={langKey} className={`block truncate text-[11px] ${surfaceMuted}`}>
+                                    {bucket.label}
+                                  </span>
+                                  <p className={`font-display text-sm font-bold mt-0.5 ${textPrimary}`}>
+                                    {bucket.drafted}{' '}
+                                    <span className="text-xs font-normal text-emerald-400">
+                                      → {bucket.redirects}
+                                    </span>
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className={`rounded-xl border ${borderHairline} p-3.5 space-y-2`}>
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider ${surfaceMuted}`}>
+                              By QR Stand / Source (Scan · Draft · Google)
+                            </p>
+                            {destinationStats.stands.length === 0 ? (
+                              <p className={`text-xs ${surfaceMuted}`}>
+                                No stand or direct QR activity recorded in {reportWindowMeta.shortLabel}.
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                {destinationStats.stands.map((stand) => (
+                                  <div
+                                    key={stand.label}
+                                    className={`p-2 rounded-lg border ${borderHairline} flex items-center justify-between gap-2 ${
+                                      isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className={`font-medium truncate ${textPrimary}`}>
+                                      {stand.label}
+                                    </span>
+                                    <span className="font-mono text-[11px] shrink-0 whitespace-nowrap">
+                                      <span className={surfaceMuted}>{stand.scans}s · {stand.drafted}d · </span>
+                                      <span className="text-emerald-400 font-semibold">{stand.redirects}g</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {topHighlights.length > 0 && (
+                          <div className={`pt-3 border-t ${borderHairline} flex flex-wrap items-center gap-2`}>
+                            <span className={`text-[11px] font-semibold uppercase tracking-wider mr-1 ${surfaceMuted}`}>
+                              Top Highlights:
+                            </span>
+                            {topHighlights.slice(0, 6).map(([label, count]) => (
+                              <span
+                                key={label}
+                                className={`px-2.5 py-1 rounded-lg border ${borderHairline} text-xs ${
+                                  isDark ? 'bg-[#121218] text-slate-200' : 'bg-slate-50 text-slate-700'
                                 }`}
                               >
-                                <h3 className={`font-display text-base font-semibold ${textPrimary}`}>
-                                  {col.title}
-                                </h3>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold ${col.badgeClass}`}
-                                >
-                                  {col.total}
-                                </span>
-                              </div>
+                                {label} <strong className="font-mono opacity-80">{count}×</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                              {col.items.length === 0 ? (
-                                <div
-                                  className={`${surfaceCard} rounded-2xl p-5 text-center text-xs ${surfaceMuted}`}
-                                >
-                                  <Clock className="w-5 h-5 mx-auto mb-1.5 opacity-60" />
-                                  <span>No events in {reportWindowMeta.shortLabel}</span>
-                                </div>
-                              ) : (
-                                <div className="space-y-3">
-                                  {col.items.map((ev) => (
-                                    <div
-                                      key={ev.id}
-                                      className={`${surfaceCard} rounded-2xl p-4 space-y-2.5`}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span
-                                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${col.badgeClass}`}
-                                        >
-                                          {ev.language
-                                            ? ev.language === 'hi'
-                                              ? 'हिंदी'
-                                              : ev.language === 'mr'
-                                              ? 'मराठी'
-                                              : ev.language === 'hinglish'
-                                              ? 'Hinglish'
-                                              : 'English'
-                                            : col.title}
-                                        </span>
-                                        <span className={`text-[11px] font-mono ${surfaceMuted}`}>
-                                          {formatRelativeTime(ev.createdAt)}
-                                        </span>
-                                      </div>
-
-                                      <div>
-                                        <p className={`text-xs font-semibold ${textPrimary}`}>
-                                          {ev.standName || ev.standCode || `/${ev.slug}`}
-                                        </p>
-                                        {ev.reviewStyle && (
-                                          <p className={`text-[11px] capitalize mt-0.5 ${surfaceMuted}`}>
-                                            Tone: {ev.reviewStyle}
-                                            {ev.sentiment ? ` · ${ev.sentiment}` : ''}
-                                          </p>
-                                        )}
-                                      </div>
-
-                                      {Array.isArray(ev.selectedHighlights) &&
-                                        ev.selectedHighlights.length > 0 && (
-                                          <p className={`text-[11px] leading-snug ${surfaceMuted}`}>
-                                            {ev.selectedHighlights.slice(0, 3).join(' · ')}
-                                          </p>
-                                        )}
-
-                                      <div className={`pt-2 border-t ${borderHairline} flex items-center justify-between text-[10px] font-mono ${surfaceMuted}`}>
-                                        <span>{formatEventDateTime(ev.createdAt)}</span>
-                                        <span className="text-emerald-400">✓ Recorded</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                      {/* Compact Funnel Activity Totals + Direct Full Activity Link */}
+                      <div className={`${surfaceCard} rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          {funnelColumns.map((col) => (
+                            <div
+                              key={col.id}
+                              className={`px-3 py-2 rounded-xl border ${borderHairline} flex items-center gap-2 ${
+                                isDark ? 'bg-[#121218]' : 'bg-slate-50'
+                              }`}
+                            >
+                              <span className={`text-xs font-medium ${textPrimary}`}>{col.title}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold ${col.badgeClass}`}>
+                                {col.total}
+                              </span>
                             </div>
                           ))}
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => selectTab('full_activity')}
+                          className="px-4 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <Activity className="w-4 h-4" />
+                          <span>See Full Activity &amp; Generated Drafts</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
+              )}
+
+              {/* ==========================================
+                  PAGE 2B: DEDICATED FULL ACTIVITY PAGE
+                 ========================================== */}
+              {activeTab === 'full_activity' && activeBusiness.enabledFeatures.analyticsView && (
+                eventsAccessError ? (
+                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-sm text-amber-300 flex items-start gap-3">
+                    <Shield className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">
+                        Customer Review Flow Activity is blocked by Firestore Rules
+                      </p>
+                      <p className="text-xs opacity-85 mt-1">
+                        Publish the latest <span className="font-mono">firestore.rules</span> so
+                        client accounts can read <span className="font-mono">reviewEvents</span>.
+                      </p>
+                    </div>
+                  </div>
+                ) : !canReadEventHistory ? (
+                  <div className={`${surfaceCard} rounded-2xl p-6 text-sm ${surfaceMuted} flex items-center gap-3`}>
+                    <Store className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span>
+                      Linking detailed Customer Review Flow Activity for your client account.
+                    </span>
+                  </div>
+                ) : (
+                  <FullActivityPage
+                    title={`${activeBusiness.name} · Full Activity`}
+                    subtitle="All AI drafted reviews, generated draft text, Google redirects, and QR scan events"
+                    events={events}
+                    reviewDrafts={reviewDrafts}
+                    isDark={isDark}
+                    initialPeriod={reportPeriod}
+                    onBack={() => selectTab('analytics')}
+                    backLabel="Back to Analytics"
+                  />
+                )
               )}
 
               {/* ==========================================

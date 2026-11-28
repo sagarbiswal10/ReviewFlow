@@ -509,9 +509,21 @@ test('TC-PREV-01: CustomerReviewFlow keeps preview buttons visible while blockin
   assert.ok(flowSrc.includes('disabled={isPreview || !draft.trim()}'));
 });
 
-test('TC-PORTAL-01: ClientPortalView hides Question Builder on Standard plan and renders analytics in single hidden-scrollbar container with destination breakdown', () => {
+test('TC-PORTAL-01: Client Portal & Business Management show one-page Analytics with See Full Activity + dedicated FullActivityPage', () => {
   const portalSrc = fs.readFileSync(
     path.resolve(process.cwd(), 'src/components/ClientPortalView.tsx'),
+    'utf8',
+  );
+  const adminSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ManagementConsoleView.tsx'),
+    'utf8',
+  );
+  const overviewSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/OverviewTab.tsx'),
+    'utf8',
+  );
+  const fullActivitySrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/FullActivityPage.tsx'),
     'utf8',
   );
   const cssSrc = fs.readFileSync(
@@ -523,8 +535,20 @@ test('TC-PORTAL-01: ClientPortalView hides Question Builder on Standard plan and
   assert.ok(portalSrc.includes('isGuidedQuestionsAllowed'));
   assert.ok(portalSrc.includes('destinationStats'));
   assert.ok(portalSrc.includes('Ready AI Drafts'));
-  assert.ok(portalSrc.includes('rf-scrollbar-hidden'));
+  assert.ok(portalSrc.includes('FullActivityPage'));
+  assert.ok(portalSrc.includes('See Full Activity'));
+  assert.ok(portalSrc.includes("id: 'full_activity'"));
+
+  assert.ok(adminSrc.includes('FullActivityPage'));
+  assert.ok(adminSrc.includes("id: 'full_activity'"));
+  assert.ok(adminSrc.includes('See Full Activity'));
+  assert.ok(adminSrc.includes('<span>Full Activity</span>'));
+  assert.ok(overviewSrc.includes('See Full Activity'));
+
+  assert.ok(fullActivitySrc.includes('rf-scrollbar-hidden'));
+  assert.ok(fullActivitySrc.includes('AI Drafted & Generated'));
   assert.ok(cssSrc.includes('.rf-scrollbar-hidden'));
 });
+
 
 

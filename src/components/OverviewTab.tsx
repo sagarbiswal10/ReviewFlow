@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, QrCode, CheckCircle2, PauseCircle } from 'lucide-react';
+import { ArrowRight, Check, Copy, ExternalLink, QrCode, CheckCircle2, PauseCircle } from 'lucide-react';
 import type { Business, ReviewEvent } from '../types';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
@@ -8,7 +8,7 @@ import { formatReviewEventActionLabel, getTimestampMs } from '../utils/domainHel
 interface OverviewTabProps {
   business: Business;
   events: ReviewEvent[];
-  onNavigateTab: (tab: 'overview' | 'qr' | 'questions' | 'branding' | 'preview') => void;
+  onNavigateTab: (tab: 'overview' | 'full_activity' | 'qr' | 'questions' | 'branding' | 'preview') => void;
 }
 
 function formatEventTime(createdAt: unknown): string {
@@ -247,11 +247,21 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
           </div>
 
           <div className="lg:col-span-8 liquid-glass spatial-card-3d rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Recent Customer Activity</h3>
-              <span className="text-xs text-slate-500 tabular-nums">
-                Last {Math.min(15, businessEvents.length)} events
-              </span>
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Recent Customer Activity</h3>
+                <p className="text-[11px] text-slate-500">
+                  Latest {Math.min(5, businessEvents.length)} of {businessEvents.length} events
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('full_activity')}
+                className="px-3.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <span>See Full Activity</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -264,7 +274,7 @@ export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProp
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {businessEvents.slice(0, 15).map((ev) => {
+                  {businessEvents.slice(0, 5).map((ev) => {
                     const actionLabel = formatReviewEventActionLabel(ev.eventType);
                     return (
                       <tr key={ev.id} className="hover:bg-slate-50/70">

@@ -52,6 +52,7 @@ import type {
   PackageTier,
   PublicProfile,
   QrStandRequest,
+  ReviewDraft,
   ReviewEvaluation,
   ReviewEvent,
   ReviewFlowMode,
@@ -66,6 +67,7 @@ import {
   revokeAdminByEmail,
   subscribeToAdminEmails,
   subscribeToAdmins,
+  subscribeToBusinessReviewDrafts,
   updateBusiness,
 } from '../services/businessService';
 import {
@@ -94,6 +96,7 @@ import { QrStandsTab } from './QrStandsTab';
 import { GbpAutoReplyTab } from './GbpAutoReplyTab';
 import { WeeklyReportsTab } from './WeeklyReportsTab';
 import { TemplatesTab } from './TemplatesTab';
+import { FullActivityPage } from './FullActivityPage';
 
 type AdminSection =
   | 'directory'
@@ -108,6 +111,7 @@ type BusinessDetailTab =
   | 'access'
   | 'seo_ai'
   | 'overview'
+  | 'full_activity'
   | 'stands'
   | 'gbp_reply'
   | 'weekly'
@@ -241,6 +245,26 @@ export function ManagementConsoleView({
     () => businesses.find((b) => b.id === selectedBizId) ?? null,
     [businesses, selectedBizId],
   );
+  const [selectedBizDrafts, setSelectedBizDrafts] = useState<ReviewDraft[]>([]);
+
+  useEffect(() => {
+    if (!selectedBiz?.id || detailTab !== 'full_activity') {
+      setSelectedBizDrafts([]);
+      return;
+    }
+    return subscribeToBusinessReviewDrafts(
+      selectedBiz.id,
+      selectedBiz.ownerId,
+      user.uid,
+      true,
+      (drafts) => {
+        setSelectedBizDrafts(drafts);
+      },
+      undefined,
+      selectedBiz.clientUid,
+    );
+  }, [selectedBiz?.id, selectedBiz?.ownerId, selectedBiz?.clientUid, detailTab, user.uid]);
+
   const [clientEmailInput, setClientEmailInput] = useState('');
   const [accessLevelInput, setAccessLevelInput] = useState<ClientAccessLevel>('full');
   const [packageTierInput, setPackageTierInput] = useState<PackageTier>('standard_plus');
@@ -1004,12 +1028,17 @@ export function ManagementConsoleView({
               setSelectedBizId(null);
               setMobileMenuOpen(false);
             }}
-            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-3 whitespace-nowrap cursor-pointer transition-colors ${
+            className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] font-medium flex items-center justify-between gap-2 whitespace-nowrap cursor-pointer transition-colors ${
               section === 'activity' ? sidebarActiveClass : sidebarIdleClass
             }`}
           >
-            <Activity className="w-4 h-4 shrink-0" />
-            <span>Global Activity</span>
+            <span className="inline-flex items-center gap-3">
+              <Activity className="w-4 h-4 shrink-0" />
+              <span>Full Activity</span>
+            </span>
+            <span className="text-[11px] font-mono tabular-nums text-slate-400">
+              {events.length}
+            </span>
           </button>
 
           <button
@@ -1232,7 +1261,7 @@ export function ManagementConsoleView({
                             : section === 'clients'
                               ? 'Client Portal Access'
                               : section === 'activity'
-                                ? 'Global Activity'
+                                ? 'Full Activity'
                                 : 'Team Admins'}
                 </span>
               </div>
@@ -1378,6 +1407,7 @@ export function ManagementConsoleView({
                         { id: 'access', label: 'Client Access & Features', icon: UserCheck },
                         { id: 'seo_ai', label: 'SEO & Writing Library', icon: Sparkles },
                         { id: 'overview', label: 'Analytics', icon: Activity },
+                        { id: 'full_activity', label: 'Full Activity', icon: ListFilter },
                         { id: 'stands', label: 'QR Stands', icon: Layers },
                         { id: 'gbp_reply', label: 'GBP Auto Reply', icon: Bot },
                         { id: 'weekly', label: 'Weekly Reports', icon: FileBarChart2 },
@@ -1744,11 +1774,24 @@ export function ManagementConsoleView({
                   business={selectedBiz}
                   events={events}
                   onNavigateTab={(t) => {
-                    if (t === 'qr') setDetailTab('qr');
+                    if (t === 'full_activity') setDetailTab('full_activity');
+                    else if (t === 'qr') setDetailTab('qr');
                     else if (t === 'questions') setDetailTab('questions');
                     else if (t === 'branding') setDetailTab('branding');
                     else if (t === 'preview') setDetailTab('preview');
                   }}
+                />
+              )}
+              {detailTab === 'full_activity' && (
+                <FullActivityPage
+                  title={`${selectedBiz.name} · Full Activity`}
+                  subtitle="All AI drafted reviews, generated draft text, Google redirects, and QR scan events"
+                  events={events.filter((ev) => ev.businessId === selectedBiz.id)}
+                  reviewDrafts={selectedBizDrafts}
+                  isDark={false}
+                  initialPeriod="all"
+                  onBack={() => setDetailTab('overview')}
+                  backLabel="Back to Analytics"
                 />
               )}
               {detailTab === 'stands' && (
@@ -2021,6 +2064,22 @@ export function ManagementConsoleView({
                           </button>
                         ))}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSection('activity');
+                          setSelectedBizId(null);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                          isDark
+                            ? 'bg-[#4F46E5]/20 text-indigo-200 hover:bg-[#4F46E5]/35 border border-[#4F46E5]/40'
+                            : 'bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 border border-indigo-200/80'
+                        }`}
+                      >
+                        <span>See Full Activity</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
 
@@ -3401,74 +3460,17 @@ export function ManagementConsoleView({
               </div>
             </div>
           ) : section === 'activity' ? (
-            <div className="liquid-glass rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                <h2 className="font-display text-lg font-bold text-slate-900">
-                  Cross-Business Activity Feed
-                </h2>
-                <span className="text-xs text-slate-500 tabular-nums">
-                  {events.length} recent events
-                </span>
-              </div>
-              {events.length === 0 ? (
-                <div className="p-10 text-center text-sm text-slate-500">
-                  No customer QR events recorded across businesses yet.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
-                        <th className="py-3 px-6">Business</th>
-                        <th className="py-3 px-4">Event</th>
-                        <th className="py-3 px-4">Style</th>
-                        <th className="py-3 px-4">Highlights</th>
-                        <th className="py-3 px-6 text-right">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
-                      {events.slice(0, 50).map((ev) => (
-                        <tr key={ev.id} className="hover:bg-slate-50/70">
-                          <td className="py-3 px-6 font-semibold text-slate-900 whitespace-nowrap">
-                            {bizNameMap[ev.businessId] || ev.slug}
-                          </td>
-                          <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
-                            {ev.eventType === 'scan'
-                              ? 'QR Scan'
-                              : ev.eventType === 'form_start'
-                                ? 'Started Feedback Form'
-                                : ev.eventType === 'generate'
-                                  ? 'AI Draft Created'
-                                  : 'Opened Google Review'}
-                            {(ev.standName || ev.standCode) && (
-                              <span className="ml-1.5 font-mono text-[11px] text-[#005c55]">
-                                ({ev.standName || ev.standCode})
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-600 capitalize whitespace-nowrap">
-                            {ev.reviewStyle || '—'}
-                            {ev.language && (
-                              <span lang={ev.language} className="ml-1.5 text-[11px] text-[#005c55] font-semibold">
-                                ({ev.language === 'hi' ? 'हिंदी' : ev.language === 'mr' ? 'मराठी' : ev.language === 'hinglish' ? 'Hinglish' : 'EN'})
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-600 max-w-xs truncate">
-                            {ev.selectedHighlights?.length
-                              ? ev.selectedHighlights.join(', ')
-                              : ev.sentiment || '—'}
-                          </td>
-                          <td className="py-3 px-6 text-right font-mono text-slate-500 tabular-nums whitespace-nowrap">
-                            {formatTime(ev.createdAt)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <FullActivityPage
+              title="Cross-Business Full Activity & AI Drafts"
+              subtitle="All AI drafted reviews, Ready AI drafts, Google redirects, and QR scan activity across businesses"
+              events={events}
+              businessMap={bizNameMap}
+              businessOptions={businesses.map((b) => ({ id: b.id, name: b.name }))}
+              isDark={isDark}
+              initialPeriod="7d"
+              onBack={() => setSection('directory')}
+              backLabel="Back to Admin Dashboard"
+            />
           ) : (
             <div className="space-y-6 max-w-3xl">
               <div className="liquid-glass spatial-card-3d rounded-2xl p-6 sm:p-8 space-y-5">
