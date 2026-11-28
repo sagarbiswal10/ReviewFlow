@@ -8,6 +8,11 @@ export interface LocalizedOptionItem {
 export interface LocalizedFormUiStrings {
   languageSelectorLabel: string;
   languageSelectorHint: string;
+  shareFeedbackHeading: string;
+  quickCheckinBadge: string;
+  quickFeedbackBadge: string;
+  holo3dBadge: string;
+  softTouchBadge: string;
   requiredLabel: string;
   optionalLabel: string;
   selectMultipleLabel: string;
@@ -27,7 +32,10 @@ export interface LocalizedFormUiStrings {
   doneEditingButton: string;
   regenerateButton: string;
   backButton: string;
+  instantHeaderTitle: string;
   instantReadySubtitle: string;
+  instantFooterHint: string;
+  instantOptionLabels: [string, string, string, string, string];
   instantRefreshButton: string;
   instantCopyAndOpenButton: string;
   instantOpenGoogleAgainButton: string;
@@ -121,17 +129,37 @@ const PROMPT_TRANSLATIONS: Record<string, LangMap> = {
   'Which parts of your stay did you experience?': {
     mr: 'तुमच्या मुक्कामादरम्यान कोणती सेवा अनुभवली?',
     hi: 'अपने ठहराव के दौरान आपने कौन सी सुविधाएं लीं?',
-    hinglish: 'Apne stay mein aapne kaun si services experience ki?',
+    hinglish: 'Aapke stay ke dauran aapne kaun si suvidha li?',
+  },
+  'Which parts of your stay stood out?': {
+    mr: 'तुमच्या मुक्कामादरम्यान कोणती गोष्ट विशेष आवडली?',
+    hi: 'आपके ठहराव के दौरान क्या खास पसंद आया?',
+    hinglish: 'Aapke stay ke dauran kya sabse accha laga?',
   },
   'How was your stay overall?': {
     mr: 'तुमचा एकूण मुक्काम कसा होता?',
     hi: 'आपका कुल मिलाकर ठहराव कैसा रहा?',
-    hinglish: 'Aapka overall stay kaisa raha?',
+    hinglish: 'Aapka poora stay kaisa raha?',
+  },
+  'How was our hospitality team?': {
+    mr: 'आमच्या कर्मचारी व आदरातिथ्याचा अनुभव कसा होता?',
+    hi: 'हमारे स्टाफ और आतिथ्य का अनुभव कैसा रहा?',
+    hinglish: 'Humare staff aur mehmaan-nawazi ka anubhav kaisa raha?',
   },
   'How were the staff & room upkeep?': {
     mr: 'कर्मचारी आणि रूमची स्वच्छता कशी होती?',
     hi: 'स्टाफ और कमरे की साफ-सफाई कैसी थी?',
-    hinglish: 'Staff aur room cleaning kaisi rahi?',
+    hinglish: 'Staff aur kamre ki safai kaisi rahi?',
+  },
+  'What did you appreciate most about our hotel?': {
+    mr: 'आमच्या हॉटेलमधील कोणती गोष्ट तुम्हाला सर्वात जास्त आवडली?',
+    hi: 'हमारे होटल की कौन सी बात आपको सबसे ज्यादा पसंद आई?',
+    hinglish: 'Humare hotel ki kaun si baat aapko sabse acchi lagi?',
+  },
+  'How was the cleanliness and ambience?': {
+    mr: 'स्वच्छता आणि वातावरण कसे होते?',
+    hi: 'साफ-सफाई और माहौल कैसा था?',
+    hinglish: 'Safai aur mahol kaisa tha?',
   },
   'Would you stay here again?': {
     mr: 'तुम्ही येथे पुन्हा राहणे पसंत कराल का?',
@@ -141,7 +169,7 @@ const PROMPT_TRANSLATIONS: Record<string, LangMap> = {
   'Any specific stay detail? (Optional)': {
     mr: 'मुक्कामाबद्दल काही खास लिहायचे आहे का? (ऐच्छिक)',
     hi: 'ठहराव से जुड़ी कोई खास बात? (वैकल्पिक)',
-    hinglish: 'Stay ke baare mein koi specific detail? (Optional)',
+    hinglish: 'Stay ke baare mein koi khaas baat likhna chahenge? (Optional)',
   },
 
   // Spas
@@ -339,12 +367,37 @@ const PROMPT_TRANSLATIONS: Record<string, LangMap> = {
   'How was your overall experience?': {
     mr: 'तुमचा एकूण अनुभव कसा होता?',
     hi: 'आपका कुल अनुभव कैसा रहा?',
-    hinglish: 'Aapka overall experience kaisa raha?',
+    hinglish: 'Aapka poora anubhav kaisa raha?',
+  },
+  'How was your experience?': {
+    mr: 'तुमचा अनुभव कसा होता?',
+    hi: 'आपका अनुभव कैसा रहा?',
+    hinglish: 'Aapka anubhav kaisa raha?',
+  },
+  'How would you rate our service?': {
+    mr: 'तुम्ही आमच्या सेवेला कसे मूल्यांकन द्याल?',
+    hi: 'आप हमारी सेवा को कैसा आंकेंगे?',
+    hinglish: 'Aap humari seva ko kaisa rate karenge?',
   },
   'What stood out during your visit?': {
     mr: 'तुमच्या भेटीदरम्यान तुम्हाला काय विशेष वाटले?',
     hi: 'आपकी विज़िट के दौरान आपको क्या खास लगा?',
-    hinglish: 'Aapki visit ke dauraan kya special laga?',
+    hinglish: 'Aapki visit ke dauran aapko kya khaas laga?',
+  },
+  'Any additional feedback? (Optional)': {
+    mr: 'काही अतिरिक्त अभिप्राय द्यायचा आहे का? (ऐच्छिक)',
+    hi: 'कोई अतिरिक्त सुझाव देना चाहेंगे? (वैकल्पिक)',
+    hinglish: 'Koi aur baat share karni hai? (Optional)',
+  },
+  'Any additional comments? (Optional)': {
+    mr: 'काही अतिरिक्त टिप्पण्या आहेत का? (ऐच्छिक)',
+    hi: 'कोई अतिरिक्त टिप्पणी लिखना चाहेंगे? (वैकल्पिक)',
+    hinglish: 'Koi aur comment likhna hai? (Optional)',
+  },
+  'Anything else you would like to share? (Optional)': {
+    mr: 'आणखी काही सांगायचे आहे का? (ऐच्छिक)',
+    hi: 'कुछ और साझा करना चाहेंगे? (वैकल्पिक)',
+    hinglish: 'Kuch aur batana chahenge? (Optional)',
   },
 };
 
@@ -352,67 +405,67 @@ const PLACEHOLDER_TRANSLATIONS: Record<string, LangMap> = {
   'Optional: mention what you liked or what could be smoother...': {
     mr: 'ऐच्छिक: तुम्हाला काय आवडले किंवा काय आणखी चांगले होऊ शकते ते लिहा...',
     hi: 'वैकल्पिक: आपको क्या पसंद आया या क्या और बेहतर हो सकता है, लिखें...',
-    hinglish: 'Optional: batayein aapko kya pasand aaya ya kya improve ho sakta hai...',
+    hinglish: 'Aapko kya pasand aaya ya kya behtar ho sakta hai, yahan likhein...',
   },
   'Optional: name a dish you tried or share a quick detail...': {
     mr: 'ऐच्छिक: तुम्ही खाल्लेल्या डिशचे नाव किंवा अनुभव लिहा...',
     hi: 'वैकल्पिक: आपने जो डिश ट्राई की उसका नाम या अनुभव लिखें...',
-    hinglish: 'Optional: jo dish aapne try ki uska naam ya quick note likhein...',
+    hinglish: 'Jo dish aapne khayi uska naam ya apna anubhav likhein...',
   },
   'Optional: share how your treatment felt...': {
     mr: 'ऐच्छिक: तुमचा ट्रीटमेंटचा अनुभव कसा होता ते लिहा...',
     hi: 'वैकल्पिक: आपका ट्रीटमेंट अनुभव कैसा रहा, लिखें...',
-    hinglish: 'Optional: batayein aapka treatment kaisa laga...',
+    hinglish: 'Aapka treatment kaisa laga, yahan likhein...',
   },
   'Optional: share something specific from your stay...': {
     mr: 'ऐच्छिक: मुक्कामातील कोणतीही खास आठवण किंवा अनुभव लिहा...',
     hi: 'वैकल्पिक: अपने ठहराव से जुड़ी कोई खास बात लिखें...',
-    hinglish: 'Optional: stay ki koi specific baat share karein...',
+    hinglish: 'Stay ke dauran koi khaas baat rahi ho toh yahan likhein...',
   },
   'Optional: mention what helped you relax most...': {
     mr: 'ऐच्छिक: तुम्हाला सर्वात जास्त आराम कशामुळे वाटला ते लिहा...',
     hi: 'वैकल्पिक: आपको सबसे ज्यादा आराम किससे मिला, लिखें...',
-    hinglish: 'Optional: batayein sabse zyada relax kya laga...',
+    hinglish: 'Sabse zyada aaram kis cheez se mila, yahan likhein...',
   },
   'Optional: mention a trainer, class, or facility note...': {
     mr: 'ऐच्छिक: ट्रेनर, क्लास किंवा सुविधेबद्दल नोंद लिहा...',
     hi: 'वैकल्पिक: ट्रेनर, क्लास या सुविधा के बारे में लिखें...',
-    hinglish: 'Optional: trainer, class ya facility ke baare mein likhein...',
+    hinglish: 'Trainer, class ya suvidha ke baare mein apna anubhav likhein...',
   },
   'Optional: share how the consultation or reception felt...': {
     mr: 'ऐच्छिक: तपासणी किंवा रिसेप्शनचा अनुभव कसा होता ते लिहा...',
     hi: 'वैकल्पिक: परामर्श या रिसेप्शन का अनुभव कैसा रहा, लिखें...',
-    hinglish: 'Optional: consultation ya reception experience share karein...',
+    hinglish: 'Doctor jaanch ya reception ka anubhav kaisa raha, likhein...',
   },
   'Optional: mention what you bought or how staff helped...': {
     mr: 'ऐच्छिक: तुम्ही काय खरेदी केले किंवा कर्मचाऱ्यांनी कशी मदत केली ते लिहा...',
     hi: 'वैकल्पिक: आपने क्या खरीदा या स्टाफ ने कैसी मदद की, लिखें...',
-    hinglish: 'Optional: kya kharida ya staff help kaisi rahi, likhein...',
+    hinglish: 'Kya kharida ya staff ki madad kaisi rahi, yahan likhein...',
   },
   'Optional: share how the vehicle feels after service...': {
     mr: 'ऐच्छिक: सर्व्हिसनंतर वाहन कसे चालते ते लिहा...',
     hi: 'वैकल्पिक: सर्विस के बाद वाहन कैसा चल रहा है, लिखें...',
-    hinglish: 'Optional: service ke baad gaadi kaisi chal rahi hai, likhein...',
+    hinglish: 'Service ke baad gaadi kaisi chal rahi hai, yahan likhein...',
   },
   'Optional: share what you liked about the collection or service...': {
     mr: 'ऐच्छिक: कलेक्शन किंवा सेवेबद्दल तुम्हाला काय आवडले ते लिहा...',
     hi: 'वैकल्पिक: कलेक्शन या सेवा में आपको क्या पसंद आया, लिखें...',
-    hinglish: 'Optional: collection ya service ke baare mein kya pasand aaya, likhein...',
+    hinglish: 'Collection ya seva mein kya pasand aaya, yahan likhein...',
   },
   'Optional: mention the design, transparency, or staff assistance...': {
     mr: 'ऐच्छिक: डिझाइन, पारदर्शक दर किंवा कर्मचाऱ्यांच्या मदतीबद्दल लिहा...',
     hi: 'वैकल्पिक: डिज़ाइन, पारदर्शिता या स्टाफ की मदद के बारे में लिखें...',
-    hinglish: 'Optional: design, transparency ya staff help ke baare mein likhein...',
+    hinglish: 'Design, saaf hisaab ya staff ki madad ke baare mein likhein...',
   },
   'Optional: share what you liked or any item you searched for...': {
     mr: 'ऐच्छिक: तुम्हाला काय आवडले किंवा तुम्ही कोणती वस्तू घेतली ते लिहा...',
     hi: 'वैकल्पिक: आपको क्या पसंद आया या आपने कौन सा सामान लिया, लिखें...',
-    hinglish: 'Optional: aapko kya accha laga ya kaun sa item liya, likhein...',
+    hinglish: 'Aapko kya accha laga ya kaun sa saman liya, likhein...',
   },
   'Optional: share a quick note in your own words...': {
     mr: 'ऐच्छिक: तुमच्या शब्दांत छोटा अभिप्राय लिहा...',
     hi: 'वैकल्पिक: अपने शब्दों में छोटा सा अनुभव लिखें...',
-    hinglish: 'Optional: apne words mein chhota sa note likhein...',
+    hinglish: 'Apne shabdon mein chhota sa anubhav yahan likhein...',
   },
 };
 
@@ -422,157 +475,167 @@ const OPTION_TRANSLATIONS: Record<string, LangMap> = {
   'Very Good': { mr: 'खूप छान', hi: 'बहुत अच्छा', hinglish: 'Kaafi Accha' },
   Good: { mr: 'चांगले', hi: 'अच्छा', hinglish: 'Accha' },
   Average: { mr: 'सामान्य', hi: 'ठीक-ठाक', hinglish: 'Theek-Thak' },
-  Okay: { mr: 'ठीक', hi: 'ठीक', hinglish: 'Okay' },
-  'Needs Improvement': { mr: 'सुधारणेची गरज', hi: 'सुधार की ज़रूरत', hinglish: 'Improvement Chahiye' },
-  Yes: { mr: 'होय', hi: 'हाँ', hinglish: 'Haan' },
+  Okay: { mr: 'ठीक', hi: 'ठीक', hinglish: 'Chalta Hai' },
+  'Needs Improvement': { mr: 'सुधारणेची गरज', hi: 'सुधार की ज़रूरत', hinglish: 'Sudhaar Chahiye' },
+  Yes: { mr: 'होय', hi: 'हाँ', hinglish: 'Haan Bilkul' },
   Maybe: { mr: 'कदाचित', hi: 'शायद', hinglish: 'Shayad' },
   No: { mr: 'नाही', hi: 'नहीं', hinglish: 'Nahi' },
+  'Great Service': { mr: 'उत्तम सेवा', hi: 'बढ़िया सेवा', hinglish: 'Badhiya Seva' },
+  'Friendly & Helpful Staff': { mr: 'मनमिळाऊ आणि मदतगार कर्मचारी', hi: 'मिलनसार और मददगार स्टाफ', hinglish: 'Milansaar aur Madadgaar Staff' },
+  'Value for Money': { mr: 'पैशांचा योग्य मोबदला', hi: 'पैसे की पूरी कीमत', hinglish: 'Paisa Vasool' },
+  'Fast & Efficient': { mr: 'जलद आणि कार्यक्षम', hi: 'तेज़ और कुशल', hinglish: 'Tez aur Badhiya Kaam' },
+  'Worth Visiting': { mr: 'नक्की भेट देण्यासारखे', hi: 'ज़रूर जाने लायक', hinglish: 'Zaroor Aane Layak' },
 
   // Hair Salons
-  Haircut: { mr: 'हेअरकट', hi: 'हेयरकट', hinglish: 'Haircut' },
-  'Hair Styling': { mr: 'हेअर स्टायलिंग', hi: 'हेयर स्टाइलिंग', hinglish: 'Hair Styling' },
-  'Hair Colour': { mr: 'हेअर कलर', hi: 'हेयर कलर', hinglish: 'Hair Colour' },
-  'Hair Spa': { mr: 'हेअर स्पा', hi: 'हेयर स्पा', hinglish: 'Hair Spa' },
+  Haircut: { mr: 'हेअरकट', hi: 'हेयरकट', hinglish: 'Baalon ki Cutting' },
+  'Hair Styling': { mr: 'हेअर स्टायलिंग', hi: 'हेयर स्टाइलिंग', hinglish: 'Baalon ki Styling' },
+  'Hair Colour': { mr: 'हेअर कलर', hi: 'हेयर कलर', hinglish: 'Baalon ka Colour' },
+  'Hair Spa': { mr: 'हेअर स्पा', hi: 'हेयर स्पा', hinglish: 'Hair Spa Seva' },
   'Keratin Treatment': { mr: 'केराटिन ट्रीटमेंट', hi: 'केराटिन ट्रीटमेंट', hinglish: 'Keratin Treatment' },
-  'Beard Styling': { mr: 'दाढी स्टायलिंग', hi: 'बियर्ड स्टाइलिंग', hinglish: 'Beard Styling' },
-  'Skilled Stylist': { mr: 'कुशल स्टायलिस्ट', hi: 'कुशल स्टाइलिस्ट', hinglish: 'Skilled Stylist' },
-  'Listened to Preferences': { mr: 'पसंती नीट ऐकून घेतली', hi: 'पसंद को ध्यान से सुना', hinglish: 'Preference Samjhi' },
-  'Clean & Hygienic': { mr: 'स्वच्छ आणि नीटनेटके', hi: 'साफ और स्वच्छ', hinglish: 'Clean & Hygienic' },
-  'Minimal Wait Time': { mr: 'कमी प्रतीक्षा वेळ', hi: 'कम इंतजार समय', hinglish: 'Kam Wait Time' },
-  'Wait Was Slightly Long': { mr: 'थोड्या वेळ थांबावे लागले', hi: 'इंतजार थोड़ा लंबा था', hinglish: 'Wait Thoda Zyada Tha' },
+  'Beard Styling': { mr: 'दाढी स्टायलिंग', hi: 'बियर्ड स्टाइलिंग', hinglish: 'Daadhi Styling' },
+  'Skilled Stylist': { mr: 'कुशल स्टायलिस्ट', hi: 'कुशल स्टाइलिस्ट', hinglish: 'Anubhavi Stylist' },
+  'Listened to Preferences': { mr: 'पसंती नीट ऐकून घेतली', hi: 'पसंद को ध्यान से सुना', hinglish: 'Pasand Dhyaan Se Suni' },
+  'Clean & Hygienic': { mr: 'स्वच्छ आणि नीटनेटके', hi: 'साफ और स्वच्छ', hinglish: 'Saaf aur Suthra' },
+  'Minimal Wait Time': { mr: 'कमी प्रतीक्षा वेळ', hi: 'कम इंतजार समय', hinglish: 'Bahut Kam Intezaar' },
+  'Wait Was Slightly Long': { mr: 'थोड्या वेळ थांबावे लागले', hi: 'इंतजार थोड़ा लंबा था', hinglish: 'Thoda Zyada Intezaar Raha' },
 
   // Restaurants
-  'Dine-In': { mr: 'रेस्टॉरंटमध्ये जेवण', hi: 'डाइन-इन', hinglish: 'Dine-In' },
-  Takeaway: { mr: 'पार्सल / टेकअवे', hi: 'टेकअवे / पैकिंग', hinglish: 'Takeaway' },
-  'Main Course': { mr: 'मेन कोर्स जेवण', hi: 'मेन कोर्स', hinglish: 'Main Course' },
-  'Starters & Snacks': { mr: 'स्टार्टर्स आणि स्नॅक्स', hi: 'स्टार्टर्स और स्नैक्स', hinglish: 'Starters & Snacks' },
-  Desserts: { mr: 'गोड पदार्थ / डेझर्ट', hi: 'मिठाई / डेज़र्ट', hinglish: 'Desserts' },
-  'Drinks & Coffee': { mr: 'ड्रिंक्स आणि कॉफी', hi: 'ड्रिंक्स और कॉफी', hinglish: 'Drinks & Coffee' },
-  'Quick Service': { mr: 'जलद सर्व्हिस', hi: 'तेज़ सर्विस', hinglish: 'Fast Service' },
-  'Service Was Slightly Slow': { mr: 'सर्व्हिस थोडी धीमी होती', hi: 'सर्विस थोड़ी धीमी थी', hinglish: 'Service Thodi Slow Thi' },
-  'Friendly Staff': { mr: 'मनमिळाऊ कर्मचारी', hi: 'मिलनसार स्टाफ', hinglish: 'Friendly Staff' },
-  'Good Ambience': { mr: 'छान वातावरण', hi: 'अच्छा माहौल', hinglish: 'Accha Ambience' },
-  'Ambience Was Average': { mr: 'वातावरण सामान्य होते', hi: 'माहौल सामान्य था', hinglish: 'Ambience Average Tha' },
-  'Fresh & Hot Food': { mr: 'ताजे आणि गरम जेवण', hi: 'ताज़ा और गर्म खाना', hinglish: 'Fresh & Garam Khana' },
+  'Dine-In': { mr: 'रेस्टॉरंटमध्ये जेवण', hi: 'डाइन-इन (रेस्टोरेंट में खाना)', hinglish: 'Baith Kar Khana' },
+  Takeaway: { mr: 'पार्सल / टेकअवे', hi: 'टेकअवे / पैकिंग', hinglish: 'Parcel / Ghar Le Jaana' },
+  'Main Course': { mr: 'मेन कोर्स जेवण', hi: 'मेन कोर्स भोजन', hinglish: 'Main Khana' },
+  'Starters & Snacks': { mr: 'स्टार्टर्स आणि स्नॅक्स', hi: 'स्टार्टर्स और स्नैक्स', hinglish: 'Nashta aur Starters' },
+  Desserts: { mr: 'गोड पदार्थ / डेझर्ट', hi: 'मिठाई / डेज़र्ट', hinglish: 'Meetha / Dessert' },
+  'Drinks & Coffee': { mr: 'ड्रिंक्स आणि कॉफी', hi: 'ड्रिंक्स और कॉफी', hinglish: 'Chai, Coffee aur Drinks' },
+  'Quick Service': { mr: 'जलद सर्व्हिस', hi: 'तेज़ सर्विस', hinglish: 'Tez Seva' },
+  'Service Was Slightly Slow': { mr: 'सर्व्हिस थोडी धीमी होती', hi: 'सर्विस थोड़ी धीमी थी', hinglish: 'Seva Thodi Dheemi Thi' },
+  'Friendly Staff': { mr: 'मनमिळाऊ कर्मचारी', hi: 'मिलनसार स्टाफ', hinglish: 'Milansaar Staff' },
+  'Good Ambience': { mr: 'छान वातावरण', hi: 'अच्छा माहौल', hinglish: 'Accha Mahol' },
+  'Ambience Was Average': { mr: 'वातावरण सामान्य होते', hi: 'माहौल सामान्य था', hinglish: 'Mahol Theek-Thak Tha' },
+  'Fresh & Hot Food': { mr: 'ताजे आणि गरम जेवण', hi: 'ताज़ा और गर्म खाना', hinglish: 'Taaza aur Garam Khana' },
+  'Great Food': { mr: 'उत्कृष्ट जेवण', hi: 'बढ़िया खाना', hinglish: 'Lazeez Khana' },
 
   // Beauty Salons
-  'Facial & Skincare': { mr: 'फेशियल आणि स्किनकेअर', hi: 'फेशियल और स्किनकेयर', hinglish: 'Facial & Skincare' },
-  'Manicure & Pedicure': { mr: 'मॅनिक्युअर आणि पेडिक्युअर', hi: 'मैनीक्योर और पेडीक्योर', hinglish: 'Manicure & Pedicure' },
-  'Bridal / Party Makeup': { mr: 'ब्रायडल / पार्टी मेकअप', hi: 'ब्राइडल / पार्टी मेकअप', hinglish: 'Bridal / Party Makeup' },
-  'Brows & Lashes': { mr: 'आयब्रो आणि लॅशेस', hi: 'आइब्रो और लैशेज', hinglish: 'Brows & Lashes' },
-  'Waxing & Threading': { mr: 'वॅक्सिंग आणि थ्रेडिंग', hi: 'वैक्सिंग और थ्रेडिंग', hinglish: 'Waxing & Threading' },
-  'Clean & Hygienic Studio': { mr: 'स्वच्छ आणि हायजिनिक स्टुडिओ', hi: 'साफ-सुथरा स्टूडियो', hinglish: 'Clean Studio' },
-  'Gentle Technique': { mr: 'सौम्य आणि काळजीपूर्वक काम', hi: 'कोमल और सुरक्षित तरीका', hinglish: 'Gentle Technique' },
-  'Warm & Polite Staff': { mr: 'नम्र आणि आपुलकीचा स्टाफ', hi: 'विनम्र और सहयोगी स्टाफ', hinglish: 'Polite Staff' },
-  'Started on Time': { mr: 'वेळेवर सुरुवात झाली', hi: 'समय पर शुरू हुआ', hinglish: 'Time Par Start Hua' },
-  'Slight Wait Time': { mr: 'थोड्या वेळ थांबावे लागले', hi: 'थोड़ा इंतजार करना पड़ा', hinglish: 'Thoda Wait Karna Pada' },
+  'Facial & Skincare': { mr: 'फेशियल आणि स्किनकेअर', hi: 'फेशियल और स्किनकेयर', hinglish: 'Facial aur Twacha Dekhbhal' },
+  'Manicure & Pedicure': { mr: 'मॅनिक्युअर आणि पेडिक्युअर', hi: 'मैनीक्योर और पेडीक्योर', hinglish: 'Haath-Pair ki Sajavat' },
+  'Bridal / Party Makeup': { mr: 'ब्रायडल / पार्टी मेकअप', hi: 'ब्राइडल / पार्टी मेकअप', hinglish: 'Shadi / Party Makeup' },
+  'Brows & Lashes': { mr: 'आयब्रो आणि लॅशेस', hi: 'आइब्रो और लैशेज', hinglish: 'Eyebrow aur Lashes' },
+  'Waxing & Threading': { mr: 'वॅक्सिंग आणि थ्रेडिंग', hi: 'वैक्सिंग और थ्रेडिंग', hinglish: 'Waxing aur Threading' },
+  'Clean & Hygienic Studio': { mr: 'स्वच्छ आणि हायजिनिक स्टुडिओ', hi: 'साफ-सुथरा स्टूडियो', hinglish: 'Saaf-Suthra Studio' },
+  'Gentle Technique': { mr: 'सौम्य आणि काळजीपूर्वक काम', hi: 'कोमल और सुरक्षित तरीका', hinglish: 'Aaram Se aur Dhyaan Se Kaam' },
+  'Warm & Polite Staff': { mr: 'नम्र आणि आपुलकीचा स्टाफ', hi: 'विनम्र और सहयोगी स्टाफ', hinglish: 'Vinamra aur Madadgaar Staff' },
+  'Started on Time': { mr: 'वेळेवर सुरुवात झाली', hi: 'समय पर शुरू हुआ', hinglish: 'Samay Par Shuru Hua' },
+  'Slight Wait Time': { mr: 'थोड्या वेळ थांबावे लागले', hi: 'थोड़ा इंतजार करना पड़ा', hinglish: 'Thoda Intezaar Karna Pada' },
 
   // Hotels
-  'Room Comfort & Cleanliness': { mr: 'रूमची स्वच्छता आणि आराम', hi: 'कमरे की सफाई और आराम', hinglish: 'Room Cleanliness & Comfort' },
-  'Check-In / Front Desk': { mr: 'चेक-इन आणि रिसेप्शन', hi: 'चेक-इन / रिसेप्शन', hinglish: 'Check-In / Front Desk' },
-  'Breakfast & Dining': { mr: 'नाश्ता आणि जेवण', hi: 'नाश्ता और भोजन', hinglish: 'Breakfast & Dining' },
-  Housekeeping: { mr: 'हाऊसकीपिंग सेवा', hi: 'हाउसकीपिंग', hinglish: 'Housekeeping' },
-  'Location & Convenience': { mr: 'सोयीस्कर ठिकाण', hi: 'सुविधाजनक लोकेशन', hinglish: 'Location & Convenience' },
-  'Clean Rooms': { mr: 'स्वच्छ खोल्या', hi: 'साफ कमरे', hinglish: 'Clean Rooms' },
-  'Courteous Staff': { mr: 'विनम्र कर्मचारी', hi: 'विनम्र स्टाफ', hinglish: 'Polite Staff' },
-  'Smooth Check-In': { mr: 'सोपे आणि जलद चेक-इन', hi: 'आसान चेक-इन', hinglish: 'Smooth Check-In' },
-  'Quiet & Restful': { mr: 'शांत आणि आरामदायी', hi: 'शांत और आरामदायक', hinglish: 'Quiet & Restful' },
-  'Check-In Was Slightly Slow': { mr: 'चेक-इनला थोडा वेळ लागला', hi: 'चेक-इन में थोड़ा समय लगा', hinglish: 'Check-In Thoda Slow Tha' },
+  'Room Comfort & Cleanliness': { mr: 'रूमची स्वच्छता आणि आराम', hi: 'कमरे की सफाई और आराम', hinglish: 'Kamre ki Safai aur Aaram' },
+  'Clean & Comfortable Room': { mr: 'स्वच्छ आणि आरामदायी रूम', hi: 'साफ और आरामदायक कमरा', hinglish: 'Saaf aur Aaramdayak Kamra' },
+  'Check-In / Front Desk': { mr: 'चेक-इन आणि रिसेप्शन', hi: 'चेक-इन / रिसेप्शन', hinglish: 'Check-In aur Reception' },
+  'Breakfast & Dining': { mr: 'नाश्ता आणि जेवण', hi: 'नाश्ता और भोजन', hinglish: 'Nashta aur Khana' },
+  Housekeeping: { mr: 'हाऊसकीपिंग सेवा', hi: 'हाउसकीपिंग सेवा', hinglish: 'Kamre ki Safai Seva' },
+  'Location & Convenience': { mr: 'सोयीस्कर ठिकाण', hi: 'सुविधाजनक लोकेशन', hinglish: 'Aane-Jaane ki Acchi Jagah' },
+  'Convenient Location': { mr: 'सोयीस्कर ठिकाण', hi: 'सुविधाजनक लोकेशन', hinglish: 'Aasaan aur Acchi Jagah' },
+  'Clean Rooms': { mr: 'स्वच्छ खोल्या', hi: 'साफ कमरे', hinglish: 'Saaf Kamre' },
+  'Courteous Staff': { mr: 'विनम्र कर्मचारी', hi: 'विनम्र स्टाफ', hinglish: 'Vinamra aur Milansaar Staff' },
+  'Smooth Check-In': { mr: 'सोपे आणि जलद चेक-इन', hi: 'आसान चेक-इन', hinglish: 'Aasaan Check-In' },
+  'Quiet & Restful': { mr: 'शांत आणि आरामदायी', hi: 'शांत और आरामदायक', hinglish: 'Shaant aur Aaramdayak' },
+  'Check-In Was Slightly Slow': { mr: 'चेक-इनला थोडा वेळ लागला', hi: 'चेक-इन में थोड़ा समय लगा', hinglish: 'Check-In Mein Thoda Samay Laga' },
+  'Comfortable Stay': { mr: 'आरामदायी मुक्काम', hi: 'आरामदायक ठहराव', hinglish: 'Aaramdayak Rukna' },
+  'Good Hospitality': { mr: 'उत्तम आदरातिथ्य', hi: 'अच्छा आतिथ्य', hinglish: 'Acchi Mehmaan-Nawazi' },
 
   // Spas
-  'Deep Tissue Massage': { mr: 'डीप टिश्यू मसाज', hi: 'डीप टिश्यू मसाज', hinglish: 'Deep Tissue Massage' },
-  Aromatherapy: { mr: 'अरोमाथेरपी', hi: 'अरोमाथेरेपी', hinglish: 'Aromatherapy' },
+  'Deep Tissue Massage': { mr: 'डीप टिश्यू मसाज', hi: 'डीप टिश्यू मसाज', hinglish: 'Deep Tissue Malish' },
+  Aromatherapy: { mr: 'अरोमाथेरपी', hi: 'अरोमाथेरपी', hinglish: 'Sugandhit Therapy' },
   'Hot Stone Therapy': { mr: 'हॉट स्टोन थेरपी', hi: 'हॉट स्टोन थेरेपी', hinglish: 'Hot Stone Therapy' },
-  'Rejuvenating Facial': { mr: 'ताजेतवाने करणारे फेशियल', hi: 'रिजुविनेटिंग फेशियल', hinglish: 'Rejuvenating Facial' },
-  'Steam / Hydrotherapy': { mr: 'स्टीम / हायड्रोथेरपी', hi: 'स्टीम / हाइड्रोथेरेपी', hinglish: 'Steam / Hydrotherapy' },
-  'Skilled Therapist': { mr: 'अनुभवी थेरपिस्ट', hi: 'कुशल थेरेपिस्ट', hinglish: 'Skilled Therapist' },
-  'Calm Ambience': { mr: 'शांत आणि प्रसन्न वातावरण', hi: 'शांत वातावरण', hinglish: 'Calm Ambience' },
-  'Clean Treatment Rooms': { mr: 'स्वच्छ थेरपी रूम्स', hi: 'साफ ट्रीटमेंट रूम', hinglish: 'Clean Rooms' },
-  'Good Pressure & Technique': { mr: 'योग्य दाब आणि मसाज तंत्र', hi: 'सही दबाव और तकनीक', hinglish: 'Good Technique' },
-  'Slight Wait Before Session': { mr: 'सेशनपूर्वी थोडा वेळ लागला', hi: 'सेशन से पहले थोड़ा इंतजार', hinglish: 'Session Se Pehle Thoda Wait' },
+  'Rejuvenating Facial': { mr: 'ताजेतवाने करणारे फेशियल', hi: 'ताज़गी भरा फेशियल', hinglish: 'Taazgi Bhara Facial' },
+  'Steam / Hydrotherapy': { mr: 'स्टीम / हायड्रोथेरपी', hi: 'स्टीम / हाइड्रोथेरेपी', hinglish: 'Steam aur Bhaap Snan' },
+  'Skilled Therapist': { mr: 'अनुभवी थेरपिस्ट', hi: 'कुशल थेरेपिस्ट', hinglish: 'Anubhavi Therapist' },
+  'Calm Ambience': { mr: 'शांत आणि प्रसन्न वातावरण', hi: 'शांत वातावरण', hinglish: 'Shaant aur Sukoon Bhara Mahol' },
+  'Clean Treatment Rooms': { mr: 'स्वच्छ थेरपी रूम्स', hi: 'साफ ट्रीटमेंट रूम', hinglish: 'Saaf Therapy Kamre' },
+  'Good Pressure & Technique': { mr: 'योग्य दाब आणि मसाज तंत्र', hi: 'सही दबाव और तकनीक', hinglish: 'Sahi Dabaav aur Tareeka' },
+  'Slight Wait Before Session': { mr: 'सेशनपूर्वी थोडा वेळ लागला', hi: 'सेशन से पहले थोड़ा इंतजार', hinglish: 'Session Se Pehle Thoda Intezaar' },
 
   // Gyms
-  'Strength Equipment': { mr: 'स्ट्रेंथ मशीन्स / वेट्स', hi: 'स्ट्रेंथ उपकरण', hinglish: 'Strength Equipment' },
-  'Cardio Zone': { mr: 'कार्डिओ विभाग', hi: 'कार्डियो ज़ोन', hinglish: 'Cardio Zone' },
-  'Group Class': { mr: 'ग्रुप क्लास', hi: 'ग्रुप क्लास', hinglish: 'Group Class' },
-  'Personal Training': { mr: 'पर्सनल ट्रेनिंग', hi: 'पर्सनल ट्रेनिंग', hinglish: 'Personal Training' },
-  'Locker & Shower Area': { mr: 'लॉकर आणि शॉवर विभाग', hi: 'लॉकर और शॉवर क्षेत्र', hinglish: 'Locker & Shower Area' },
-  'Well-Maintained Equipment': { mr: 'चांगल्या स्थितीत मशीन्स', hi: 'अच्छी हालत में उपकरण', hinglish: 'Well-Maintained Machines' },
-  'Helpful Trainers': { mr: 'मदत करणारे ट्रेनर्स', hi: 'सहयोगी ट्रेनर्स', hinglish: 'Helpful Trainers' },
-  'Clean Floor & Washrooms': { mr: 'स्वच्छ फ्लोअर आणि वॉशरूम्स', hi: 'साफ फ्लोर और वॉशरूम', hinglish: 'Clean Floor & Washrooms' },
-  'Crowded at Peak Hours': { mr: 'गर्दीच्या वेळी थोडी गर्दी', hi: 'पीक आवर्स में भीड़', hinglish: 'Peak Hours Mein Bheed' },
-  'Good Workout Vibe': { mr: 'उत्साहवर्धक वर्कआऊट वातावरण', hi: 'वर्कआउट का अच्छा माहौल', hinglish: 'Good Workout Vibe' },
+  'Strength Equipment': { mr: 'स्ट्रेंथ मशीन्स / वेट्स', hi: 'स्ट्रेंथ उपकरण', hinglish: 'Wazan aur Kasrat ki Machine' },
+  'Cardio Zone': { mr: 'कार्डिओ विभाग', hi: 'कार्डियो ज़ोन', hinglish: 'Cardio Hissa' },
+  'Group Class': { mr: 'ग्रुप क्लास', hi: 'ग्रुप क्लास', hinglish: 'Saath Mein Kasrat Class' },
+  'Personal Training': { mr: 'पर्सनल ट्रेनिंग', hi: 'पर्सनल ट्रेनिंग', hinglish: 'Niji Trainer Seva' },
+  'Locker & Shower Area': { mr: 'लॉकर आणि शॉवर विभाग', hi: 'लॉकर और शॉवर क्षेत्र', hinglish: 'Locker aur Nahane ki Jagah' },
+  'Well-Maintained Equipment': { mr: 'चांगल्या स्थितीत मशीन्स', hi: 'अच्छी हालत में उपकरण', hinglish: 'Acchi Haalat Mein Machines' },
+  'Helpful Trainers': { mr: 'मदत करणारे ट्रेनर्स', hi: 'सहयोगी ट्रेनर्स', hinglish: 'Madadgaar Trainers' },
+  'Clean Floor & Washrooms': { mr: 'स्वच्छ फ्लोअर आणि वॉशरूम्स', hi: 'साफ फ्लोर और वॉशरूम', hinglish: 'Saaf Farsh aur Washroom' },
+  'Crowded at Peak Hours': { mr: 'गर्दीच्या वेळी थोडी गर्दी', hi: 'पीक आवर्स में भीड़', hinglish: 'Shaam Ko Thodi Bheed' },
+  'Good Workout Vibe': { mr: 'उत्साहवर्धक वर्कआऊट वातावरण', hi: 'वर्कआउट का अच्छा माहौल', hinglish: 'Kasrat Ka Accha Mahol' },
 
   // Healthcare
-  'Doctor Consultation': { mr: 'डॉक्टर सल्ला / तपासणी', hi: 'डॉक्टर परामर्श', hinglish: 'Doctor Consultation' },
-  'Routine Check-up': { mr: 'नियमित आरोग्य तपासणी', hi: 'नियमित जांच', hinglish: 'Routine Check-up' },
-  'Dental / Specialist Care': { mr: 'दंत / विशेष तज्ज्ञ उपचार', hi: 'दंत / विशेषज्ञ देखभाल', hinglish: 'Specialist Care' },
-  'Diagnostics / Lab': { mr: 'डायग्नोस्टिक्स / लॅब चाचणी', hi: 'डायग्नोस्टिक्स / लैब', hinglish: 'Diagnostics / Lab' },
-  'Follow-up Visit': { mr: 'फॉलो-अप भेट', hi: 'फॉलो-अप विज़िट', hinglish: 'Follow-up Visit' },
-  'Clear Explanation': { mr: 'स्पष्ट आणि सोपी माहिती', hi: 'स्पष्ट जानकारी', hinglish: 'Clear Explanation' },
-  'Polite Front-Desk Staff': { mr: 'विनम्र रिसेप्शन कर्मचारी', hi: 'विनम्र रिसेप्शन स्टाफ', hinglish: 'Polite Reception Staff' },
-  'Short Wait Time': { mr: 'कमी प्रतीक्षा वेळ', hi: 'कम इंतजार समय', hinglish: 'Kam Wait Time' },
-  'Clean Clinic': { mr: 'स्वच्छ क्लिनिक', hi: 'साफ क्लिनिक', hinglish: 'Clean Clinic' },
+  'Doctor Consultation': { mr: 'डॉक्टर सल्ला / तपासणी', hi: 'डॉक्टर परामर्श', hinglish: 'Doctor Se Salah' },
+  'Routine Check-up': { mr: 'नियमित आरोग्य तपासणी', hi: 'नियमित जांच', hinglish: 'Niyamit Jaanch' },
+  'Dental / Specialist Care': { mr: 'दंत / विशेष तज्ज्ञ उपचार', hi: 'दंत / विशेषज्ञ देखभाल', hinglish: 'Daant aur Vishesh Ilaaj' },
+  'Diagnostics / Lab': { mr: 'डायग्नोस्टिक्स / लॅब चाचणी', hi: 'डायग्नोस्टिक्स / लैब', hinglish: 'Khoon aur Lab Jaanch' },
+  'Follow-up Visit': { mr: 'फॉलो-अप भेट', hi: 'फॉलो-अप विज़िट', hinglish: 'Dobara Dikhane Aana' },
+  'Clear Explanation': { mr: 'स्पष्ट आणि सोपी माहिती', hi: 'स्पष्ट जानकारी', hinglish: 'Saaf aur Aasaan Samjhana' },
+  'Polite Front-Desk Staff': { mr: 'विनम्र रिसेप्शन कर्मचारी', hi: 'विनम्र रिसेप्शन स्टाफ', hinglish: 'Vinamra Reception Staff' },
+  'Short Wait Time': { mr: 'कमी प्रतीक्षा वेळ', hi: 'कम इंतजार समय', hinglish: 'Kam Intezaar' },
+  'Clean Clinic': { mr: 'स्वच्छ क्लिनिक', hi: 'साफ क्लिनिक', hinglish: 'Saaf-Suthra Clinic' },
 
   // Retail & Local Shops
-  'Product Selection': { mr: 'वस्तूंची निवड', hi: 'सामान का चयन', hinglish: 'Product Selection' },
-  'New Arrivals': { mr: 'नवीन आलेला माल', hi: 'नया कलेक्शन', hinglish: 'New Arrivals' },
-  'Gift Shopping': { mr: 'भेटवस्तू खरेदी', hi: 'गिफ्ट खरीदारी', hinglish: 'Gift Shopping' },
-  'Pickup / Exchange': { mr: 'पिकअप / एक्सचेंज', hi: 'पिकअप / एक्सचेंज', hinglish: 'Pickup / Exchange' },
-  'Helpful Staff': { mr: 'मदतगार कर्मचारी', hi: 'मददगार स्टाफ', hinglish: 'Helpful Staff' },
-  'Good Product Variety': { mr: 'वस्तूंची उत्तम विविधता', hi: 'उत्पादों की अच्छी वैरायटी', hinglish: 'Acchi Variety' },
-  'Quick Billing': { mr: 'जलद बिलिंग', hi: 'तेज़ बिलिंग', hinglish: 'Fast Billing' },
-  'Billing Took Some Time': { mr: 'बिलिंगला थोडा वेळ लागला', hi: 'बिलिंग में थोड़ा समय लगा', hinglish: 'Billing Mein Thoda Time Laga' },
-  'Clean & Organized Store': { mr: 'स्वच्छ आणि व्यवस्थित दुकान', hi: 'साफ और व्यवस्थित स्टोर', hinglish: 'Clean & Organized Store' },
-  'Daily Essentials': { mr: 'दैनिक गरजेच्या वस्तू', hi: 'रोज़मर्रा का सामान', hinglish: 'Daily Essentials' },
-  'Fresh Stock & Variety': { mr: 'ताजा माल आणि विविधता', hi: 'ताज़ा स्टॉक और वैरायटी', hinglish: 'Fresh Stock & Variety' },
-  'Home & Utility Items': { mr: 'घरगुती उपयोगी वस्तू', hi: 'घरेलू सामान', hinglish: 'Home Utility Items' },
-  'Quick Pickup Order': { mr: 'पटकन ऑर्डर पिकअप', hi: 'जल्दी ऑर्डर पिकअप', hinglish: 'Quick Pickup' },
-  'Bulk / Family Shopping': { mr: 'मोठी / कौटुंबिक खरेदी', hi: 'बल्क / पारिवारिक खरीदारी', hinglish: 'Family Shopping' },
-  'Reasonable Prices': { mr: 'वाजवी दर', hi: 'उचित दाम', hinglish: 'Reasonable Rate' },
-  'Quality Products': { mr: 'दर्जेदार वस्तू', hi: 'अच्छी क्वालिटी का सामान', hinglish: 'Quality Products' },
-  'Helpful & Friendly Behaviour': { mr: 'मदतगार आणि आपुलकीची वागणूक', hi: 'मददगार और अच्छा व्यवहार', hinglish: 'Helpful Staff Behaviour' },
-  'Clean & Organized Shop': { mr: 'स्वच्छ आणि नीटनेटके दुकान', hi: 'साफ और व्यवस्थित दुकान', hinglish: 'Clean & Organized Shop' },
+  'Product Selection': { mr: 'वस्तूंची निवड', hi: 'सामान का चयन', hinglish: 'Saman ki Pasand' },
+  'New Arrivals': { mr: 'नवीन आलेला माल', hi: 'नया कलेक्शन', hinglish: 'Naya Saman' },
+  'Gift Shopping': { mr: 'भेटवस्तू खरेदी', hi: 'गिफ्ट खरीदारी', hinglish: 'Tohfe ki Kharidari' },
+  'Pickup / Exchange': { mr: 'पिकअप / एक्सचेंज', hi: 'पिकअप / एक्सचेंज', hinglish: 'Saman Lena ya Badalna' },
+  'Helpful Staff': { mr: 'मदतगार कर्मचारी', hi: 'मददगार स्टाफ', hinglish: 'Madadgaar Staff' },
+  'Good Product Variety': { mr: 'वस्तूंची उत्तम विविधता', hi: 'उत्पादों की अच्छी वैरायटी', hinglish: 'Saman ki Acchi Variety' },
+  'Quick Billing': { mr: 'जलद बिलिंग', hi: 'तेज़ बिलिंग', hinglish: 'Tez Billing' },
+  'Billing Took Some Time': { mr: 'बिलिंगला थोडा वेळ लागला', hi: 'बिलिंग में थोड़ा समय लगा', hinglish: 'Billing Mein Thoda Samay Laga' },
+  'Clean & Organized Store': { mr: 'स्वच्छ आणि व्यवस्थित दुकान', hi: 'साफ और व्यवस्थित स्टोर', hinglish: 'Saaf aur Sajaa Hua Store' },
+  'Daily Essentials': { mr: 'दैनिक गरजेच्या वस्तू', hi: 'रोज़मर्रा का सामान', hinglish: 'Rozmarra ka Saman' },
+  'Fresh Stock & Variety': { mr: 'ताजा माल आणि विविधता', hi: 'ताज़ा स्टॉक और वैरायटी', hinglish: 'Taaza Saman aur Variety' },
+  'Home & Utility Items': { mr: 'घरगुती उपयोगी वस्तू', hi: 'घरेलू सामान', hinglish: 'Ghar ke Kaam ka Saman' },
+  'Quick Pickup Order': { mr: 'पटकन ऑर्डर पिकअप', hi: 'जल्दी ऑर्डर पिकअप', hinglish: 'Jaldi Saman Milna' },
+  'Bulk / Family Shopping': { mr: 'मोठी / कौटुंबिक खरेदी', hi: 'बल्क / पारिवारिक खरीदारी', hinglish: 'Poore Parivar ki Kharidari' },
+  'Reasonable Prices': { mr: 'वाजवी दर', hi: 'उचित दाम', hinglish: 'Sahi aur Jaayaz Daam' },
+  'Quality Products': { mr: 'दर्जेदार वस्तू', hi: 'अच्छी क्वालिटी का सामान', hinglish: 'Badhiya Quality ka Saman' },
+  'Helpful & Friendly Behaviour': { mr: 'मदतगार आणि आपुलकीची वागणूक', hi: 'मददगार और अच्छा व्यवहार', hinglish: 'Madadgaar aur Accha Vyavhaar' },
+  'Clean & Organized Shop': { mr: 'स्वच्छ आणि नीटनेटके दुकान', hi: 'साफ और व्यवस्थित दुकान', hinglish: 'Saaf aur Vyavasthit Dukaan' },
 
   // Automobile Services
-  'Routine Service / Oil Change': { mr: 'नियमित सर्व्हिस / ऑईल चेंज', hi: 'नियमित सर्विस / ऑयल चेंज', hinglish: 'Routine Service / Oil Change' },
-  'Diagnostics & Repair': { mr: 'तपासणी आणि दुरुस्ती', hi: 'जांच और मरम्मत', hinglish: 'Repair & Diagnostics' },
-  'Detailing & Wash': { mr: 'गाडी वॉश आणि डिटेलिंग', hi: 'डिटेलिंग और वॉश', hinglish: 'Detailing & Wash' },
-  'Tires & Alignment': { mr: 'टायर्स आणि अलाइनमेंट', hi: 'टायर और अलाइनमेंट', hinglish: 'Tires & Alignment' },
-  Inspection: { mr: 'संपूर्ण तपासणी', hi: 'निरीक्षण / जांच', hinglish: 'Inspection' },
-  'Clear Estimate': { mr: 'अंदाजे खर्चाची स्पष्ट माहिती', hi: 'खर्च की स्पष्ट जानकारी', hinglish: 'Clear Estimate' },
-  'Delivered on Time': { mr: 'वेळेवर डिलिव्हरी मिळाली', hi: 'समय पर डिलीवरी', hinglish: 'Time Par Delivery' },
-  'Took Slightly Longer': { mr: 'कामाला थोडा जास्त वेळ लागला', hi: 'थोड़ा अधिक समय लगा', hinglish: 'Thoda Extra Time Laga' },
-  'Knowledgeable Technicians': { mr: 'अनुभवी मेकॅनिक / तंत्रज्ञ', hi: 'अनुभवी तकनीशियन', hinglish: 'Skilled Technicians' },
+  'Routine Service / Oil Change': { mr: 'नियमित सर्व्हिस / ऑईल चेंज', hi: 'नियमित सर्विस / ऑयल चेंज', hinglish: 'Gaadi ki Service / Oil Badalna' },
+  'Diagnostics & Repair': { mr: 'तपासणी आणि दुरुस्ती', hi: 'जांच और मरम्मत', hinglish: 'Jaanch aur Marammat' },
+  'Detailing & Wash': { mr: 'गाडी वॉश आणि डिटेलिंग', hi: 'डिटेलिंग और वॉश', hinglish: 'Gaadi Dhulai aur Safai' },
+  'Tires & Alignment': { mr: 'टायर्स आणि अलाइनमेंट', hi: 'टायर और अलाइनमेंट', hinglish: 'Tyre aur Alignment' },
+  Inspection: { mr: 'संपूर्ण तपासणी', hi: 'निरीक्षण / जांच', hinglish: 'Poori Jaanch' },
+  'Clear Estimate': { mr: 'अंदाजे खर्चाची स्पष्ट माहिती', hi: 'खर्च की स्पष्ट जानकारी', hinglish: 'Kharch ki Saaf Jaankari' },
+  'Delivered on Time': { mr: 'वेळेवर डिलिव्हरी मिळाली', hi: 'समय पर डिलीवरी', hinglish: 'Samay Par Gaadi Mili' },
+  'Took Slightly Longer': { mr: 'कामाला थोडा जास्त वेळ लागला', hi: 'थोड़ा अधिक समय लगा', hinglish: 'Kaam Mein Thoda Samay Laga' },
+  'Knowledgeable Technicians': { mr: 'अनुभवी मेकॅनिक / तंत्रज्ञ', hi: 'अनुभवी तकनीशियन', hinglish: 'Anubhavi Karigar' },
 
   // Clothing & Apparel
-  'Ethnic & Festive Wear': { mr: 'पारंपारिक आणि सणासुदीचे कपडे', hi: 'एथनिक और फेस्टिव कपड़े', hinglish: 'Ethnic & Festive Wear' },
-  'Casual Wear': { mr: 'कॅज्युअल कपडे', hi: 'कैज़ुअल कपड़े', hinglish: 'Casual Wear' },
-  'Formal Outfits': { mr: 'फॉर्मल कपडे', hi: 'फॉर्मल कपड़े', hinglish: 'Formal Outfits' },
-  'Fabric & Stitching Quality': { mr: 'कापड आणि शिलाईचा दर्जा', hi: 'कपड़े और सिलाई की गुणवत्ता', hinglish: 'Fabric & Stitching Quality' },
-  'Kids & Family Wear': { mr: 'लहान मुले आणि कुटुंबाचे कपडे', hi: 'बच्चों और परिवार के कपड़े', hinglish: 'Kids & Family Wear' },
-  'Custom Alterations': { mr: 'मापानुसार अल्टरेशन / फिटिंग', hi: 'कस्टम ऑल्टरेशन', hinglish: 'Custom Alteration' },
-  'Latest Collection': { mr: 'नवीनतम कलेक्शन', hi: 'लेटेस्ट कलेक्शन', hinglish: 'Latest Collection' },
-  'Great Fitting & Quality': { mr: 'उत्तम फिटिंग आणि दर्जा', hi: 'बेहतरीन फिटिंग और क्वालिटी', hinglish: 'Great Fitting & Quality' },
-  'Fair Pricing': { mr: 'योग्य दर', hi: 'सही कीमत', hinglish: 'Fair Pricing' },
+  'Ethnic & Festive Wear': { mr: 'पारंपारिक आणि सणासुदीचे कपडे', hi: 'एथनिक और फेस्टिव कपड़े', hinglish: 'Tyohar aur Paramparik Kapde' },
+  'Casual Wear': { mr: 'कॅज्युअल कपडे', hi: 'कैज़ुअल कपड़े', hinglish: 'Roz Pehanne ke Kapde' },
+  'Formal Outfits': { mr: 'फॉर्मल कपडे', hi: 'फॉर्मल कपड़े', hinglish: 'Office aur Formal Kapde' },
+  'Fabric & Stitching Quality': { mr: 'कापड आणि शिलाईचा दर्जा', hi: 'कपड़े और सिलाई की गुणवत्ता', hinglish: 'Kapde aur Silai ki Quality' },
+  'Kids & Family Wear': { mr: 'लहान मुले आणि कुटुंबाचे कपडे', hi: 'बच्चों और परिवार के कपड़े', hinglish: 'Bacchon aur Parivar ke Kapde' },
+  'Custom Alterations': { mr: 'मापानुसार अल्टरेशन / फिटिंग', hi: 'कस्टम ऑल्टरेशन', hinglish: 'Naap ke Hisaab Se Fitting' },
+  'Latest Collection': { mr: 'नवीनतम कलेक्शन', hi: 'लेटेस्ट कलेक्शन', hinglish: 'Naya aur Taaza Collection' },
+  'Great Fitting & Quality': { mr: 'उत्तम फिटिंग आणि दर्जा', hi: 'बेहतरीन फिटिंग और क्वालिटी', hinglish: 'Badhiya Fitting aur Kapda' },
+  'Fair Pricing': { mr: 'योग्य दर', hi: 'सही कीमत', hinglish: 'Sahi Daam' },
 
   // Jewelry & Gold Shops
-  'Gold Jewellery': { mr: 'सोन्याचे दागिने', hi: 'सोने के आभूषण', hinglish: 'Gold Jewellery' },
-  'Bridal & Festive Designs': { mr: 'लग्नसराई आणि सणांचे दागिने', hi: 'ब्राइडल और फेस्टिव डिज़ाइन', hinglish: 'Bridal & Festive Designs' },
-  'Silver & Gift Articles': { mr: 'चांदीच्या आणि भेटवस्तू', hi: 'चांदी और गिफ्ट आइटम', hinglish: 'Silver & Gift Items' },
-  'Diamond Collection': { mr: 'डायमंड कलेक्शन', hi: 'डायमंड कलेक्शन', hinglish: 'Diamond Collection' },
-  'Custom Order / Exchange': { mr: 'कस्टम ऑर्डर / जुने सोने बदलणे', hi: 'कस्टम ऑर्डर / एक्सचेंज', hinglish: 'Custom Order / Exchange' },
-  'Hallmark Purity Check': { mr: 'हॉलमार्क शुद्धता तपासणी', hi: 'हॉलमार्क शुद्धता जांच', hinglish: 'Hallmark Purity Check' },
-  'Transparent Weight & Making Charges': { mr: 'वजन आणि घडणावळीतील पारदर्शकता', hi: 'वज़न और मेकिंग चार्ज में पारदर्शिता', hinglish: 'Transparent Weight & Making' },
-  'Hallmarked Purity Assurance': { mr: 'हॉलमार्क शुद्धतेची खात्री', hi: 'हॉलमार्क शुद्धता का भरोसा', hinglish: 'Hallmark Purity Trust' },
-  'Polite & Patient Staff': { mr: 'नम्र आणि संयमी कर्मचारी', hi: 'विनम्र और धैर्यवान स्टाफ', hinglish: 'Polite Staff' },
-  'Wide Variety of Designs': { mr: 'डिझाइनची भरपूर विविधता', hi: 'डिज़ाइनों की भरपूर वैरायटी', hinglish: 'Wide Design Variety' },
-  'Safe & Welcoming Ambience': { mr: 'सुरक्षित आणि प्रसन्न वातावरण', hi: 'सुरक्षित और सुखद माहौल', hinglish: 'Safe & Nice Ambience' },
+  'Gold Jewellery': { mr: 'सोन्याचे दागिने', hi: 'सोने के आभूषण', hinglish: 'Sone ke Gehne' },
+  'Bridal & Festive Designs': { mr: 'लग्नसराई आणि सणांचे दागिने', hi: 'ब्राइडल और फेस्टिव डिज़ाइन', hinglish: 'Shaadi aur Tyohar ke Design' },
+  'Silver & Gift Articles': { mr: 'चांदीच्या आणि भेटवस्तू', hi: 'चांदी और गिफ्ट आइटम', hinglish: 'Chandi aur Tohfe ka Saman' },
+  'Diamond Collection': { mr: 'डायमंड कलेक्शन', hi: 'डायमंड कलेक्शन', hinglish: 'Heere ke Gehne' },
+  'Custom Order / Exchange': { mr: 'कस्टम ऑर्डर / जुने सोने बदलणे', hi: 'कस्टम ऑर्डर / एक्सचेंज', hinglish: 'Naya Order / Purana Sona Badalna' },
+  'Hallmark Purity Check': { mr: 'हॉलमार्क शुद्धता तपासणी', hi: 'हॉलमार्क शुद्धता जांच', hinglish: 'Hallmark Shuddhata Jaanch' },
+  'Transparent Weight & Making Charges': { mr: 'वजन आणि घडणावळीतील पारदर्शकता', hi: 'वज़न और मेकिंग चार्ज में पारदर्शिता', hinglish: 'Wazan aur Banawai ka Saaf Hisaab' },
+  'Hallmarked Purity Assurance': { mr: 'हॉलमार्क शुद्धतेची खात्री', hi: 'हॉलमार्क शुद्धता का भरोसा', hinglish: 'Hallmark Shuddhata ka Bharosa' },
+  'Polite & Patient Staff': { mr: 'नम्र आणि संयमी कर्मचारी', hi: 'विनम्र और धैर्यवान स्टाफ', hinglish: 'Vinamra aur Dheeraj Wala Staff' },
+  'Wide Variety of Designs': { mr: 'डिझाइनची भरपूर विविधता', hi: 'डिज़ाइनों की भरपूर वैरायटी', hinglish: 'Designs ki Bharpoor Variety' },
+  'Safe & Welcoming Ambience': { mr: 'सुरक्षित आणि प्रसन्न वातावरण', hi: 'सुरक्षित और सुखद माहौल', hinglish: 'Surakshit aur Accha Mahol' },
 
   // Other Businesses
-  'Good Service Quality': { mr: 'सेवेचा उत्तम दर्जा', hi: 'सेवा की अच्छी गुणवत्ता', hinglish: 'Good Service Quality' },
-  'Quick & Smooth': { mr: 'जलद आणि सुरळीत काम', hi: 'तेज़ और सहज सेवा', hinglish: 'Quick & Smooth' },
-  'Clean Space': { mr: 'स्वच्छ परिसर', hi: 'साफ जगह', hinglish: 'Clean Space' },
+  'Good Service Quality': { mr: 'सेवेचा उत्तम दर्जा', hi: 'सेवा की अच्छी गुणवत्ता', hinglish: 'Seva ka Accha Darja' },
+  'Quick & Smooth': { mr: 'जलद आणि सुरळीत काम', hi: 'तेज़ और सहज सेवा', hinglish: 'Tez aur Aasaan Kaam' },
+  'Clean Space': { mr: 'स्वच्छ परिसर', hi: 'साफ जगह', hinglish: 'Saaf Jagah' },
 };
 
 const WORD_TRANSLITERATION_MAP: Record<string, string> = {
@@ -914,6 +977,11 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
   en: {
     languageSelectorLabel: 'Choose Review Language',
     languageSelectorHint: 'Questions & review adapt to your language',
+    shareFeedbackHeading: 'Share your feedback',
+    quickCheckinBadge: '15-Second Quick Check-In',
+    quickFeedbackBadge: 'Quick Feedback',
+    holo3dBadge: 'Holo 3D Experience',
+    softTouchBadge: '3D Soft Touch',
     requiredLabel: 'Required',
     optionalLabel: 'Optional',
     selectMultipleLabel: 'Select multiple',
@@ -933,7 +1001,10 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     doneEditingButton: 'Done Editing',
     regenerateButton: 'Regenerate',
     backButton: 'Back to Questions',
+    instantHeaderTitle: 'Choose & Post Your Review',
     instantReadySubtitle: 'Tap Copy & Post to share directly on Google.',
+    instantFooterHint: "Tap Copy & Post on any card — we'll copy the review and open Google Reviews for you.",
+    instantOptionLabels: ['Short', 'Professional', 'Detailed', 'Average', 'Poor'],
     instantRefreshButton: 'Refresh',
     instantCopyAndOpenButton: 'Copy & Post on Google',
     instantOpenGoogleAgainButton: 'Open Google Review',
@@ -941,6 +1012,11 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
   mr: {
     languageSelectorLabel: 'भाषा निवडा (Language)',
     languageSelectorHint: 'प्रश्न आणि तुमचा रिव्ह्यू मराठीत तयार होईल',
+    shareFeedbackHeading: 'तुमचा अनुभव शेअर करा',
+    quickCheckinBadge: '१५-सेकंद झटपट अभिप्राय',
+    quickFeedbackBadge: 'झटपट अभिप्राय',
+    holo3dBadge: 'होलो ३डी अनुभव',
+    softTouchBadge: '३डी सॉफ्ट टच',
     requiredLabel: 'आवश्यक',
     optionalLabel: 'ऐच्छिक',
     selectMultipleLabel: 'अनेक पर्याय निवडू शकता',
@@ -960,7 +1036,10 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     doneEditingButton: 'बदल पूर्ण झाले',
     regenerateButton: 'नवीन बनवा',
     backButton: 'प्रश्नांकडे परत जा',
+    instantHeaderTitle: 'तुमचा रिव्ह्यू निवडा आणि पोस्ट करा',
     instantReadySubtitle: 'कॉपी करून थेट Google वर पोस्ट करा.',
+    instantFooterHint: 'कोणत्याही कार्डवर कॉपी व पोस्ट दाबा — आम्ही रिव्ह्यू कॉपी करून Google उघडू.',
+    instantOptionLabels: ['संक्षिप्त', 'व्यावसायिक', 'सविस्तर', 'सामान्य', 'सुधारणा आवश्यक'],
     instantRefreshButton: 'रिफ्रेश करा',
     instantCopyAndOpenButton: 'कॉपी करून Google वर पोस्ट करा',
     instantOpenGoogleAgainButton: 'Google रिव्ह्यू उघडा',
@@ -968,6 +1047,11 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
   hi: {
     languageSelectorLabel: 'भाषा चुनें (Language)',
     languageSelectorHint: 'प्रश्न और आपका रिव्यू हिंदी में तैयार होगा',
+    shareFeedbackHeading: 'अपना अनुभव साझा करें',
+    quickCheckinBadge: '15-सेकंड क्विक फ़ीडबैक',
+    quickFeedbackBadge: 'झटपट फ़ीडबैक',
+    holo3dBadge: 'होलो 3D अनुभव',
+    softTouchBadge: '3D सॉफ्ट टच',
     requiredLabel: 'ज़रूरी',
     optionalLabel: 'वैकल्पिक',
     selectMultipleLabel: 'एक से ज़्यादा चुन सकते हैं',
@@ -987,34 +1071,45 @@ const UI_STRINGS_BY_LANGUAGE: Record<ReviewLanguage, LocalizedFormUiStrings> = {
     doneEditingButton: 'संपादन पूर्ण',
     regenerateButton: 'नया बनाएं',
     backButton: 'प्रश्नों पर वापस जाएं',
+    instantHeaderTitle: 'अपना रिव्यू चुनें और पोस्ट करें',
     instantReadySubtitle: 'कॉपी करें और सीधे Google पर पोस्ट करें।',
+    instantFooterHint: 'किसी भी कार्ड पर कॉपी व पोस्ट दबाएं — रिव्यू कॉपी होकर Google खुल जाएगा।',
+    instantOptionLabels: ['संक्षिप्त', 'प्रोफेशनल', 'विस्तृत', 'औसत', 'कमज़ोर / सुधार ज़रूरी'],
     instantRefreshButton: 'रिफ्रेश करें',
     instantCopyAndOpenButton: 'कॉपी और Google पर पोस्ट करें',
     instantOpenGoogleAgainButton: 'Google रिव्यू खोलें',
   },
   hinglish: {
-    languageSelectorLabel: 'Language Chunein',
-    languageSelectorHint: 'Questions aur review Hinglish mein dikhenge',
+    languageSelectorLabel: 'Bhasha Chunein',
+    languageSelectorHint: 'Sawaal aur aapka review Hinglish mein dikhenge',
+    shareFeedbackHeading: 'Apna Anubhav Batayein',
+    quickCheckinBadge: '15-Second Mein Review',
+    quickFeedbackBadge: 'Jhatpat Feedback',
+    holo3dBadge: '3D Experience',
+    softTouchBadge: 'Soft Touch',
     requiredLabel: 'Zaroori',
-    optionalLabel: 'Optional',
-    selectMultipleLabel: 'Multiple select kar sakte hain',
+    optionalLabel: 'Zaroori Nahi',
+    selectMultipleLabel: 'Ek se zyada chunein',
     tapExpressionLabel: 'Rating dene ke liye tap karein',
     generateReviewButton: 'Review Banayein',
     generatingReviewButton: 'Review likha ja raha hai...',
-    writingProgressHint: 'Aapke answers se natural review ready ho raha hai...',
-    textAreaPlaceholderDefault: 'Apna quick feedback yahan likhein...',
-    answerCountLabel: (answered, total) => `${answered}/${total} answered`,
-    ratingLabels: ['Bahut Badhiya', 'Kaafi Accha', 'Accha', 'Theek-Thak', 'Better Ho Sakta Hai'],
+    writingProgressHint: 'Aapke jawabon se natural review ready ho raha hai...',
+    textAreaPlaceholderDefault: 'Apni baat yahan likhein...',
+    answerCountLabel: (answered, total) => `${answered}/${total} jawab diye`,
+    ratingLabels: ['Bahut Badhiya', 'Kaafi Accha', 'Accha', 'Theek-Thak', 'Sudhaar Chahiye'],
     step2ReviewHeading: 'Aapka Review Ready Hai',
-    step2Subtitle: 'Google par post karne se pehle check ya edit karein.',
+    step2Subtitle: 'Google par dalne se pehle padh lein ya badal lein.',
     copyReviewButton: 'Review Copy Karein',
-    copiedButton: 'Copied!',
+    copiedButton: 'Copy Ho Gaya!',
     postOnGoogleButton: 'Google Par Post Karein',
-    editReviewButton: 'Edit Karein',
-    doneEditingButton: 'Done',
+    editReviewButton: 'Badlein',
+    doneEditingButton: 'Ho Gaya',
     regenerateButton: 'Naya Banayein',
-    backButton: 'Questions Par Wapas',
-    instantReadySubtitle: 'Copy karke seedha Google par post karein.',
+    backButton: 'Sawaalon Par Wapas',
+    instantHeaderTitle: 'Apna Review Chunein aur Post Karein',
+    instantReadySubtitle: 'Copy karein aur seedha Google par post karein.',
+    instantFooterHint: 'Kisi bhi card par dabaiye — review copy hokar seedha Google khul jayega.',
+    instantOptionLabels: ['Chhota', 'Sahi & Seedha', 'Lamba (Detailed)', 'Theek-Thak', 'Kamzor (Poor)'],
     instantRefreshButton: 'Refresh',
     instantCopyAndOpenButton: 'Copy & Google Par Post Karein',
     instantOpenGoogleAgainButton: 'Google Review Kholein',
@@ -1025,10 +1120,143 @@ export function getLocalizedFormUiStrings(language: ReviewLanguage): LocalizedFo
   return UI_STRINGS_BY_LANGUAGE[language] || UI_STRINGS_BY_LANGUAGE.en;
 }
 
+export function localizeWelcomeMessage(
+  welcomeMessage: string | undefined,
+  businessName: string,
+  language: ReviewLanguage,
+): string {
+  const safeName = businessName.trim() || 'our business';
+  const raw = (welcomeMessage || '').trim();
+  if (language === 'en') {
+    return (
+      raw ||
+      `Thanks for visiting ${safeName}! Tap a few quick options to share your honest experience.`
+    );
+  }
+
+  const containsDevanagari = /[\u0900-\u097F]/.test(raw);
+  if (raw && containsDevanagari && (language === 'hi' || language === 'mr')) {
+    return raw;
+  }
+
+  const lower = raw.toLowerCase();
+  const isDefaultOrEnglishBoilerplate =
+    !raw ||
+    lower.includes('thanks for visiting') ||
+    lower.includes('tap a few quick') ||
+    lower.includes('share your honest experience') ||
+    lower.includes('share your experience') ||
+    lower.includes('tell us how') ||
+    lower.includes('help us improve') ||
+    lower.includes('quick feedback') ||
+    /^[a-z0-9\s.,!?'"’&-]+$/i.test(raw);
+
+  if (!isDefaultOrEnglishBoilerplate) {
+    return raw;
+  }
+
+  if (language === 'mr') {
+    return `${safeName} येथे भेट दिल्याबद्दल धन्यवाद! खालील सोप्या पर्यायांवर टॅप करून तुमचा प्रामाणिक अनुभव शेअर करा.`;
+  }
+  if (language === 'hi') {
+    return `${safeName} में आने के लिए धन्यवाद! नीचे दिए गए आसान विकल्पों पर टैप करके अपना सच्चा अनुभव साझा करें।`;
+  }
+  return `${safeName} aane ke liye shukriya! Neeche kuch aasaan options chunein aur apna saccha anubhav share karein.`;
+}
+
+const PHRASE_WORD_TRANSLATIONS: Record<string, LangMap> = {
+  'room comfort': { mr: 'रूमचा आराम', hi: 'कमरे का आराम', hinglish: 'Kamre ka Aaram' },
+  'clean room': { mr: 'स्वच्छ रूम', hi: 'साफ कमरा', hinglish: 'Saaf Kamra' },
+  'clean rooms': { mr: 'स्वच्छ खोल्या', hi: 'साफ कमरे', hinglish: 'Saaf Kamre' },
+  'room service': { mr: 'रूम सर्व्हिस', hi: 'रूम सर्विस', hinglish: 'Room Seva' },
+  'front desk': { mr: 'रिसेप्शन', hi: 'रिसेप्शन', hinglish: 'Reception' },
+  'check-in': { mr: 'चेक-इन', hi: 'चेक-इन', hinglish: 'Check-In' },
+  'check in': { mr: 'चेक-इन', hi: 'चेक-इन', hinglish: 'Check-In' },
+  hospitality: { mr: 'आदरातिथ्य', hi: 'आतिथ्य', hinglish: 'Mehmaan-Nawazi' },
+  ambience: { mr: 'वातावरण', hi: 'माहौल', hinglish: 'Mahol' },
+  ambiance: { mr: 'वातावरण', hi: 'माहौल', hinglish: 'Mahol' },
+  cleanliness: { mr: 'स्वच्छता', hi: 'साफ-सफाई', hinglish: 'Safai' },
+  hygiene: { mr: 'स्वच्छता', hi: 'स्वच्छता', hinglish: 'Safai' },
+  location: { mr: 'ठिकाण', hi: 'लोकेशन', hinglish: 'Jagah' },
+  convenient: { mr: 'सोयीस्कर', hi: 'सुविधाजनक', hinglish: 'Aasaan' },
+  comfortable: { mr: 'आरामदायी', hi: 'आरामदायक', hinglish: 'Aaramdayak' },
+  comfort: { mr: 'आराम', hi: 'आराम', hinglish: 'Aaram' },
+  friendly: { mr: 'मनमिळाऊ', hi: 'मिलनसार', hinglish: 'Milansaar' },
+  helpful: { mr: 'मदतगार', hi: 'मददगार', hinglish: 'Madadgaar' },
+  polite: { mr: 'विनम्र', hi: 'विनम्र', hinglish: 'Vinamra' },
+  courteous: { mr: 'विनम्र', hi: 'विनम्र', hinglish: 'Vinamra' },
+  staff: { mr: 'कर्मचारी', hi: 'स्टाफ', hinglish: 'Staff' },
+  service: { mr: 'सेवा', hi: 'सेवा', hinglish: 'Seva' },
+  food: { mr: 'जेवण', hi: 'खाना', hinglish: 'Khana' },
+  breakfast: { mr: 'नाश्ता', hi: 'नाश्ता', hinglish: 'Nashta' },
+  dining: { mr: 'भोजन', hi: 'भोजन', hinglish: 'Khana' },
+  quality: { mr: 'गुणवत्ता', hi: 'गुणवत्ता', hinglish: 'Quality' },
+  pricing: { mr: 'दर', hi: 'कीमत', hinglish: 'Daam' },
+  price: { mr: 'दर', hi: 'कीमत', hinglish: 'Daam' },
+  stay: { mr: 'मुक्काम', hi: 'ठहराव', hinglish: 'Stay' },
+  visit: { mr: 'भेट', hi: 'विज़िट', hinglish: 'Visit' },
+  clean: { mr: 'स्वच्छ', hi: 'साफ', hinglish: 'Saaf' },
+  great: { mr: 'उत्कृष्ट', hi: 'बढ़िया', hinglish: 'Badhiya' },
+  quick: { mr: 'जलद', hi: 'तेज़', hinglish: 'Tez' },
+  fast: { mr: 'जलद', hi: 'तेज़', hinglish: 'Tez' },
+  slow: { mr: 'धीमी', hi: 'धीमी', hinglish: 'Dheemi' },
+  parking: { mr: 'पार्किंग', hi: 'पार्किंग', hinglish: 'Gaadi Khadi Karne ki Jagah' },
+  wifi: { mr: 'वाय-फाय', hi: 'वाई-फाई', hinglish: 'Internet / WiFi' },
+  team: { mr: 'टीम', hi: 'टीम', hinglish: 'Team' },
+  experience: { mr: 'अनुभव', hi: 'अनुभव', hinglish: 'Anubhav' },
+  taste: { mr: 'चव', hi: 'स्वाद', hinglish: 'Swaad' },
+  rooms: { mr: 'खोल्या', hi: 'कमरे', hinglish: 'Kamre' },
+  room: { mr: 'रूम', hi: 'कमरा', hinglish: 'Kamra' },
+};
+
+function findNormalizedTranslation(
+  table: Record<string, LangMap>,
+  raw: string,
+  language: ReviewLanguage,
+): string | undefined {
+  const trimmed = raw.trim();
+  const exact = table[trimmed]?.[language];
+  if (exact) return exact;
+  const normalizedTarget = trimmed.toLowerCase().replace(/\s+/g, ' ');
+  for (const [key, map] of Object.entries(table)) {
+    if (key.toLowerCase().replace(/\s+/g, ' ') === normalizedTarget && map[language]) {
+      return map[language];
+    }
+  }
+  return undefined;
+}
+
+function translateViaVocabulary(text: string, language: Exclude<ReviewLanguage, 'en'>): string | null {
+  let updated = text.trim();
+  let matched = false;
+  const sortedEntries = Object.entries(PHRASE_WORD_TRANSLATIONS).sort((a, b) => b[0].length - a[0].length);
+  for (const [eng, translations] of sortedEntries) {
+    const replacement = translations[language];
+    if (!replacement) continue;
+    const escaped = eng.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    if (regex.test(updated)) {
+      updated = updated.replace(regex, replacement);
+      matched = true;
+    }
+  }
+  updated = updated.replace(/\s*&\s*/g, language === 'mr' ? ' आणि ' : ' aur ').replace(/\s+/g, ' ').trim();
+  return matched ? updated : null;
+}
+
+function smartFallbackTranslateOption(option: string, language: ReviewLanguage): string {
+  if (language === 'en') return option;
+  const mapped = findNormalizedTranslation(OPTION_TRANSLATIONS, option, language);
+  if (mapped) return mapped;
+  const vocabTranslated = translateViaVocabulary(option, language);
+  if (vocabTranslated) return vocabTranslated;
+  return option;
+}
+
 function smartFallbackTranslatePrompt(prompt: string, language: ReviewLanguage): string {
   if (language === 'en') return prompt;
   const trimmed = prompt.trim();
-  const exact = PROMPT_TRANSLATIONS[trimmed]?.[language];
+  const exact = findNormalizedTranslation(PROMPT_TRANSLATIONS, trimmed, language);
   if (exact) return exact;
 
   // Fallback pattern handling for common custom question templates
@@ -1038,13 +1266,41 @@ function smartFallbackTranslatePrompt(prompt: string, language: ReviewLanguage):
       ? 'तुम्ही पुन्हा भेट द्याल का?'
       : language === 'hi'
         ? 'क्या आप फिर से आना चाहेंगे?'
-        : 'Kya aap dobara visit karenge?';
+        : 'Kya aap dobara aana chahenge?';
+  }
+  if (lower.startsWith('would you recommend')) {
+    return language === 'mr'
+      ? 'तुम्ही इतरांना आमची शिफारस कराल का?'
+      : language === 'hi'
+        ? 'क्या आप दूसरों को हमारी सिफारिश करेंगे?'
+        : 'Kya aap doosron ko humari sifarish karenge?';
   }
   if (lower.includes('overall experience')) {
     return PROMPT_TRANSLATIONS['How was your overall experience?']?.[language] || trimmed;
   }
-  if (lower.includes('(optional)') && !trimmed.includes('?')) {
-    return `${trimmed.replace(/\(optional\)/i, '').trim()} (${getLocalizedFormUiStrings(language).optionalLabel})`;
+  if (lower.includes('parts of your stay') || lower.includes('during your stay')) {
+    return PROMPT_TRANSLATIONS['Which parts of your stay stood out?']?.[language] || trimmed;
+  }
+  if (lower.includes('hospitality') || (lower.includes('staff') && lower.includes('how'))) {
+    return PROMPT_TRANSLATIONS['How was our hospitality team?']?.[language] || trimmed;
+  }
+  if (lower.includes('(optional)')) {
+    return language === 'mr'
+      ? 'काही खास अनुभव किंवा सूचना? (ऐच्छिक)'
+      : language === 'hi'
+        ? 'कोई खास अनुभव या सुझाव लिखना चाहेंगे? (वैकल्पिक)'
+        : 'Koi khaas baat share karni hai? (Zaroori Nahi)';
+  }
+  const vocabTranslated = translateViaVocabulary(trimmed, language);
+  if (vocabTranslated) {
+    if (lower.startsWith('how was') || lower.startsWith('how were')) {
+      return language === 'mr'
+        ? `${vocabTranslated.replace(/^(How was|How were)\s*/i, '').replace(/\?$/, '')} कसे होते?`
+        : language === 'hi'
+          ? `${vocabTranslated.replace(/^(How was|How were)\s*/i, '').replace(/\?$/, '')} कैसा रहा?`
+          : `${vocabTranslated.replace(/^(How was|How were)\s*/i, '').replace(/\?$/, '')} kaisa raha?`;
+    }
+    return vocabTranslated;
   }
   return trimmed;
 }
@@ -1072,7 +1328,6 @@ export function localizeQuestion(
   const customLoc = question.translations?.[language];
   const prompt =
     customLoc?.prompt?.trim() ||
-    PROMPT_TRANSLATIONS[question.prompt.trim()]?.[language] ||
     smartFallbackTranslatePrompt(question.prompt, language);
 
   const defaultPlaceholder = UI_STRINGS_BY_LANGUAGE[language].textAreaPlaceholderDefault;
@@ -1085,8 +1340,7 @@ export function localizeQuestion(
     canonicalValue: opt,
     displayLabel:
       customLoc?.options?.[idx]?.trim() ||
-      OPTION_TRANSLATIONS[opt.trim()]?.[language] ||
-      opt,
+      smartFallbackTranslateOption(opt, language),
   }));
 
   return { prompt, placeholder, options };

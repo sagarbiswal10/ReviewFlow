@@ -53,6 +53,7 @@ import {
   buildAutoTranslatedQuestionContent,
   getLocalizedFormUiStrings,
   localizeQuestion,
+  localizeWelcomeMessage,
   transliterateRomanToDevanagari,
 } from '../src/data/localizedQuestions.ts';
 import { BUSINESS_CATEGORIES } from '../src/types.ts';
@@ -550,6 +551,107 @@ test('TC-PORTAL-01: Client Portal & Business Management show one-page Analytics 
   assert.ok(fullActivitySrc.includes('rf-scrollbar-hidden'));
   assert.ok(fullActivitySrc.includes('AI Drafted & Generated'));
   assert.ok(cssSrc.includes('.rf-scrollbar-hidden'));
+});
+
+test('TC-LOC-03: Legacy Hotel prompts/options, welcome messages, and card headers translate completely across Marathi, Hindi, and Hinglish', () => {
+  const legacyStayQ = {
+    id: 'hotel-legacy-1',
+    prompt: 'Which parts of your stay stood out?',
+    type: 'multiple' as const,
+    options: [
+      'Clean & Comfortable Room',
+      'Convenient Location',
+      'Smooth Check-In',
+      'Breakfast & Dining',
+      'Quiet & Restful',
+    ],
+    required: true,
+  };
+
+  for (const lang of ['mr', 'hi', 'hinglish'] as const) {
+    const loc = localizeQuestion(legacyStayQ, lang);
+    assert.notEqual(loc.prompt, legacyStayQ.prompt, `Prompt stayed raw English in ${lang}`);
+    if (lang === 'mr' || lang === 'hi') {
+      assert.match(loc.prompt, /[\u0900-\u097F]/);
+    } else {
+      assert.ok(!/[\u0900-\u097F]/.test(loc.prompt));
+    }
+    for (let i = 0; i < legacyStayQ.options.length; i += 1) {
+      assert.notEqual(
+        loc.options[i].displayLabel,
+        legacyStayQ.options[i],
+        `Option "${legacyStayQ.options[i]}" stayed raw English in ${lang}`,
+      );
+    }
+
+    const welcome = localizeWelcomeMessage(
+      'Thanks for visiting Rohan! Tap a few quick options to share your honest experience.',
+      'Rohan',
+      lang,
+    );
+    assert.ok(welcome.includes('Rohan'));
+    assert.ok(!welcome.toLowerCase().includes('thanks for visiting'));
+
+    const ui = getLocalizedFormUiStrings(lang);
+    assert.notEqual(ui.shareFeedbackHeading, 'Share your feedback');
+    assert.equal(ui.instantOptionLabels.length, 5);
+  }
+});
+
+test('TC-PATTERN-01: Instant AI drafts output exact 5-slot pattern (Short+SEO, Professional+SEO, Detailed+SEO, Average, Poor) & Guided rotates styles', () => {
+  const seoByLang = {
+    en: ['Luxury stay in Pune', 'Clean hotel rooms Pune'],
+    hi: ['पुणे में आरामदायक होटल कमरा', 'साफ-सुथरा परिवार होटल'],
+    mr: ['पुण्यात आरामदायी हॉटेल रूम', 'स्वच्छ कौटुंबिक मुक्काम'],
+    hinglish: ['Pune mein aaramdayak hotel kamra', 'Saaf aur shaant stay'],
+  };
+
+  for (const lang of ['en', 'hi', 'mr', 'hinglish'] as const) {
+    const drafts = selectContextualReadyDrafts({
+      businessName: 'Rohan Residency',
+      category: 'Hotels',
+      locality: 'Baner',
+      city: 'Pune',
+      servicesOffered: ['AC Rooms'],
+      seoKeywords: seoByLang[lang],
+      language: lang,
+      seed: 1,
+    });
+    assert.equal(drafts.length, 5, `Expected exactly 5 drafts in ${lang}`);
+    assert.ok(drafts[2].length > drafts[0].length, `Expected Detailed slot > Short slot in ${lang}`);
+    assert.ok(
+      seoByLang[lang].some((kw) => drafts[0].includes(kw) || drafts[1].includes(kw) || drafts[2].includes(kw)),
+      `Expected SEO keyword in positive slots for ${lang}`,
+    );
+    if (lang === 'en') {
+      assert.match(drafts[3].toLowerCase(), /okay|decent|average|fair|fine|acceptable/);
+      assert.match(drafts[4].toLowerCase(), /disappointed|below|not satisfied|frustrated|would not recommend/);
+    } else if (lang === 'hi' || lang === 'mr') {
+      assert.match(drafts[4], /[\u0900-\u097F]/);
+    } else {
+      assert.ok(!/[\u0900-\u097F]/.test(drafts[4]));
+    }
+    for (const d of drafts) {
+      assert.equal(/\bbest\b/i.test(d), false, `Disallowed superlative "best" in: ${d}`);
+    }
+
+    const refreshed = selectContextualReadyDrafts({
+      businessName: 'Rohan Residency',
+      category: 'Hotels',
+      seoKeywords: seoByLang[lang],
+      language: lang,
+      seed: 2,
+    });
+    assert.equal(refreshed.length, 5);
+    assert.notEqual(refreshed[0], drafts[0]);
+  }
+
+  const flowSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf8',
+  );
+  assert.ok(flowSrc.includes("const STYLE_ROTATION: ReviewStyle[] = ['short', 'detailed', 'professional'];"));
+  assert.ok(flowSrc.includes('getNextReviewStyle(selectedStyle, 1)'));
 });
 
 

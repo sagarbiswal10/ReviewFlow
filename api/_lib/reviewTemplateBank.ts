@@ -620,6 +620,312 @@ const HINGLISH_REVIEW_BANK: TemplateBuilder[] = [
     `${f.useBiz ? `${s.biz}` : 'Yahan'} se bahar nikalte waqt poori khushi mehsoos hui. Sabka bartaav accha tha.`,
 ];
 
+// =============================================================================
+// 5-SLOT PATTERN BANKS:
+// Slot 0 (Top / #5 from bottom): Short (+SEO)
+// Slot 1 (#4 from bottom): Professional (+SEO)
+// Slot 2 (#3 from bottom): Detailed (+SEO)
+// Slot 3 (#2 from bottom): Average
+// Slot 4 (Bottom / #1 from bottom): Poor
+// =============================================================================
+type PatternKey = 'short' | 'professional' | 'detailed' | 'average' | 'poor';
+
+const PATTERN_BANKS: Record<QualityReviewLanguage, Record<PatternKey, TemplateBuilder[]>> = {
+  en: {
+    short: [
+      (s, f) =>
+        `Had a smooth visit${f.useBiz ? ` at ${s.biz}` : ''}${f.useArea ? ` in ${s.area}` : ''}. Very happy with the ${f.useSeo && s.seo ? s.seo : s.service}.`,
+      (s, f) =>
+        `Quick and pleasant experience${f.useBiz ? ` at ${s.biz}` : ''}. Solid ${f.useSeo && s.seo ? s.seo : s.service} and polite people.`,
+      (s, f) =>
+        `Stopped by${f.useBiz ? ` ${s.biz}` : ''} for ${f.useSeo && s.seo ? s.seo : s.service}—clean setup and prompt attention.`,
+      (s, f) =>
+        `Clean place and friendly help${f.useArea ? ` around ${s.area}` : ''}. Glad I picked them for ${f.useSeo && s.seo ? s.seo : s.service}.`,
+      (s, f) =>
+        `No wait, clear pricing, and tidy work${f.useSeo && s.seo ? ` for ${s.seo}` : ''}. Short and sweet visit.`,
+      (s, f) =>
+        `Picked${f.useBiz ? ` ${s.biz}` : ' this place'} for ${f.useSeo && s.seo ? s.seo : s.service}. Everything felt neat and on time.`,
+    ],
+    professional: [
+      (s, f) =>
+        `Consistent standards${f.useBiz ? ` at ${s.biz}` : ''}${f.useArea ? ` (${s.area})` : ''}. The team handled my ${f.useSeo && s.seo ? s.seo : s.service} thoroughly with transparent communication throughout.`,
+      (s, f) =>
+        `Well-organized process from start to finish${f.useOwner ? `, overseen smoothly by ${s.owner}` : ''}. I appreciated the clear guidance regarding ${f.useSeo && s.seo ? s.seo : s.service}.`,
+      (s, f) =>
+        `Reliable${f.useSeo && s.seo ? ` ${s.seo}` : ` ${s.service}`} backed by courteous staff and clean surroundings. Appointments run on schedule without unnecessary delays.`,
+      (s, f) =>
+        `Appreciated the attentive handling of my ${f.useSeo && s.seo ? s.seo : s.service}${f.useBiz ? ` at ${s.biz}` : ''}. Every detail was explained upfront before getting started.`,
+      (s, f) =>
+        `Measured, courteous service with visible attention to hygiene and timing. Dependable choice${f.useArea ? ` in ${s.area}` : ''} for ${f.useSeo && s.seo ? s.seo : s.service}.`,
+      (s, f) =>
+        `Professional conduct across reception and service delivery. My ${f.useSeo && s.seo ? s.seo : s.service} request was completed cleanly and as promised.`,
+    ],
+    detailed: [
+      (s, f) =>
+        `Visited${f.useBiz ? ` ${s.biz}` : ''}${f.useArea ? ` near ${s.area}` : ''} for ${f.useSeo && s.seo ? s.seo : s.service}, and the whole visit felt well-paced. The staff listened carefully to what I wanted, explained the options clearly, and maintained a tidy space the entire time. I left feeling satisfied with both the outcome and the straightforward pricing.`,
+      (s, f) =>
+        `I needed dependable ${f.useSeo && s.seo ? s.seo : s.service}${f.useArea ? ` in ${s.area}` : ''} and decided to try${f.useBiz ? ` ${s.biz}` : ' here'}.${f.useOwner ? ` ${s.owner} checked in to make sure everything stayed on track.` : ''} Cleanliness was clearly a priority, wait time stayed minimal, and nothing felt rushed at any point. Would comfortably return again.`,
+      (s, f) =>
+        `From walking in to wrapping up my ${f.useSeo && s.seo ? s.seo : s.service}, the experience stayed calm and well-coordinated. They took a few extra minutes upfront to understand my preferences rather than guessing. Both the quality of work and the polite attitude of the team stood out nicely.`,
+      (s, f) =>
+        `Came by${f.useBiz ? ` ${s.biz}` : ''} after a friend mentioned their ${f.useSeo && s.seo ? s.seo : s.service}. Reception greeted me promptly, the setup looked fresh and organized, and small details were handled properly without me having to remind anyone. Overall a very smooth visit worth sharing.`,
+      (s, f) =>
+        `Booked ${f.useSeo && s.seo ? s.seo : s.service}${f.useBiz ? ` with ${s.biz}` : ''} and had a very pleasant visit${f.useArea ? ` in ${s.area}` : ''}. Every step was handled patiently, cleanliness around the workspace was spotless, and billing matched what was discussed beforehand. Happy with how things went.`,
+      (s, f) =>
+        `Dropped in during a busy hour for ${f.useSeo && s.seo ? s.seo : s.service}, yet the team stayed calm and kept everyone updated. Work quality stayed steady without cutting corners, and they checked whether I was happy before closing. Dependable spot overall.`,
+    ],
+    average: [
+      (s, f) =>
+        `An okay visit overall${f.useBiz ? ` to ${s.biz}` : ''}. The ${s.service} got done fine, though wait time felt slightly longer than expected.`,
+      (s, f) =>
+        `Decent experience for ${s.service}, nothing extraordinary. Staff was polite enough, though a bit better coordination would help.`,
+      (s, f) =>
+        `The space was reasonably clean and work was average.${f.useBiz ? ` ${s.biz}` : ' They'} handled the basics properly, with room to improve speed.`,
+      (s, f) =>
+        `Fair visit overall. Pricing seemed okay and people were courteous, though the overall pace felt a little ordinary.`,
+      (s, f) =>
+        `Things went fine for routine ${s.service}. Not bad at all, just felt a bit standard compared to expectations.`,
+      (s, f) =>
+        `Acceptable service${f.useArea ? ` around ${s.area}` : ''}. The outcome was alright, though follow-through at reception could be smoother.`,
+    ],
+    poor: [
+      (s, f) =>
+        `Disappointed with the visit${f.useBiz ? ` at ${s.biz}` : ''}. Had to wait quite long without clear updates, and the ${s.service} felt rushed in the end.`,
+      (s, f) =>
+        `The experience fell below expectations. Staff coordination was disorganized and the attention to cleanliness needs serious improvement.`,
+      (s, f) =>
+        `Not satisfied with how my ${s.service} was handled. Timing was poorly managed and basic requests had to be repeated twice.`,
+      (s, f) =>
+        `Left feeling frustrated after the visit. There was a noticeable delay past the promised time and communication felt unhelpful.`,
+      (s, f) =>
+        `Would not recommend based on today's experience. Cleanliness and upkeep looked neglected, and no one checked if things were right.`,
+      (s, f) =>
+        `Below-par experience overall. Service speed was slow even when it wasn't crowded, and the final result did not match what was promised.`,
+    ],
+  },
+
+  hi: {
+    short: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz}` : 'यहाँ'}${f.useArea ? ` (${s.area})` : ''} में ${f.useSeo && s.seo ? s.seo : s.service} का अनुभव बहुत बढ़िया रहा। काम साफ और समय पर हुआ।`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} के लिए एक अच्छी और साफ जगह। स्टाफ का व्यवहार विनम्र और मददगार लगा।`,
+      (s, f) =>
+        `जल्दी और बिना किसी झंझट के ${f.useSeo && s.seo ? s.seo : s.service} पूरा हो गया।${f.useBiz ? ` ${s.biz}` : ' यहाँ'} की व्यवस्था पसंद आई।`,
+      (s, f) =>
+        `साफ-सफाई और समय की पाबंदी अच्छी लगी। ${f.useSeo && s.seo ? s.seo : s.service} से पूरी तरह संतुष्ट हूँ।`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} में ` : ''}${f.useSeo && s.seo ? s.seo : s.service} के लिए बढ़िया विकल्प। बिल्कुल आरामदायक अनुभव रहा।`,
+      (s, f) =>
+        `कम समय में अच्छा काम और सही दाम। ${f.useSeo && s.seo ? s.seo : s.service} के लिए फिर आना चाहूंगा।`,
+    ],
+    professional: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} में` : 'यहाँ'} ${f.useSeo && s.seo ? s.seo : s.service} की गुणवत्ता और कार्यप्रणाली काफी व्यवस्थित रही।${f.useOwner ? ` ${s.owner} के मार्गदर्शन में` : ''} हर जानकारी स्पष्ट रूप से दी गई।`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} क्षेत्र में ` : ''}${f.useSeo && s.seo ? s.seo : s.service} के लिए यह एक भरोसेमंद स्थान है। स्टाफ ने समयबद्ध और संतुलित ढंग से पूरा कार्य संभाला।`,
+      (s, f) =>
+        `प्रवेश से लेकर काम पूरा होने तक अनुशासन और स्वच्छता का स्तर बना रहा। ${f.useSeo && s.seo ? s.seo : s.service} को लेकर पारदर्शी सलाह और उचित सेवा मिली।`,
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} की टीम` : 'यहाँ की टीम'} ने मेरी आवश्यकता को ध्यान से समझकर ${f.useSeo && s.seo ? s.seo : s.service} का काम समय पर पूरा किया।`,
+      (s, f) =>
+        `सधे हुए व्यवहार, स्वच्छ वातावरण और स्पष्ट बिलिंग के कारण ${f.useSeo && s.seo ? s.seo : s.service} का अनुभव संतोषजनक रहा।`,
+      (s, f) =>
+        `नियमित मानकों और समय के प्रति सजगता यहाँ साफ दिखाई देती है। ${f.useSeo && s.seo ? s.seo : s.service} के लिए निश्चिंत होकर चुना जा सकता है।`,
+    ],
+    detailed: [
+      (s, f) =>
+        `आज मैं${f.useBiz ? ` ${s.biz}` : ''}${f.useArea ? ` (${s.area})` : ''} में ${f.useSeo && s.seo ? s.seo : s.service} के लिए गया था और पूरा अनुभव काफी सुखद रहा। स्टाफ ने पहले मेरी बात आराम से सुनी और हर विकल्प को साफ तरीके से समझाया। पूरी जगह साफ-सुथरी थी और काम में बिल्कुल जल्दबाज़ी नहीं की गई।`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} करवाने के लिए${f.useBiz ? ` ${s.biz}` : ' यहाँ'} जाने का अनुभव उम्मीद से अच्छा रहा।${f.useOwner ? ` ${s.owner} ने खुद ध्यान दिया कि कोई दिक्कत न हो।` : ''} प्रतीक्षा समय बहुत कम रहा, माहौल शांत था और कीमत भी पहले से तय बात के अनुसार ही रही।`,
+      (s, f) =>
+        `दोस्त के सुझाव पर${f.useArea ? ` ${s.area} में` : ''} यहाँ ${f.useSeo && s.seo ? s.seo : s.service} के लिए आया था। स्वागत अच्छा रहा, साफ-सफाई का पूरा ध्यान रखा गया और काम के बीच में भी मेरी पसंद पूछी गई। बिना किसी परेशानी के काम पूरा हो गया, दोबारा जरूर आऊंगा।`,
+      (s, f) =>
+        `भीड़ होने के बावजूद${f.useBiz ? ` ${s.biz}` : ' यहाँ'} के कर्मचारियों ने शांत रहकर हर ग्राहक को सही समय दिया। मेरा ${f.useSeo && s.seo ? s.seo : s.service} पूरे ध्यान से किया गया और अंत में फीडबैक भी पूछा गया। कुल मिलाकर भरोसेमंद अनुभव रहा।`,
+      (s, f) =>
+        `परिवार के साथ आकर ${f.useSeo && s.seo ? s.seo : s.service} लिया और सभी को व्यवस्था पसंद आई। बैठने की अच्छी जगह, स्वच्छ उपकरण और मिलनसार स्टाफ के कारण पूरा समय आराम से बीता। किसी भी तरह की छुपी शर्त नहीं थी।`,
+      (s, f) =>
+        `काम की बारीकी और साफ-सफाई दोनों ही स्तर पर यह जगह खरी उतरी। ${f.useSeo && s.seo ? s.seo : s.service} के दौरान उन्होंने समय लेकर सही परिणाम दिया। जो लोग साफ और भरोसेमंद सेवा चाहते हैं, उनके लिए सही स्थान है।`,
+    ],
+    average: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} में` : 'यहाँ'} कुल मिलाकर अनुभव ठीक-ठाक रहा। ${s.service} का काम तो हो गया, लेकिन थोड़ा ज्यादा इंतजार करना पड़ा।`,
+      (s, f) =>
+        `सामान्य अनुभव था—स्टाफ का व्यवहार सही था, पर काम की गति थोड़ी और बेहतर हो सकती थी।`,
+      (s, f) =>
+        `जगह ठीक थी और ${s.service} औसत रहा। न बहुत खास लगा और न ही कोई बड़ी शिकायत रही।`,
+      (s, f) =>
+        `दाम और सेवा दोनों औसत स्तर के लगे। रिसेप्शन पर तालमेल थोड़ा और सुधर सकता है।`,
+      (s, f) =>
+        `जरूरत का काम आराम से हो गया, लेकिन साफ-सफाई और समय प्रबंधन थोड़ा और बेहतर हो सकता था।`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} में` : 'यहाँ'} सेवा कामचलाऊ और सामान्य रही। अगली बार थोड़ी तेज़ सर्विस की उम्मीद रहेगी।`,
+    ],
+    poor: [
+      (s, f) =>
+        `आज का अनुभव निराशाजनक रहा${f.useBiz ? ` (${s.biz})` : ''}। काफी देर इंतजार करने के बाद भी सही जानकारी नहीं मिली और ${s.service} जल्दबाज़ी में निपटाया गया।`,
+      (s, f) =>
+        `साफ-सफाई और समय के प्रबंधन में बहुत कमी दिखी। एक ही बात बार-बार कहने के बाद भी स्टाफ ने ध्यान नहीं दिया।`,
+      (s, f) =>
+        `उम्मीद के मुकाबले काम काफी कमज़ोर रहा। कम भीड़ होने के बावजूद सर्विस बहुत धीमी थी और व्यवहार भी सहयोगी नहीं लगा।`,
+      (s, f) =>
+        `${s.service} के लिए आए थे लेकिन व्यवस्था पूरी तरह अस्त-व्यस्त लगी। समय की बर्बादी हुई और परिणाम भी संतोषजनक नहीं था।`,
+      (s, f) =>
+        `जो समय और गुणवत्ता बताई गई थी, वैसा बिल्कुल नहीं मिला। यहाँ की देखभाल और सेवा स्तर में काफी सुधार की ज़रूरत है।`,
+      (s, f) =>
+        `बिलिंग और सर्विस दोनों में उलझन रही। ग्राहक की बात ध्यान से नहीं सुनी गई, जिससे अनुभव काफी खराब रहा।`,
+    ],
+  },
+
+  mr: {
+    short: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz}` : 'येथे'}${f.useArea ? ` (${s.area})` : ''} मध्ये ${f.useSeo && s.seo ? s.seo : s.service} चा अनुभव खूप छान होता. काम स्वच्छ आणि वेळेत झाले.`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} साठी उत्तम आणि स्वच्छ जागा. कर्मचारी खूप नम्र आणि मदतगार आहेत.`,
+      (s, f) =>
+        `कोणताही त्रास न होता ${f.useSeo && s.seo ? s.seo : s.service} आरामात पूर्ण झाले.${f.useBiz ? ` ${s.biz}` : ' इथली'} व्यवस्था आवडली.`,
+      (s, f) =>
+        `स्वच्छता आणि वेळेचे नियोजन उत्तम होते. ${f.useSeo && s.seo ? s.seo : s.service} बद्दल मी पूर्ण समाधानी आहे.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} मध्ये ` : ''}${f.useSeo && s.seo ? s.seo : s.service} साठी खूप योग्य ठिकाण. नक्की पुन्हा भेट देईन.`,
+      (s, f) =>
+        `कमी वेळेत दर्जेदार काम आणि योग्य दर. ${f.useSeo && s.seo ? s.seo : s.service} चा अनुभव समाधानकारक होता.`,
+    ],
+    professional: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} मध्ये` : 'येथे'} ${f.useSeo && s.seo ? s.seo : s.service} ची गुणवत्ता आणि काम करण्याची पद्धत अत्यंत व्यवस्थित होती.${f.useOwner ? ` ${s.owner} यांच्या मार्गदर्शनाखाली` : ''} प्रत्येक माहिती स्पष्ट देण्यात आली.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} परिसरात ` : ''}${f.useSeo && s.seo ? s.seo : s.service} साठी ही एक विश्वासार्ह जागा आहे. कर्मचाऱ्यांनी वेळेत आणि शिस्तबद्ध सेवा दिली.`,
+      (s, f) =>
+        `आल्यापासून काम पूर्ण होईपर्यंत स्वच्छता आणि व्यावसायिक शिस्त कायम राखली गेली. ${f.useSeo && s.seo ? s.seo : s.service} साठी योग्य मार्गदर्शन मिळाले.`,
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} च्या टीमने` : 'इथल्या टीमने'} आमची गरज नीट समजून घेऊन ${f.useSeo && s.seo ? s.seo : s.service} चे काम अचूक पूर्ण केले.`,
+      (s, f) =>
+        `नम्र संवाद, स्वच्छ परिसर आणि पारदर्शक दर यामुळे ${f.useSeo && s.seo ? s.seo : s.service} चा अनुभव खूप सकारात्मक ठरला.`,
+      (s, f) =>
+        `वेळेचे अचूक पालन आणि कामाचा दर्जा या दोन गोष्टी येथे प्रकर्षाने जाणवतात. ${f.useSeo && s.seo ? s.seo : s.service} साठी खात्रीशीर पर्याय.`,
+    ],
+    detailed: [
+      (s, f) =>
+        `आज मी${f.useBiz ? ` ${s.biz}` : ''}${f.useArea ? ` (${s.area})` : ''} येथे ${f.useSeo && s.seo ? s.seo : s.service} साठी आलो होतो आणि संपूर्ण अनुभव खूप आरामदायी होता. कर्मचाऱ्यांनी आधी माझी गरज शांतपणे ऐकून घेतली आणि सर्व पर्याय समजावून सांगितले. संपूर्ण जागा स्वच्छ होती आणि कामात अजिबात घाई केली नाही.`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} साठी${f.useBiz ? ` ${s.biz}` : ' येथे'} येण्याचा अनुभव अपेक्षेपेक्षा छान होता.${f.useOwner ? ` ${s.owner} यांनी स्वतः सर्व व्यवस्थेकडे लक्ष दिले.` : ''} प्रतीक्षा वेळ कमी होता, वातावरण शांत होते आणि दरही आधी सांगितल्याप्रमाणेच राहिले.`,
+      (s, f) =>
+        `मित्राच्या सल्ल्याने${f.useArea ? ` ${s.area} मध्ये` : ''} ${f.useSeo && s.seo ? s.seo : s.service} साठी भेट दिली. स्वागत खूप चांगले झाले, स्वच्छतेची पूर्ण काळजी घेतली गेली आणि कामादरम्यान माझे मतही विचारले गेले. कोणताही त्रास न होता काम वेळेत पूर्ण झाले.`,
+      (s, f) =>
+        `थोडी गर्दी असूनही${f.useBiz ? ` ${s.biz}` : ' इथल्या'} कर्मचाऱ्यांनी शांत राहून प्रत्येक ग्राहकाकडे नीट लक्ष दिले. माझे ${f.useSeo && s.seo ? s.seo : s.service} अगदी मन लावून केले गेले. एकंदरीत शांत आणि विश्वासार्ह अनुभव मिळाला.`,
+      (s, f) =>
+        `कुटुंबासोबत येथे आलो होतो आणि सगळ्यांनाच ${f.useSeo && s.seo ? s.seo : s.service} चा अनुभव आवडला. बसण्याची सोय, नीटनेटका परिसर आणि आपुलकीची वागणूक यामुळे वेळ छान गेला. कोणताही छुप्या खर्चाचा प्रकार नव्हता.`,
+      (s, f) =>
+        `कामाची बारीक काळजी आणि स्वच्छ वातावरण या दोन्ही बाबतीत ही जागा उत्तम वाटली. ${f.useSeo && s.seo ? s.seo : s.service} च्या संपूर्ण प्रक्रियेत कर्मचाऱ्यांनी पूर्ण सहकार्य केले. दर्जेदार सेवेसाठी नक्की विचार करण्यासारखे ठिकाण.`,
+    ],
+    average: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} मधील` : 'इथला'} अनुभव एकंदरीत सामान्य होता. ${s.service} चे काम व्यवस्थित झाले, पण थोडा जास्त वेळ थांबावे लागले.`,
+      (s, f) =>
+        `ठीकठाक अनुभव होता—स्टाफची वागणूक चांगली होती, मात्र कामाचा वेग थोडा अधिक चांगला असू शकला असता.`,
+      (s, f) =>
+        `जागा बऱ्यापैकी स्वच्छ होती आणि ${s.service} सामान्य दर्जाचे वाटले. फार वेगळे असे काही जाणवले नाही, पण काम झाले.`,
+      (s, f) =>
+        `दर आणि सेवा सामान्य वाटली. रिसेप्शनवरील नियोजनात थोडी सुधारणा होऊ शकते.`,
+      (s, f) =>
+        `दैनंदिन कामासाठी ठीक जागा आहे, पण स्वच्छता आणि वेळेच्या व्यवस्थापनात आणखी सुधारणेला वाव आहे.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} परिसरात` : 'येथे'} सेवा सर्वसाधारण राहिली. पुढच्या वेळी थोडी अधिक तत्परता अपेक्षित आहे.`,
+    ],
+    poor: [
+      (s, f) =>
+        `आजचा अनुभव निराशाजनक होता${f.useBiz ? ` (${s.biz})` : ''}. बराच वेळ थांबावे लागले, कोणीच नीट माहिती दिली नाही आणि ${s.service} चे काम घाईघाईत उरकले गेले.`,
+      (s, f) =>
+        `स्वच्छता आणि वेळेच्या नियोजनात खूप त्रुटी जाणवल्या. एकच गोष्ट दोनदा सांगूनही कर्मचाऱ्यांनी नीट लक्ष दिले नाही.`,
+      (s, f) =>
+        `अपेक्षेप्रमाणे सेवा मिळाली नाही. गर्दी नसतानाही काम खूप संथ झाले आणि संवादही अजिबात मदतगार नव्हता.`,
+      (s, f) =>
+        `${s.service} साठी आलो होतो पण सगळी व्यवस्था विस्कळीत वाटली. बराच वेळ वाया गेला आणि निकालही समाधानकारक नव्हता.`,
+      (s, f) =>
+        `जे सांगितले गेले होते तशी गुणवत्ता प्रत्यक्ष अनुभवायला मिळाली नाही. येथील स्वच्छता आणि देखभालीत तातडीने सुधारणा हवी आहे.`,
+      (s, f) =>
+        `बिलिंग आणि सर्व्हिस दोन्हीमध्ये गोंधळ होता. ग्राहकांच्या गरजेकडे नीट लक्ष न दिल्याने अनुभव वाईट ठरला.`,
+    ],
+  },
+
+  hinglish: {
+    short: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz}` : 'Yahan'}${f.useArea ? ` (${s.area})` : ''} par ${f.useSeo && s.seo ? s.seo : s.service} ka anubhav bahut badhiya raha. Kaam saaf aur samay par hua.`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} ke liye ekdum saaf aur badhiya jagah hai. Log kaafi milansaar aur madadgaar lage.`,
+      (s, f) =>
+        `Bina kisi jhanjhat ke ${f.useSeo && s.seo ? s.seo : s.service} aasani se poora ho gaya.${f.useBiz ? ` ${s.biz}` : ' Yahan'} ki vyavastha acchi lagi.`,
+      (s, f) =>
+        `Safai aur samay ki pabandi dono pasand aaye. ${f.useSeo && s.seo ? s.seo : s.service} se poori tarah khush hoon.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} ke paas ` : ''}${f.useSeo && s.seo ? s.seo : s.service} ke liye accha thikana hai. Dobara aane layak jagah hai.`,
+      (s, f) =>
+        `Kam samay mein badhiya kaam aur sahi daam mila. ${f.useSeo && s.seo ? s.seo : s.service} ke liye dil khush ho gaya.`,
+    ],
+    professional: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} mein` : 'Yahan'} ${f.useSeo && s.seo ? s.seo : s.service} ka star aur kaam karne ka dhang kaafi vyavasthit laga.${f.useOwner ? ` ${s.owner} ki dekhrekh mein` : ''} har baat pehle hi saaf bata di gayi.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} ilake mein ` : ''}${f.useSeo && s.seo ? s.seo : s.service} ke liye yeh ek bharosemand jagah hai. Sabhi logon ne samay par aur sahi tareeke se kaam sambhala.`,
+      (s, f) =>
+        `Aane se lekar kaam khatam hone tak safai aur niyam dono dikhe. ${f.useSeo && s.seo ? s.seo : s.service} ke baare mein seedhi aur imaandar salah mili.`,
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} ke logon` : 'Yahan ke logon'} ne meri zaroorat ko dhyan se samjha aur ${f.useSeo && s.seo ? s.seo : s.service} ka kaam bina deri ke poora kiya.`,
+      (s, f) =>
+        `Narm bartaav, saaf-suthra mahol aur bina chhupe kharch wale hisaab ki wajah se ${f.useSeo && s.seo ? s.seo : s.service} ka tajurba santoshjanak raha.`,
+      (s, f) =>
+        `Kaam ki gunvatta aur samay ki keemat dono par yahan dhyan diya jaata hai. ${f.useSeo && s.seo ? s.seo : s.service} ke liye bharosa kiya ja sakta hai.`,
+    ],
+    detailed: [
+      (s, f) =>
+        `Aaj main${f.useBiz ? ` ${s.biz}` : ''}${f.useArea ? ` (${s.area})` : ''} par ${f.useSeo && s.seo ? s.seo : s.service} ke liye gaya tha aur poora tajurba kaafi aaramdayak raha. Wahan ke logon ne pehle meri baat dhyan se suni aur har option aasani se samjhaya. Poori jagah saaf rakhi hui thi aur kisi ne bilkul jaldbazi nahi ki.`,
+      (s, f) =>
+        `${f.useSeo && s.seo ? s.seo : s.service} ke liye${f.useBiz ? ` ${s.biz}` : ' yahan'} aane ka anubhav ummeed se kaafi accha raha.${f.useOwner ? ` ${s.owner} ne khud dhyan diya ki kisi cheez ki kami na rahe.` : ''} Intezaar bahut kam karna pada, mahol shaant tha aur daam bhi wahi laga jo shuru mein bataya gaya tha.`,
+      (s, f) =>
+        `Dost ke kehne par${f.useArea ? ` ${s.area} mein` : ''} yahan ${f.useSeo && s.seo ? s.seo : s.service} ke liye aaya tha. Swagat acche se hua, safai ka poora khayal rakha gaya aur kaam ke beech mein meri pasand bhi poochi gayi. Bina kisi dikkat ke kaam samay par nipat gaya.`,
+      (s, f) =>
+        `Thodi bheed hone ke bawajood${f.useBiz ? ` ${s.biz}` : ' yahan'} ke logon ne shaanti se sabhi grahakon ko barabar samay diya. Mera ${f.useSeo && s.seo ? s.seo : s.service} poore dhyan se kiya gaya aur aakhir mein poocha bhi gaya ki sab theek laga ya nahi. Bharosemand jagah hai.`,
+      (s, f) =>
+        `Gharwalon ke saath aakar ${f.useSeo && s.seo ? s.seo : s.service} liya aur sabhi ko yahan ki vyavastha pasand aayi. Baithne ki saaf jagah, shaant mahol aur apnaapan wale bartaav se samay bahut accha beeta. Koi jhanjhat nahi tha.`,
+      (s, f) =>
+        `Chhoti-chhoti baaton par dhyan aur safai dono hi is jagah ki khaasiyat lagi. ${f.useSeo && s.seo ? s.seo : s.service} karwate waqt unhone poora samay diya taaki nateeja bilkul sahi aaye. Saaf aur seedha kaam pasand karne walon ke liye sahi jagah hai.`,
+    ],
+    average: [
+      (s, f) =>
+        `${f.useBiz ? `${s.biz} mein` : 'Yahan'} kul milakar tajurba theek-thak raha. ${s.service} ka kaam toh ho gaya, lekin thoda zyada intezaar karna pada.`,
+      (s, f) =>
+        `Saadhaaran anubhav tha—logon ka bartaav theek tha, par kaam ki raftar thodi aur behtar ho sakti thi.`,
+      (s, f) =>
+        `Jagah lagbhag saaf thi aur ${s.service} theek-thak raha. Na kuch bahut khaas laga aur na hi koi badi dikkat aayi.`,
+      (s, f) =>
+        `Daam aur kaam dono aam level ke lage. Reception par taalmel thoda aur sudhar sakta hai.`,
+      (s, f) =>
+        `Rozmarra ke kaam ke liye theek hai, lekin safai aur samay ke hisaab se thoda aur behtar ho sakta tha.`,
+      (s, f) =>
+        `${f.useArea ? `${s.area} mein` : 'Yahan'} kaam chalta-firta aur saadhaaran raha. Agli baar thodi aur tezi ki ummeed rahegi.`,
+    ],
+    poor: [
+      (s, f) =>
+        `Aaj ka tajurba kaafi kharab raha${f.useBiz ? ` (${s.biz})` : ''}. Bahut der tak intezaar karna pada, kisi ne sahi jankari nahi di aur ${s.service} jaldbazi mein nipta diya gaya.`,
+      (s, f) =>
+        `Safai aur samay dono mein bahut kami dikhi. Ek hi baat do baar bolne par bhi kisi ne dhyan se nahi suna.`,
+      (s, f) =>
+        `Ummeed ke hisaab se kaam bilkul kamzor tha. Kam bheed hone par bhi kaam bahut dheema chala aur bartaav bhi madadgaar nahi laga.`,
+      (s, f) =>
+        `${s.service} ke liye aaye the par poori vyavastha bikhri hui lagi. Samay bhi barbad hua aur nateeja bhi theek nahi aaya.`,
+      (s, f) =>
+        `Jaisa bataya gaya tha waisa bilkul nahi mila. Yahan ki dekhrekh aur kaam ke tareeke mein kaafi sudhaar ki zaroorat hai.`,
+      (s, f) =>
+        `Hisaab aur kaam dono mein uljhan thi. Grahak ki baat par dhyan nahi diya gaya, jisse poora mood kharab ho gaya.`,
+    ],
+  },
+};
+
+const SLOT_ORDER: PatternKey[] = ['short', 'professional', 'detailed', 'average', 'poor'];
+
 export const BACKEND_REVIEW_TEMPLATE_COUNTS: Record<QualityReviewLanguage, number> = {
   en: EN_REVIEW_BANK.length,
   hi: HI_REVIEW_BANK.length,
@@ -635,15 +941,21 @@ function getBankForLanguage(lang: QualityReviewLanguage): TemplateBuilder[] {
 }
 
 /**
- * Generates `count` (minimum 5) distinct, natural human-sounding ready-to-post drafts
- * dynamically adapted with the business name, optional owner name (used sparingly, NOT every review),
- * short locality/area (used sparingly, NOT every review), and clean SEO phrases (zero superlatives).
+ * Generates exact ordered pattern drafts (default 5):
+ * Top-to-bottom:
+ * 1. Short (+SEO)
+ * 2. Professional (+SEO)
+ * 3. Detailed (+SEO)
+ * 4. Average
+ * 5. Poor
+ * (Counting from bottom/last: 1=Poor, 2=Average, 3=Detailed, 4=Professional, 5=Short)
  */
 export function selectContextualReadyDrafts(
   input: ContextualReadyDraftInput,
 ): string[] {
   const bank = getBankForLanguage(input.language);
-  const count = Math.max(5, Math.min(10, Math.round(input.count ?? 6)));
+  const patternBank = PATTERN_BANKS[input.language] || PATTERN_BANKS.en;
+  const count = Math.max(5, Math.min(10, Math.round(input.count ?? 5)));
   const seed = Math.max(1, Math.round(input.seed ?? 1));
 
   const cleanBiz = (input.businessName || '').trim() || 'this business';
@@ -661,45 +973,46 @@ export function selectContextualReadyDrafts(
     .map((k) => sanitizePhraseNoSuperlatives(k))
     .filter((k) => k.length >= 3);
 
-  // Use deterministic stride through the 55-item bank so adjacent seeds yield non-overlapping sets
-  const step = 7;
-  const startOffset = ((seed - 1) * count * step) % bank.length;
-
   const drafts: string[] = [];
-  const usedIndices = new Set<number>();
   let ownerMentionsUsed = 0;
   let areaMentionsUsed = 0;
 
   for (let i = 0; i < count; i += 1) {
-    let idx = (startOffset + i * step) % bank.length;
-    while (usedIndices.has(idx) && usedIndices.size < bank.length) {
-      idx = (idx + 1) % bank.length;
-    }
-    usedIndices.add(idx);
-
-    const builder = bank[idx];
     const svc =
       servicePool.length > 0
         ? servicePool[(seed + i) % servicePool.length]
         : defaultServiceNoun(input.category, input.language);
-    const seo = seoPool.length > 0 ? seoPool[(seed + i * 2) % seoPool.length] : '';
+    const seo = seoPool.length > 0 ? seoPool[(seed + i) % seoPool.length] : '';
     const areaChoice = areaPool.length > 0 ? areaPool[(seed + i) % areaPool.length] : '';
 
-    // Never force owner name into every review (max 1-2 out of 5-6)
+    // Never force owner name into every review (max 1-2)
     const allowOwnerThisCard =
-      Boolean(cleanOwner) && ownerMentionsUsed < 2 && (idx + seed + i) % 4 === 0;
+      Boolean(cleanOwner) && ownerMentionsUsed < 2 && (i === 1 || i === 2) && (seed + i) % 2 === 0;
     if (allowOwnerThisCard) ownerMentionsUsed += 1;
 
-    // Never force area/address into every review (max 2-3 out of 5-6, varying sector/building/locality)
+    // Never force area/address into every review (max 2-3)
     const allowAreaThisCard =
-      Boolean(areaChoice) && areaMentionsUsed < 3 && (idx + i) % 2 === 0;
+      Boolean(areaChoice) && areaMentionsUsed < 3 && (i === 0 || i === 2 || i === 3);
     if (allowAreaThisCard) areaMentionsUsed += 1;
 
-    // Include business name in ~70% of drafts for natural variety
-    const allowBizThisCard = (i + seed) % 3 !== 2;
+    // Include business name in ~75% of drafts naturally
+    const allowBizThisCard = (i + seed) % 4 !== 3;
 
-    // Weave 1 clean SEO phrase in ~50% of drafts
-    const allowSeoThisCard = Boolean(seo) && (i + seed) % 2 === 0;
+    const slotKey = SLOT_ORDER[i];
+    let builder: TemplateBuilder;
+    let allowSeoThisCard = false;
+
+    if (slotKey) {
+      const slotList = patternBank[slotKey];
+      const slotIdx = (seed - 1 + i) % slotList.length;
+      builder = slotList[slotIdx];
+      // Enforce clean SEO keywords on Short, Professional, and Detailed slots when configured
+      allowSeoThisCard = Boolean(seo) && (slotKey === 'short' || slotKey === 'professional' || slotKey === 'detailed');
+    } else {
+      const fallbackIdx = ((seed - 1) * 7 + i * 5) % bank.length;
+      builder = bank[fallbackIdx];
+      allowSeoThisCard = Boolean(seo) && (i + seed) % 2 === 0;
+    }
 
     const rendered = builder(
       {
@@ -735,8 +1048,49 @@ export function selectContextualReadyDrafts(
 export function getTrainingExemplarsFromBank(
   input: ContextualReadyDraftInput,
 ): string[] {
-  return selectContextualReadyDrafts({
-    ...input,
-    count: Math.min(8, Math.max(5, input.count ?? 6)),
-  });
+  const bank = getBankForLanguage(input.language);
+  const count = Math.min(8, Math.max(5, input.count ?? 6));
+  const seed = Math.max(1, Math.round(input.seed ?? 1));
+  const cleanBiz = (input.businessName || '').trim() || 'this business';
+  const cleanOwner = (input.ownerName || '').trim();
+  const areaPool = extractLocationCandidates(input.locality, input.city, input.address);
+  const servicePool = [
+    ...(Array.isArray(input.servicesOffered) ? input.servicesOffered : []),
+    ...(Array.isArray(input.productsOffered) ? input.productsOffered : []),
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seoPool = (Array.isArray(input.seoKeywords) ? input.seoKeywords : [])
+    .map((k) => sanitizePhraseNoSuperlatives(k))
+    .filter((k) => k.length >= 3);
+
+  const exemplars: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const idx = ((seed - 1) * 7 + i * 7) % bank.length;
+    const rendered = bank[idx](
+      {
+        biz: cleanBiz,
+        service:
+          servicePool.length > 0
+            ? servicePool[(seed + i) % servicePool.length]
+            : defaultServiceNoun(input.category, input.language),
+        area: areaPool.length > 0 ? areaPool[(seed + i) % areaPool.length] : '',
+        owner: cleanOwner,
+        seo: seoPool.length > 0 ? seoPool[(seed + i) % seoPool.length] : '',
+      },
+      {
+        useBiz: (i + seed) % 3 !== 2,
+        useArea: areaPool.length > 0 && i % 2 === 0,
+        useOwner: Boolean(cleanOwner) && i === 1,
+        useSeo: seoPool.length > 0 && i % 2 === 0,
+      },
+    )
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([.,!?])/g, '$1')
+      .trim();
+    if (rendered && !exemplars.includes(rendered)) {
+      exemplars.push(rendered);
+    }
+  }
+  return exemplars;
 }

@@ -54,6 +54,7 @@ import {
 import {
   getLocalizedFormUiStrings,
   localizeQuestion,
+  localizeWelcomeMessage,
 } from '../data/localizedQuestions';
 import { BusinessLogo } from './BusinessLogo';
 import { SpatialTilt } from './ui/spatial-tilt';
@@ -230,9 +231,14 @@ export function CustomerReviewFlow({
 
   const [selectedLanguage, setSelectedLanguage] = useState<ReviewLanguage>(initialLang);
   const [includeBusinessName, setIncludeBusinessName] = useState<boolean>(true);
-  const [selectedStyle] = useState<ReviewStyle>(
-    profile.branding?.defaultReviewStyle || 'short',
-  );
+  const [selectedStyle, setSelectedStyle] = useState<ReviewStyle>(() => {
+    const rotatingStyles: ReviewStyle[] = ['short', 'detailed', 'professional'];
+    return (
+      rotatingStyles[Math.floor(Math.random() * rotatingStyles.length)] ||
+      profile.branding?.defaultReviewStyle ||
+      'short'
+    );
+  });
 
   // Instant Ready AI Drafts Mode state (stays stable across page reloads; only rotates when clicking Refresh)
   const [instantSeed, setInstantSeed] = useState<number>(() => {
@@ -265,7 +271,7 @@ export function CustomerReviewFlow({
           : profile.seoKeywords,
       referenceReviews: profile.referenceReviews,
       language: initialLang,
-      count: 6,
+      count: 5,
       seed: instantSeed,
     }),
   );
@@ -305,7 +311,7 @@ export function CustomerReviewFlow({
         seoKeywords: seoForLang,
         referenceReviews: profile.referenceReviews,
         language: effectiveInstantLanguage,
-        count: 6,
+        count: 5,
         seed: instantSeed,
       }),
     );
@@ -659,11 +665,20 @@ export function CustomerReviewFlow({
     }
   };
 
+  const STYLE_ROTATION: ReviewStyle[] = ['short', 'detailed', 'professional'];
+  const getNextReviewStyle = (current: ReviewStyle, offset = 1): ReviewStyle => {
+    const idx = STYLE_ROTATION.indexOf(current);
+    const base = idx >= 0 ? idx : 0;
+    return STYLE_ROTATION[(base + offset) % STYLE_ROTATION.length];
+  };
+
   const requestAiDraft = async (
     languageToUse: ReviewLanguage,
     seed: number,
     submissionIdOrPromise?: string | Promise<string>,
+    styleOverride?: ReviewStyle,
   ) => {
+    const activeStyle = styleOverride || selectedStyle;
     const currentNow = Date.now();
     const isWindowActive = !quotaResetAt || currentNow < quotaResetAt;
     if (generationCount >= MAX_USER_REVIEW_GENERATIONS && isWindowActive) {
@@ -699,7 +714,7 @@ export function CustomerReviewFlow({
           category: profile.category,
           responses,
           additionalComments,
-          style: selectedStyle,
+          style: activeStyle,
           language: languageToUse,
           variationSeed: seed,
         });
@@ -730,7 +745,7 @@ export function CustomerReviewFlow({
               feedbackSubmissionId: activeSubmissionId,
               reviewText: textToSave,
               language: languageToUse,
-              reviewStyle: selectedStyle,
+              reviewStyle: activeStyle,
               variationSeed: seed,
               sessionId: standContext.sessionId,
             });
@@ -738,7 +753,7 @@ export function CustomerReviewFlow({
           setCurrentDraftId(newDraftId);
 
           recordReviewEvent(profile, 'generate', {
-            reviewStyle: selectedStyle,
+            reviewStyle: activeStyle,
             sentiment: sentimentValue,
             language: languageToUse,
             selectedHighlights,
@@ -760,7 +775,7 @@ export function CustomerReviewFlow({
             slug: profile.slug,
             category: profile.category,
             language: languageToUse,
-            reviewStyle: selectedStyle,
+            reviewStyle: activeStyle,
             draftId: newDraftId,
             source: 'live_customer',
             modelId: telemetry?.modelId || 'grounded-composer-v1',
@@ -883,7 +898,7 @@ export function CustomerReviewFlow({
           referenceReviews: (profile.referenceReviews || []).slice(0, 20),
           responses,
           additionalComments,
-          style: selectedStyle,
+          style: activeStyle,
           language: languageToUse,
           variationSeed: seed,
           previousDrafts: previousDrafts.slice(-4),
@@ -971,7 +986,7 @@ export function CustomerReviewFlow({
           category: profile.category,
           responses,
           additionalComments,
-          style: selectedStyle,
+          style: activeStyle,
           language: languageToUse,
           variationSeed: seed,
         });
@@ -1096,7 +1111,9 @@ export function CustomerReviewFlow({
     if (isPreview) return;
     if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
+    const nextStyle = getNextReviewStyle(selectedStyle, 1);
     setVariationSeed(nextSeed);
+    setSelectedStyle(nextStyle);
 
     const queued = queuedAlternatesRef.current[selectedLanguage] || [];
     if (queued.length > 0) {
@@ -1143,14 +1160,14 @@ export function CustomerReviewFlow({
                 feedbackSubmissionId: subId,
                 reviewText: nextDraftText,
                 language: selectedLanguage,
-                reviewStyle: selectedStyle,
+                reviewStyle: nextStyle,
                 variationSeed: nextSeed,
                 sessionId: standContext.sessionId,
               });
             }
             setCurrentDraftId(newDraftId);
             recordReviewEvent(profile, 'generate', {
-              reviewStyle: selectedStyle,
+              reviewStyle: nextStyle,
               sentiment: sentimentValue,
               language: selectedLanguage,
               selectedHighlights,
@@ -1167,7 +1184,7 @@ export function CustomerReviewFlow({
               slug: profile.slug,
               category: profile.category,
               language: selectedLanguage,
-              reviewStyle: selectedStyle,
+              reviewStyle: nextStyle,
               draftId: newDraftId,
               source: 'live_customer',
               modelId: 'gemini-3.1-flash-lite',
@@ -1183,7 +1200,7 @@ export function CustomerReviewFlow({
       return;
     }
 
-    await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId);
+    await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId, nextStyle);
   };
 
   const handleToggleEdit = () => {
@@ -1352,8 +1369,10 @@ export function CustomerReviewFlow({
     if (isPreview) return;
     if (isGenerating || hasReachedGenerationLimit) return;
     const nextSeed = variationSeed + 1;
+    const nextStyle = getNextReviewStyle(selectedStyle, 1);
     setVariationSeed(nextSeed);
-    await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId);
+    setSelectedStyle(nextStyle);
+    await requestAiDraft(selectedLanguage, nextSeed, feedbackSubmissionId, nextStyle);
   };
 
   const googleUrl = sanitizeExternalUrl(profile.googleReviewUrl, 'https://www.google.com/maps');
@@ -1404,7 +1423,7 @@ export function CustomerReviewFlow({
           packageTier,
           mode: 'instant_batch',
           refreshWithAi: true,
-          count: 6,
+          count: 5,
           seoKeywords: (seoForLang || []).slice(0, 15),
           referenceReviews: (profile.referenceReviews || []).slice(0, 25),
           responses: [],
@@ -1418,8 +1437,9 @@ export function CustomerReviewFlow({
       if (res.ok && Array.isArray(data.drafts) && data.drafts.length >= 5) {
         const cleanBatch = data.drafts
           .filter((item): item is string => typeof item === 'string' && item.trim().length > 10)
-          .map((item) => item.trim());
-        if (cleanBatch.length >= 5) {
+          .map((item) => item.trim())
+          .slice(0, 5);
+        if (cleanBatch.length === 5) {
           setInstantDrafts(cleanBatch);
         }
       }
@@ -1487,7 +1507,9 @@ export function CustomerReviewFlow({
     }
   };
 
-  const renderInstantReadyReviewsView = () => (
+  const renderInstantReadyReviewsView = () => {
+    const instantUi = getLocalizedFormUiStrings(effectiveInstantLanguage);
+    return (
     <div className="space-y-5">
       <div
         className={`rounded-2xl p-5 sm:p-6 space-y-4 ${
@@ -1499,14 +1521,14 @@ export function CustomerReviewFlow({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="font-display text-xl sm:text-2xl font-bold" style={questionTextStyle}>
-              Choose &amp; Post Your Review
+              {instantUi.instantHeaderTitle}
             </h1>
             <p
               className={`text-xs sm:text-sm mt-1 ${
                 isDarkTemplate ? 'text-slate-300' : 'text-slate-600'
               }`}
             >
-              Pick any ready draft that matches your visit (edit if you wish), tap Copy &amp; Post to Google, and submit directly on Google.
+              {instantUi.instantReadySubtitle}
             </p>
           </div>
           <button
@@ -1523,7 +1545,7 @@ export function CustomerReviewFlow({
             <RefreshCw
               className={`w-3.5 h-3.5 ${isRefreshingInstantAi ? 'animate-spin' : ''}`}
             />
-            <span>{isRefreshingInstantAi ? 'Refreshing...' : 'Refresh'}</span>
+            <span>{isRefreshingInstantAi ? '...' : instantUi.instantRefreshButton}</span>
           </button>
         </div>
 
@@ -1603,7 +1625,10 @@ export function CustomerReviewFlow({
                     isDarkTemplate ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >
-                  Option {idx + 1} · {getLanguageDisplayName(effectiveInstantLanguage)}
+                  Option {idx + 1}
+                  {instantUi.instantOptionLabels[idx] ? ` · ${instantUi.instantOptionLabels[idx]}` : ''}
+                  {' · '}
+                  {getLanguageDisplayName(effectiveInstantLanguage)}
                 </span>
                 <button
                   type="button"
@@ -1666,12 +1691,12 @@ export function CustomerReviewFlow({
                   {isCopiedThis ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>Copied! Opening Google...</span>
+                      <span>{instantUi.copiedButton}</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>Copy &amp; Post on Google</span>
+                      <span>{instantUi.instantCopyAndOpenButton}</span>
                       <ExternalLink className="w-3.5 h-3.5 opacity-90" />
                     </>
                   )}
@@ -1688,7 +1713,7 @@ export function CustomerReviewFlow({
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800'
                     }`}
                   >
-                    <span>Open Google Review</span>
+                    <span>{instantUi.instantOpenGoogleAgainButton}</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
@@ -1698,7 +1723,8 @@ export function CustomerReviewFlow({
         })}
       </div>
     </div>
-  );
+    );
+  };
 
   const outerShellClass =
     activeTemplate === 'emoji_checklist_dark'
@@ -2081,15 +2107,19 @@ export function CustomerReviewFlow({
                   isDarkTemplate ? 'text-white' : 'text-slate-950'
                 }`}
               >
-                Share your feedback
+                {formUi.shareFeedbackHeading}
               </h1>
-              {profile.branding?.welcomeMessage && (
+              {(profile.branding?.welcomeMessage || selectedLanguage !== 'en') && (
                 <p
                   className={`text-xs sm:text-sm leading-relaxed ${
                     isDarkTemplate ? 'text-slate-300' : 'text-slate-600'
                   }`}
                 >
-                  {profile.branding.welcomeMessage}
+                  {localizeWelcomeMessage(
+                    profile.branding?.welcomeMessage,
+                    profile.name,
+                    selectedLanguage,
+                  )}
                 </p>
               )}
             </div>
@@ -2228,8 +2258,13 @@ export function CustomerReviewFlow({
               {profile.name}
             </h1>
             <p className="text-sm text-stone-600 max-w-lg mx-auto leading-relaxed">
-              {profile.branding?.welcomeMessage ||
-                'Tell us how your visit felt in a few thoughtful taps.'}
+              {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                ? localizeWelcomeMessage(
+                    profile.branding?.welcomeMessage,
+                    profile.name,
+                    selectedLanguage,
+                  )
+                : 'Tell us how your visit felt in a few thoughtful taps.'}
             </p>
           </div>
 
@@ -2354,8 +2389,13 @@ export function CustomerReviewFlow({
                 {profile.name}
               </h1>
               <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                {profile.branding?.welcomeMessage ||
-                  'Select your responses below to generate a concise review.'}
+                {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                  ? localizeWelcomeMessage(
+                      profile.branding?.welcomeMessage,
+                      profile.name,
+                      selectedLanguage,
+                    )
+                  : 'Select your responses below to generate a concise review.'}
               </p>
             </div>
             <BusinessLogo
@@ -2491,7 +2531,7 @@ export function CustomerReviewFlow({
                 {profile.name}
               </h1>
               <p className="text-xs text-slate-500">
-                15-Second Quick Check-In · {profile.category}
+                {formUi.quickCheckinBadge} · {profile.category}
               </p>
             </div>
           </div>
@@ -2626,8 +2666,13 @@ export function CustomerReviewFlow({
                       {profile.name}
                     </h1>
                     <p className="mt-1 text-sm text-slate-600 leading-relaxed">
-                      {profile.branding?.welcomeMessage ||
-                        'Tap the floating cards below to compose your personalised review draft.'}
+                      {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                        ? localizeWelcomeMessage(
+                            profile.branding?.welcomeMessage,
+                            profile.name,
+                            selectedLanguage,
+                          )
+                        : 'Tap the floating cards below to compose your personalised review draft.'}
                     </p>
                   </div>
                 </div>
@@ -2755,14 +2800,19 @@ export function CustomerReviewFlow({
               />
               <div className="min-w-0">
                 <span className="inline-block px-2 py-0.5 bg-[#FDE047] border-2 border-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-900 mb-2 shadow-[2px_2px_0px_#0F172A]">
-                  Quick Feedback
+                  {formUi.quickFeedbackBadge}
                 </span>
                 <h1 className="text-xl sm:text-2xl font-display font-black tracking-tight text-slate-950">
                   {profile.name}
                 </h1>
                 <p className="mt-1 text-sm text-slate-700 font-medium leading-relaxed">
-                  {profile.branding?.welcomeMessage ||
-                    'Tap your highlights below and stamp out a genuine review draft.'}
+                  {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                    ? localizeWelcomeMessage(
+                        profile.branding?.welcomeMessage,
+                        profile.name,
+                        selectedLanguage,
+                      )
+                    : 'Tap your highlights below and stamp out a genuine review draft.'}
                 </p>
               </div>
             </div>
@@ -2885,14 +2935,19 @@ export function CustomerReviewFlow({
                 />
                 <div className="min-w-0">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-[10px] font-mono uppercase tracking-wider mb-2">
-                    <Sparkles className="w-3 h-3" /> Holo 3D Experience
+                    <Sparkles className="w-3 h-3" /> {formUi.holo3dBadge}
                   </span>
                   <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-white">
                     {profile.name}
                   </h1>
                   <p className="mt-1 text-sm text-slate-300 leading-relaxed">
-                    {profile.branding?.welcomeMessage ||
-                      'Select your highlights below to generate a crisp Google review draft.'}
+                    {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                      ? localizeWelcomeMessage(
+                          profile.branding?.welcomeMessage,
+                          profile.name,
+                          selectedLanguage,
+                        )
+                      : 'Select your highlights below to generate a crisp Google review draft.'}
                   </p>
                 </div>
               </div>
@@ -3014,14 +3069,19 @@ export function CustomerReviewFlow({
               />
               <div className="min-w-0">
                 <span className="inline-block px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold mb-1.5">
-                  3D Soft Touch
+                  {formUi.softTouchBadge}
                 </span>
                 <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-rose-950">
                   {profile.name}
                 </h1>
                 <p className="mt-1 text-sm text-slate-600 leading-relaxed">
-                  {profile.branding?.welcomeMessage ||
-                    'Share a few quick impressions below and generate a warm review draft.'}
+                  {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                    ? localizeWelcomeMessage(
+                        profile.branding?.welcomeMessage,
+                        profile.name,
+                        selectedLanguage,
+                      )
+                    : 'Share a few quick impressions below and generate a warm review draft.'}
                 </p>
               </div>
             </div>
@@ -3164,8 +3224,13 @@ export function CustomerReviewFlow({
                 {profile.name}
               </h1>
               <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                {profile.branding?.welcomeMessage ||
-                  'Share quick feedback below and generate a natural review draft in your preferred language.'}
+                {profile.branding?.welcomeMessage || selectedLanguage !== 'en'
+                  ? localizeWelcomeMessage(
+                      profile.branding?.welcomeMessage,
+                      profile.name,
+                      selectedLanguage,
+                    )
+                  : 'Share quick feedback below and generate a natural review draft in your preferred language.'}
               </p>
             </div>
           </div>
@@ -3369,10 +3434,28 @@ export function CustomerReviewFlow({
             )}
             <span className="tabular-nums whitespace-nowrap font-medium">
               {reviewFlowMode === 'ai_drafted_instant'
-                ? 'Quick Post'
+                ? effectiveInstantLanguage === 'mr'
+                  ? 'झटपट पोस्ट'
+                  : effectiveInstantLanguage === 'hi'
+                    ? 'झटपट पोस्ट'
+                    : effectiveInstantLanguage === 'hinglish'
+                      ? 'Jhatpat Post'
+                      : 'Quick Post'
                 : step === 'feedback'
-                  ? 'Step 1 of 2'
-                  : 'Step 2 of 2'}
+                  ? selectedLanguage === 'mr'
+                    ? 'पायरी १ / २'
+                    : selectedLanguage === 'hi'
+                      ? 'चरण 1 / 2'
+                      : selectedLanguage === 'hinglish'
+                        ? 'Step 1 / 2'
+                        : 'Step 1 of 2'
+                  : selectedLanguage === 'mr'
+                    ? 'पायरी २ / २'
+                    : selectedLanguage === 'hi'
+                      ? 'चरण 2 / 2'
+                      : selectedLanguage === 'hinglish'
+                        ? 'Step 2 / 2'
+                        : 'Step 2 of 2'}
             </span>
           </div>
         </div>
