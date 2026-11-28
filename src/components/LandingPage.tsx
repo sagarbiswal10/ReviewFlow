@@ -769,9 +769,9 @@ export function LandingPage({
                   transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
                   className="font-display font-bold tracking-[-0.04em] text-[#111114] leading-[0.95] text-[3.3rem] sm:text-[5rem] lg:text-[6.25rem]"
                 >
-                  <span className="block">Reviews in</span>
+                  <span className="block">Review in</span>
                   <span className="block font-editorial rf-3d-chromatic text-[1.12em] tracking-[-0.02em] mt-1">
-                    20 seconds.
+                    seconds.
                   </span>
                 </motion.h1>
               </motion.div>
@@ -785,7 +785,7 @@ export function LandingPage({
                 Customers often skip leaving reviews because staring at a blank text box feels like
                 work. With ReviewFlow, they scan up to 4 trackable QR stands, tap responses in
                 English, Hindi, Marathi, or Hinglish, and receive an authentic draft ready to post
-                in under 20 seconds.
+                in seconds.
               </motion.p>
 
               <motion.div

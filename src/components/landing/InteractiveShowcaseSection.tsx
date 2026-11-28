@@ -209,10 +209,10 @@ export function InteractiveShowcaseSection({ onTryDemo }: InteractiveShowcaseSec
               transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
               className="font-display text-4xl sm:text-5xl lg:text-[3.75rem] font-bold tracking-tight text-[#111114] leading-[1.02] max-w-2xl"
             >
-              See the exact{' '}
-              <span className="font-editorial text-[1.06em] font-normal">20-second</span>
+              See the customer
               <br />
-              customer journey.
+              journey{' '}
+              <span className="font-editorial text-[1.06em] font-normal">in seconds.</span>
             </motion.h2>
 
             <motion.p
