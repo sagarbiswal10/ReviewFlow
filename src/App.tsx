@@ -29,6 +29,7 @@ import {
   getProviderSignature,
   type AuthActionableError,
 } from './utils/urlAndAuth';
+import { useAutoDismiss } from './hooks/useAutoDismiss';
 
 const LandingPage = lazy(() =>
   import('./components/LandingPage').then((m) => ({ default: m.LandingPage })),
@@ -124,6 +125,9 @@ export default function App() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [businessesLoaded, setBusinessesLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  useAutoDismiss(authError, () => setAuthError(null));
+  useAutoDismiss(verificationNotice, () => setVerificationNotice(null));
+  useAutoDismiss(loadError, () => setLoadError(null));
   const [reloadSeq, setReloadSeq] = useState(0);
   const [statsMap, setStatsMap] = useState<Record<string, BusinessStats>>({});
   const [events, setEvents] = useState<ReviewEvent[]>([]);

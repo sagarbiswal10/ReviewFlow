@@ -20,6 +20,7 @@ import {
   transliterateRomanToDevanagari,
 } from '../data/localizedQuestions';
 import { updateBusiness } from '../services/businessService';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 
 interface QuestionBuilderTabProps {
   business: Business;
@@ -49,6 +50,8 @@ export function QuestionBuilderTab({
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useAutoDismiss(savedNotice, () => setSavedNotice(null));
+  useAutoDismiss(error, () => setError(null));
   const isDirtyRef = useRef(false);
   const lastSyncedRef = useRef<{ id: string; sig: string }>({
     id: business.id,
@@ -200,7 +203,6 @@ export function QuestionBuilderTab({
     const label = QUESTION_LANGUAGE_TABS.find((t) => t.id === lang)?.label ?? lang;
     setSavedNotice(`Auto-filled ${label} questions & options. Click Save Form to publish.`);
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3500);
   };
 
   const handleTypeChange = (id: string, nextType: QuestionType) => {
@@ -347,7 +349,6 @@ export function QuestionBuilderTab({
       setNewOptionDrafts({});
       setSavedNotice('Customer feedback form & translations saved.');
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = setTimeout(() => setSavedNotice(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save questions.');
     } finally {

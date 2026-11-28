@@ -3,6 +3,7 @@ import { Check, Eye, Loader2, Lock } from 'lucide-react';
 import type { Business, FormTemplateId } from '../types';
 import { updateBusiness } from '../services/businessService';
 import { sanitizeFormTemplate } from '../utils/domainHelpers';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import {
   classifyQuestionsForTemplate,
   FORM_TEMPLATES,
@@ -40,6 +41,8 @@ export function TemplatesTab({
   const [savingId, setSavingId] = useState<FormTemplateId | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useAutoDismiss(notice, () => setNotice(null));
+  useAutoDismiss(error, () => setError(null));
 
   useEffect(() => {
     setOptimisticTemplate(null);

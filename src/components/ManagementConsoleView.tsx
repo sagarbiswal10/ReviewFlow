@@ -84,6 +84,7 @@ import {
 } from '../services/platformFeaturesService';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
 import { hasPasswordProvider } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { AccountSecurityModal } from './AccountSecurityModal';
 import { AiEvaluationDashboard } from './AiEvaluationDashboard';
 import { BusinessLogo } from './BusinessLogo';
@@ -318,6 +319,14 @@ export function ManagementConsoleView({
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [adminStatus, setAdminStatus] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
+  useAutoDismiss(governanceNotice, () => setGovernanceNotice(null));
+  useAutoDismiss(governanceError, () => setGovernanceError(null));
+  useAutoDismiss(requestBanner, () => setRequestBanner(null));
+  useAutoDismiss(batchReportNotice, () => setBatchReportNotice(null));
+  useAutoDismiss(assignNotice, () => setAssignNotice(null));
+  useAutoDismiss(assignError, () => setAssignError(null));
+  useAutoDismiss(adminStatus, () => setAdminStatus(null));
+  useAutoDismiss(adminError, () => setAdminError(null));
 
   useEffect(() => {
     const unsubUids = subscribeToAdmins(
@@ -695,7 +704,6 @@ export function ManagementConsoleView({
           ? `Approved +${req.requestedAdditionalStands} QR stands for ${req.businessName}. New quota: ${req.currentLimit + req.requestedAdditionalStands}.`
           : `Rejected expansion request for ${req.businessName}.`,
       );
-      setTimeout(() => setRequestBanner(null), 4000);
     } catch (err) {
       setRequestBanner(err instanceof Error ? err.message : 'Unable to process stand request.');
     } finally {
@@ -735,9 +743,6 @@ export function ManagementConsoleView({
       setBatchReportNotice(
         `Compiled ${generated} Weekly Business Report(s) for ${win.weekStart} – ${win.weekEnd}.`,
       );
-      setTimeout(() => {
-        if (mountedRef.current) setBatchReportNotice(null);
-      }, 5000);
     } catch (err) {
       if (mountedRef.current) {
         setBatchReportNotice(
@@ -781,7 +786,6 @@ export function ManagementConsoleView({
       setGovernanceNotice(
         `Saved! ${packageTierInput === 'standard' ? '₹3,000 Standard (English Only)' : '₹4,000 Standard Plus (All 4 Languages)'} & ${reviewFlowModeInput === 'ai_drafted_instant' ? '5+ Ready AI Reviews' : 'Guided Questions'} permissions updated.`,
       );
-      setTimeout(() => setGovernanceNotice(null), 4000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update permissions.';
       if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('insufficient')) {
@@ -835,7 +839,6 @@ export function ManagementConsoleView({
       setAssignNotice(
         `${cleanEmail} now has Client Portal access for ${target.name} when they sign in.`,
       );
-      setTimeout(() => setAssignNotice(null), 4000);
     } catch (err) {
       setAssignError(
         err instanceof Error ? err.message : 'Unable to save customer Gmail access.',
@@ -854,7 +857,6 @@ export function ManagementConsoleView({
         setAssignEmail('');
       }
       setAssignNotice(`Removed Client Portal Gmail assignment from ${biz.name}.`);
-      setTimeout(() => setAssignNotice(null), 3500);
     } catch (err) {
       setAssignError(
         err instanceof Error ? err.message : 'Unable to remove customer Gmail access.',

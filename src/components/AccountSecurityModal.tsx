@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { User } from 'firebase/auth';
 import { CheckCircle2, KeyRound, Loader2, ShieldCheck, X } from 'lucide-react';
 import { hasGoogleProvider, hasPasswordProvider } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 
 interface AccountSecurityModalProps {
   user: User;
@@ -19,6 +20,8 @@ export function AccountSecurityModal({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  useAutoDismiss(error, () => setError(null));
+  useAutoDismiss(successNotice, () => setSuccessNotice(null));
 
   const googleLinked = hasGoogleProvider(user.providerData);
   const passwordLinked = hasPasswordProvider(user.providerData);

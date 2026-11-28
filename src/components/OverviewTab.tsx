@@ -4,6 +4,7 @@ import type { Business, ReviewEvent } from '../types';
 import { getPublicAppUrl } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { formatReviewEventActionLabel, getTimestampMs } from '../utils/domainHelpers';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 
 interface OverviewTabProps {
   business: Business;
@@ -25,6 +26,7 @@ function formatEventTime(createdAt: unknown): string {
 export function OverviewTab({ business, events, onNavigateTab }: OverviewTabProps) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  useAutoDismiss(copyError, () => setCopyError(null));
 
   const businessEvents = useMemo(
     () => events.filter((ev) => ev.businessId === business.id),

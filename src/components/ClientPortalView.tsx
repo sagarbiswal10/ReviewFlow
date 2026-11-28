@@ -58,6 +58,7 @@ import {
   sanitizeReviewFlowModeForTier,
 } from '../utils/domainHelpers';
 import { hasPasswordProvider, sanitizeExternalUrl } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { getFormTemplateById } from '../data/formTemplates';
 import { AccountSecurityModal } from './AccountSecurityModal';
 import { BusinessLogo } from './BusinessLogo';
@@ -245,6 +246,8 @@ export function ClientPortalView({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfExportError, setPdfExportError] = useState<string | null>(null);
+  useAutoDismiss(eventsAccessError, () => setEventsAccessError(null));
+  useAutoDismiss(pdfExportError, () => setPdfExportError(null));
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 

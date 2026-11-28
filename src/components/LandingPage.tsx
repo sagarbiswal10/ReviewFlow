@@ -33,6 +33,7 @@ import type { User } from 'firebase/auth';
 import type { BusinessCategory, ReviewLanguage } from '../types';
 import { FORM_TEMPLATES } from '../data/formTemplates';
 import type { AuthActionableError } from '../utils/urlAndAuth';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 import { SpatialTilt } from './ui/spatial-tilt';
 import { BrandedQrCard, ReviewFlowMark } from './landing/ReviewFlowMark';
 import { InteractivePipelineSection } from './landing/InteractivePipelineSection';
@@ -252,6 +253,8 @@ export function LandingPage({
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  useAutoDismiss(localError, () => setLocalError(null));
+  useAutoDismiss(infoMessage, () => setInfoMessage(null));
   const [sendingPasswordSetup, setSendingPasswordSetup] = useState(false);
   const [dismissedAuthErrorSig, setDismissedAuthErrorSig] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

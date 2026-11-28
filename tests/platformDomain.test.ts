@@ -779,5 +779,28 @@ test('TC-REPORT-01: WeeklyReportsTab hides token consumption in Client Portal, s
   assert.match(String(typoBackend.data.error), /somnathbiswal2007@gmail\.com/);
 });
 
+test('TC-UI-TOAST-01: Error and success banners auto-dismiss after 5 seconds across portal views', () => {
+  const hookSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/hooks/useAutoDismiss.ts'),
+    'utf8',
+  );
+  assert.ok(hookSrc.includes('export const AUTO_DISMISS_MS = 5000;'));
+
+  for (const rel of [
+    'src/components/WeeklyReportsTab.tsx',
+    'src/components/BrandingTab.tsx',
+    'src/components/QuestionBuilderTab.tsx',
+    'src/components/TemplatesTab.tsx',
+    'src/components/QrStudioTab.tsx',
+    'src/components/QrStandsTab.tsx',
+    'src/components/GbpAutoReplyTab.tsx',
+    'src/components/ManagementConsoleView.tsx',
+    'src/components/ClientPortalView.tsx',
+  ]) {
+    const src = fs.readFileSync(path.resolve(process.cwd(), rel), 'utf8');
+    assert.ok(src.includes('useAutoDismiss('), `Missing useAutoDismiss in ${rel}`);
+  }
+});
+
 
 

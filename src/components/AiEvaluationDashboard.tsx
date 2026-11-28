@@ -29,6 +29,7 @@ import {
   formatConsentedDatasetAsJsonl,
   validateReviewQuality,
 } from '../utils/reviewQuality';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 
 interface AiEvaluationDashboardProps {
   evaluations: ReviewEvaluation[];
@@ -168,6 +169,8 @@ export function AiEvaluationDashboard({
   const [editingReviewMap, setEditingReviewMap] = useState<Record<string, string>>({});
   const [savingExampleId, setSavingExampleId] = useState<string | null>(null);
   const [datasetNotice, setDatasetNotice] = useState<string | null>(null);
+  useAutoDismiss(benchmarkError, () => setBenchmarkError(null));
+  useAutoDismiss(datasetNotice, () => setDatasetNotice(null));
 
   const languageMetrics = useMemo(() => {
     return LANGUAGE_META.map((meta) => {
@@ -340,7 +343,6 @@ export function AiEvaluationDashboard({
       setDatasetNotice(
         `Updated example to "${nextStatus}" (${example.language.toUpperCase()}). Approved items immediately calibrate live generation prompts.`,
       );
-      setTimeout(() => setDatasetNotice(null), 4000);
     } catch (err) {
       setDatasetNotice(err instanceof Error ? err.message : 'Failed to update example.');
     } finally {

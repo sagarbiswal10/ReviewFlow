@@ -36,6 +36,7 @@ import { apiFetch, formatApiError } from '../utils/apiClient';
 import { copyToClipboard } from '../utils/clipboard';
 import { parseAndValidateRecipientEmails } from '../utils/domainHelpers';
 import { downloadWeeklyReportPdf } from '../utils/qrAndPdf';
+import { useAutoDismiss } from '../hooks/useAutoDismiss';
 
 interface WeeklyReportsTabProps {
   business: Business;
@@ -72,6 +73,9 @@ export function WeeklyReportsTab({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emailNotConfiguredHint, setEmailNotConfiguredHint] = useState<string | null>(null);
+  useAutoDismiss(statusMessage, () => setStatusMessage(null));
+  useAutoDismiss(errorMessage, () => setErrorMessage(null));
+  useAutoDismiss(emailNotConfiguredHint, () => setEmailNotConfiguredHint(null));
   const isRecipientsDirtyRef = useRef(false);
   const lastRecipientsSigRef = useRef<string>(
     JSON.stringify({
