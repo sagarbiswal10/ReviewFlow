@@ -403,30 +403,30 @@ function buildEnglishReview(
     },
     negative: {
       short: [
-        'Hope things improve going forward.',
-        'Hopefully these points get addressed soon.',
+        'With a few small improvements, the next visit can be much better.',
+        'Looking forward to seeing these points addressed positively soon.',
       ],
       detailed: [
-        'Hopefully the team takes this feedback into account and improves the day-to-day basics.',
-        'Addressing these issues would go a long way toward a better visit next time.',
+        'With a little extra focus on these basics, I am confident the overall experience will be much smoother next time.',
+        'The team has good potential, and addressing these gaps will make future visits genuinely pleasant.',
       ],
       professional: [
-        'Focusing on these areas would meaningfully improve the customer visit.',
-        'I hope management reviews this feedback and makes practical improvements.',
+        'With timely attention to these details, I look forward to a much smoother experience on my next visit.',
+        'Sharing this feedback constructively in the hope of seeing even better service next time.',
       ],
     },
     very_negative: {
       short: [
-        'Needs serious attention before I would consider returning.',
-        'Hope these issues are taken seriously.',
+        'Hoping to see a much smoother experience on a future visit.',
+        'Wishing the team the best in improving these areas soon.',
       ],
       detailed: [
-        'These issues made the visit frustrating, and they really need attention.',
-        'I hope the team reviews what went wrong so future visitors have a much better time.',
+        'With proper attention to these concerns, future guests will surely have a much better visit, and I look forward to positive improvements.',
+        'I share this feedback constructively and genuinely hope to see things run much more smoothly next time around.',
       ],
       professional: [
-        'Meaningful improvements are needed to restore confidence for future visitors.',
-        'I hope these concerns are reviewed promptly by the team.',
+        'Sharing these points constructively with the hope of seeing meaningful improvements ahead.',
+        'Looking forward to seeing positive updates from the team on future visits.',
       ],
     },
   };
@@ -441,8 +441,16 @@ function buildEnglishReview(
     parts.push(cleanComment);
   }
 
-  if (style === 'detailed' && extraList) {
-    parts.push(`I also noticed ${extraList}.`);
+  if (style === 'detailed') {
+    if (extraList) {
+      parts.push(`I also noticed ${extraList}.`);
+    } else if (parts.length < 3) {
+      parts.push(
+        sentiment === 'negative' || sentiment === 'very_negative'
+          ? 'Taking care of a few everyday details would easily lift the whole visit.'
+          : 'Overall the pace and setup felt easygoing and comfortable during the time spent there.',
+      );
+    }
   }
 
   if (style !== 'short' || parts.length < 2) {
@@ -537,12 +545,12 @@ function buildHinglishReview(
       'Sudhaar hone par agli baar accha lagega.',
     ],
     negative: [
-      'Ummeed hai aage is par dhyaan diya jayega.',
-      'Behtar vyavastha hone ki ummeed hai.',
+      'Ummeed hai aage is par dhyaan diya jayega aur agli baar anubhav aur accha hoga.',
+      'Behtar vyavastha ke saath agli baar zaroor accha anubhav milne ki ummeed hai.',
     ],
     very_negative: [
-      'Abhi ke liye dobara aane ka mann nahi karega.',
-      'Ummeed hai in kamiyon ko jaldi theek kiya jayega.',
+      'Ummeed hai in kamiyon ko jaldi sudhara jayega, aur agli baar sab kuch behtar milega.',
+      'Thode sudhaar ke saath aane wale samay mein yeh jagah aur accha anubhav de sakti hai.',
     ],
   };
 
@@ -551,6 +559,13 @@ function buildHinglishReview(
     parts.push(normalizeSentenceEnd(comment));
   } else {
     parts.push(pickBySeed(middles[sentiment], seed + 1));
+  }
+  if (style === 'detailed') {
+    parts.push(
+      sentiment === 'negative' || sentiment === 'very_negative'
+        ? 'Chhoti-chhoti baaton par dhyaan dene se poori vyavastha kaafi behtar ban sakti hai.'
+        : 'Logon ka bartaav aur poore kaam ka tareeka samajhdari bhara aur aasaan laga.',
+    );
   }
   if (style !== 'short' || parts.length < 2) {
     parts.push(pickBySeed(closings[sentiment], seed + 2));
@@ -624,8 +639,8 @@ function buildHindiReview(
     positive: ['आगे मौका मिलने पर फिर से आना अच्छा रहेगा।', 'कुल मिलाकर बढ़िया अनुभव रहा।'],
     neutral: ['कुल मिलाकर अनुभव ठीक रहा।', 'सामान्य ज़रूरत के लिए जगह ठीक है।'],
     mixed: ['उम्मीद है अगली बार और बेहतर अनुभव मिलेगा।', 'सुधार होने पर अगली बार अच्छा लगेगा।'],
-    negative: ['उम्मीद है आगे इन बातों में सुधार किया जाएगा।', 'बेहतर व्यवस्था की उम्मीद है।'],
-    very_negative: ['अभी के लिए दोबारा आने का मन नहीं करेगा।', 'उम्मीद है इन कमियों को जल्द सुधारा जाएगा।'],
+    negative: ['उम्मीद है आगे इन बातों में सुधार होगा और अगली बार अनुभव और बेहतर रहेगा।', 'थोड़े और ध्यान के साथ भविष्य में यहाँ का अनुभव काफ़ी अच्छा हो सकता है।'],
+    very_negative: ['उम्मीद है इन कमियों को जल्द सुधारा जाएगा और आगे बेहतर अनुभव मिलेगा।', 'आने वाले समय में सकारात्मक बदलाव की पूरी उम्मीद है।'],
   };
 
   const parts: string[] = [pickBySeed(openings[sentiment], seed)];
@@ -633,6 +648,13 @@ function buildHindiReview(
     parts.push(normalizeSentenceEnd(comment, true));
   } else {
     parts.push(pickBySeed(middles[sentiment], seed + 1));
+  }
+  if (style === 'detailed') {
+    parts.push(
+      sentiment === 'negative' || sentiment === 'very_negative'
+        ? 'छोटी-छोटी बातों पर ध्यान देने से पूरी व्यवस्था काफ़ी बेहतर बन सकती है।'
+        : 'यहाँ का सहज माहौल और काम करने का ढंग काफ़ी आरामदायक लगा।',
+    );
   }
   if (style !== 'short' || parts.length < 2) {
     parts.push(pickBySeed(closings[sentiment], seed + 2));
@@ -706,8 +728,8 @@ function buildMarathiReview(
     positive: ['पुढेही येथे येणे नक्कीच आवडेल.', 'एकूण अनुभव चांगला होता.'],
     neutral: ['एकूण अनुभव ठीक होता.', 'साधारण कामासाठी जागा ठीक आहे.'],
     mixed: ['पुढच्या वेळी अनुभव अजून चांगला असेल अशी अपेक्षा आहे.', 'सुधारणा झाल्यास नक्कीच छान वाटेल.'],
-    negative: ['पुढे या गोष्टी सुधारल्या जातील अशी अपेक्षा आहे.', 'चांगल्या व्यवस्थेची अपेक्षा आहे.'],
-    very_negative: ['सध्या तरी पुन्हा येण्याची इच्छा वाटत नाही.', 'या अडचणी लवकर दूर होतील अशी आशा आहे.'],
+    negative: ['पुढे या गोष्टी सुधारल्या जातील आणि पुढच्या वेळी अनुभव नक्कीच अधिक चांगला राहील अशी अपेक्षा आहे.', 'थोड्या सुधारणांसह भविष्यात येथील सेवा नक्कीच अधिक छान होईल.'],
+    very_negative: ['या अडचणी लवकर दूर होतील आणि पुढच्या वेळी चांगला अनुभव मिळेल अशी आशा आहे.', 'सकारात्मक सुधारणांनंतर पुन्हा चांगला अनुभव मिळण्याची अपेक्षा आहे.'],
   };
 
   const parts: string[] = [pickBySeed(openings[sentiment], seed)];
@@ -715,6 +737,13 @@ function buildMarathiReview(
     parts.push(normalizeSentenceEnd(comment, false));
   } else {
     parts.push(pickBySeed(middles[sentiment], seed + 1));
+  }
+  if (style === 'detailed') {
+    parts.push(
+      sentiment === 'negative' || sentiment === 'very_negative'
+        ? 'लहानसहान गोष्टींवर थोडे अधिक लक्ष दिल्यास संपूर्ण व्यवस्था अधिक उत्तम होऊ शकते.'
+        : 'येथील शांत वातावरण आणि काम करण्याची सहज पद्धत मनाला भावली.',
+    );
   }
   if (style !== 'short' || parts.length < 2) {
     parts.push(pickBySeed(closings[sentiment], seed + 2));

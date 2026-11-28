@@ -61,6 +61,7 @@ import {
   buildWeeklyReportEmailContent,
   processDispatchWeeklyReportEmail,
 } from '../api/_lib/apiCore.ts';
+import { composeGroundedFallbackReview } from '../api/_lib/fallbackReviewComposer.ts';
 import { BUSINESS_CATEGORIES } from '../src/types.ts';
 
 test('TC-DOM-01: sanitizeSlug normalizes symbols, whitespace, and short strings deterministically', () => {
@@ -801,6 +802,61 @@ test('TC-UI-TOAST-01: Error and success banners auto-dismiss after 5 seconds acr
     assert.ok(src.includes('useAutoDismiss('), `Missing useAutoDismiss in ${rel}`);
   }
 });
+
+test('TC-REVIEW-CARDS-01: Instant cards show Review 1..5 labels cleanly and Guided Generate rotates short/detailed/professional while ending Poor feedback constructively', () => {
+  assert.equal(getLocalizedFormUiStrings('en').instantReviewCardLabel(1), 'Review 1');
+  assert.equal(getLocalizedFormUiStrings('en').instantReviewCardLabel(5), 'Review 5');
+  assert.equal(getLocalizedFormUiStrings('hinglish').instantReviewCardLabel(2), 'Review 2');
+  assert.equal(getLocalizedFormUiStrings('hi').instantReviewCardLabel(3), 'रिव्यू 3');
+  assert.equal(getLocalizedFormUiStrings('mr').instantReviewCardLabel(4), 'रिव्ह्यू 4');
+
+  const flowSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/CustomerReviewFlow.tsx'),
+    'utf8',
+  );
+  assert.ok(flowSrc.includes('instantUi.instantReviewCardLabel(idx + 1)'));
+  assert.ok(!flowSrc.includes('Option {idx + 1}'));
+  assert.ok(flowSrc.includes('reviewflow_style_idx_'));
+  assert.ok(flowSrc.includes('const shouldRotateOnSubmit = hasGeneratedOnceRef.current;'));
+
+  for (const lang of ['en', 'hinglish', 'hi', 'mr'] as const) {
+    const shortRes = composeGroundedFallbackReview({
+      businessName: 'Rohan Salon',
+      responses: [{ question: 'How was your visit?', answers: ['Good'] }],
+      style: 'short',
+      language: lang,
+      variationSeed: 1,
+    });
+    const detailedRes = composeGroundedFallbackReview({
+      businessName: 'Rohan Salon',
+      responses: [{ question: 'How was your visit?', answers: ['Good'] }],
+      style: 'detailed',
+      language: lang,
+      variationSeed: 1,
+    });
+    assert.ok(
+      detailedRes.reviewText.length > shortRes.reviewText.length,
+      `Expected detailed fallback > short fallback for ${lang}`,
+    );
+
+    const poorRes = composeGroundedFallbackReview({
+      businessName: 'Rohan Salon',
+      responses: [{ question: 'How was your visit?', answers: ['Very poor', 'Slow'] }],
+      style: 'detailed',
+      language: lang,
+      variationSeed: 1,
+    });
+    assert.ok(poorRes.sentiment === 'negative' || poorRes.sentiment === 'very_negative');
+    assert.equal(
+      /would consider returning|dobara aane ka mann nahi karega|दोबारा आने का मन नहीं करेगा|पुन्हा येण्याची इच्छा वाटत नाही/i.test(
+        poorRes.reviewText,
+      ),
+      false,
+      `Expected constructive positive closing for ${lang}: ${poorRes.reviewText}`,
+    );
+  }
+});
+
 
 
 
